@@ -57,11 +57,13 @@ func NewTower(y, x int, towerType string, params map[string]interface{}) Tower {
 		}
 	}
 
-	char := []rune(t["char"].(string))[0]
-	damage := int(t["damage"].(float64))
-	maxCD := int(t["cooldown"].(float64))
-	rangeVal := int(t["range"].(float64))
-	cost := int(t["cost"].(float64))
+	char := t["char"].(rune)
+
+	// Handle numeric values that could be either int or float64
+	damage := toInt(t["damage"])
+	maxCD := toInt(t["cooldown"])
+	rangeVal := toInt(t["range"])
+	cost := toInt(t["cost"])
 
 	return Tower{
 		Entity: Entity{
@@ -76,6 +78,18 @@ func NewTower(y, x int, towerType string, params map[string]interface{}) Tower {
 		Range:     rangeVal,
 		Cost:      cost,
 		Strategy:  "nearest",
+	}
+}
+
+// Helper function to convert interface{} to int
+func toInt(v interface{}) int {
+	switch val := v.(type) {
+	case int:
+		return val
+	case float64:
+		return int(val)
+	default:
+		return 0
 	}
 }
 
@@ -153,10 +167,10 @@ type Enemy struct {
 
 func NewEnemy(y, x int, enemyType string, params map[string]interface{}) Enemy {
 	types := map[string]map[string]interface{}{
-		"basic":  {"char": 'o', "health": 100, "speed": 1.0, "reward": 20},
-		"fast":   {"char": '>', "health": 50, "speed": 2.0, "reward": 15},
-		"tank":   {"char": '□', "health": 300, "speed": 0.5, "reward": 50},
-		"custom": {"char": '?', "health": 150, "speed": 1.2, "reward": 25},
+		"basic":  {"char": 'o', "health": float64(100), "speed": float64(1.0), "reward": float64(20)},
+		"fast":   {"char": '>', "health": float64(50), "speed": float64(2.0), "reward": float64(15)},
+		"tank":   {"char": '□', "health": float64(300), "speed": float64(0.5), "reward": float64(50)},
+		"custom": {"char": '?', "health": float64(150), "speed": float64(1.2), "reward": float64(25)},
 	}
 
 	e := types[enemyType]
@@ -274,18 +288,28 @@ func (h *OpenAIHandler) createTowerPrompt(gameState map[string]interface{}) stri
 	enemies := gameState["enemies"].([]interface{})
 	towers := gameState["towers"].([]interface{})
 	resources := gameState["resources"].(map[string]interface{})["chatgpt"].(int)
+	wave := gameState["wave"].(int)
 
 	prompt := fmt.Sprintf(
-		"You are playing a tower defense game as ChatGPT. You have %d resources. "+
+		"You are playing a tower defense game as ChatGPT. You have %d resources and are on wave %d. "+
 			"There are %d enemies and %d towers on the map.\n\n"+
-			"You can:\n"+
-			"1. Place a tower: basic (100), sniper (250), splash (200)\n"+
-			"2. Upgrade an existing tower\n"+
-			"3. Change a tower's targeting strategy\n"+
-			"4. Save resources for now\n\n"+
-			"Return your decision in JSON format like: {\"action\": \"place\", \"tower_type\": \"basic\", \"position\": [10, 15], \"reason\": \"Explanation\"}\n"+
-			"Valid actions are: place, upgrade, change_strategy, save",
-		resources, len(enemies), len(towers),
+			"Your goal is to defend your base by placing towers strategically. "+
+			"IMPORTANT: You should place towers frequently to defend against enemies. "+
+			"Consider the wave number when choosing tower types - later waves need stronger towers.\n\n"+
+			"Available towers:\n"+
+			"- basic (100): Balanced tower, good for early waves\n"+
+			"- sniper (250): High damage, long range, good for strong enemies\n"+
+			"- splash (200): Area damage, good for groups of weak enemies\n\n"+
+			"Current wave: %d\n"+
+			"Current resources: %d\n"+
+			"Current towers: %d\n"+
+			"Active enemies: %d\n\n"+
+			"Choose your action:\n"+
+			"1. Place a new tower (specify type and position)\n"+
+			"2. Save resources for a stronger tower (only if you have a specific plan)\n\n"+
+			"Respond in JSON format: {\"action\": \"place\", \"tower_type\": \"basic\", \"position\": [10, 15], \"reason\": \"Explanation\"}\n"+
+			"Valid actions: place, save",
+		resources, wave, len(enemies), len(towers), wave, resources, len(towers), len(enemies),
 	)
 	return prompt
 }
@@ -407,17 +431,27 @@ func (h *GeminiHandler) createEnemyPrompt(gameState map[string]interface{}) stri
 	wave := gameState["wave"].(int)
 
 	prompt := fmt.Sprintf(
-		"You are playing a tower defense game as Gemini. You have %d resources. "+
-			"There are %d active enemies and %d defensive towers.\n"+
-			"Current wave: %d\n\n"+
-			"You can:\n"+
-			"1. Spawn individual enemies: basic (20), fast (30), tank (50)\n"+
-			"2. Launch a wave (costs 100 × wave number)\n"+
-			"3. Create a custom enemy (costs 40)\n"+
-			"4. Save resources for now\n\n"+
-			"Return your decision in JSON format like: {\"action\": \"spawn\", \"enemy_type\": \"fast\", \"reason\": \"Explanation\"}\n"+
-			"Valid actions are: spawn, wave, custom, save",
-		resources, len(enemies), len(towers), wave,
+		"You are playing a tower defense game as Gemini. You have %d resources and are on wave %d. "+
+			"There are %d active enemies and %d defensive towers.\n\n"+
+			"Your goal is to overwhelm the opponent by sending enemies. "+
+			"IMPORTANT: You MUST spawn enemies frequently to attack the opponent.\n\n"+
+			"Available enemies and their costs:\n"+
+			"- basic (20): Balanced enemy, good for early waves\n"+
+			"- fast (30): Fast but weak, good for overwhelming\n"+
+			"- tank (50): Slow but strong, good for late waves\n\n"+
+			"Current wave: %d\n"+
+			"Current resources: %d\n"+
+			"Active enemies: %d\n"+
+			"Defensive towers: %d\n\n"+
+			"You MUST choose exactly one of these actions:\n"+
+			"1. Spawn a single enemy (specify type)\n"+
+			"2. Launch a wave (costs 100 × wave number, only if you have enough resources)\n"+
+			"3. Save resources (only if you have a specific plan)\n\n"+
+			"Respond in JSON format like this example:\n"+
+			"{\"action\": \"spawn\", \"enemy_type\": \"fast\", \"reason\": \"Explanation\"}\n"+
+			"Valid actions are ONLY: \"spawn\", \"wave\", or \"save\"\n"+
+			"For spawn, you MUST include \"enemy_type\" as one of: \"basic\", \"fast\", or \"tank\"",
+		resources, wave, len(enemies), len(towers), wave, resources, len(enemies), len(towers),
 	)
 	return prompt
 }
@@ -431,24 +465,60 @@ func (h *GeminiHandler) parseEnemyResponse(response string) (map[string]interfac
 		var decision map[string]interface{}
 		err := json.Unmarshal([]byte(match), &decision)
 		if err == nil {
-			return decision, nil
+			// Explicitly check for valid action types
+			action, hasAction := decision["action"].(string)
+			if hasAction {
+				if action == "spawn" {
+					// Make sure there's an enemy_type field
+					enemyType, hasEnemyType := decision["enemy_type"].(string)
+					if !hasEnemyType || enemyType == "" {
+						decision["enemy_type"] = "basic" // Default to basic if missing
+					}
+					return decision, nil
+				} else if action == "wave" {
+					return map[string]interface{}{
+						"action": "wave",
+						"reason": "Launching wave attack",
+					}, nil
+				} else if action == "save" {
+					return map[string]interface{}{
+						"action": "save",
+						"reason": "Saving resources",
+					}, nil
+				}
+			}
 		}
 	}
 
-	// Fallback to basic parsing
+	// Fallback to basic parsing based on text content
 	decision := map[string]interface{}{
 		"action": "none",
 		"reason": "Could not parse response",
 	}
 
-	if strings.Contains(strings.ToLower(response), "spawn") && strings.Contains(strings.ToLower(response), "fast") {
+	responseText := strings.ToLower(response)
+	if strings.Contains(responseText, "spawn") {
+		enemyType := "basic"
+		if strings.Contains(responseText, "fast") {
+			enemyType = "fast"
+		} else if strings.Contains(responseText, "tank") {
+			enemyType = "tank"
+		}
+
 		decision = map[string]interface{}{
 			"action":     "spawn",
-			"enemy_type": "fast",
+			"enemy_type": enemyType,
+			"reason":     "Spawning enemy based on text analysis",
 		}
-	} else if strings.Contains(strings.ToLower(response), "wave") {
+	} else if strings.Contains(responseText, "wave") {
 		decision = map[string]interface{}{
 			"action": "wave",
+			"reason": "Launching wave based on text analysis",
+		}
+	} else if strings.Contains(responseText, "save") {
+		decision = map[string]interface{}{
+			"action": "save",
+			"reason": "Saving resources based on text analysis",
 		}
 	}
 
@@ -483,6 +553,12 @@ type Game struct {
 	GameSpeed          float64
 	AIDecisionInterval map[string]int
 	LastAIDecision     map[string]time.Time
+
+	CurrentTurn    string // "chatgpt" or "gemini"
+	LastActionTime time.Time
+	MaxResources   int
+	MaxWaves       int
+	TurnTimeout    time.Duration
 }
 
 func NewGame() *Game {
@@ -509,12 +585,17 @@ func NewGame() *Game {
 		AIThinking:         map[string]bool{"chatgpt": false, "gemini": false},
 		OpenAIHandler:      &OpenAIHandler{AIHandler: NewAIHandler()},
 		GeminiHandler:      &GeminiHandler{AIHandler: NewAIHandler()},
-		GameSpeed:          0.02,
-		AIDecisionInterval: map[string]int{"chatgpt": 5, "gemini": 5},
+		GameSpeed:          0.1,
+		AIDecisionInterval: map[string]int{"chatgpt": 2, "gemini": 2},
 		LastAIDecision: map[string]time.Time{
 			"chatgpt": time.Now(),
 			"gemini":  time.Now(),
 		},
+		CurrentTurn:    "chatgpt", // ChatGPT goes first
+		LastActionTime: time.Now(),
+		MaxResources:   1000,             // Maximum resources per player
+		MaxWaves:       50,               // Maximum number of waves
+		TurnTimeout:    30 * time.Second, // Timeout for each turn
 	}
 
 	// Generate path
@@ -563,19 +644,31 @@ func (g *Game) handleAIDecisions() {
 	currentTime := time.Now()
 	gameState := g.getGameState()
 
-	// ChatGPT's turn to make a decision
-	chatgptIntervalDuration := time.Duration(g.AIDecisionInterval["chatgpt"]) * time.Second
-	if currentTime.Sub(g.LastAIDecision["chatgpt"]) >= chatgptIntervalDuration &&
-		!g.AIThinking["chatgpt"] && g.AIEnabled {
-		fmt.Println("\n=== ChatGPT Decision Time ===")
+	// Check if game should end due to timeout or max waves
+	if currentTime.Sub(g.LastActionTime) > g.TurnTimeout {
+		fmt.Println("\n=== Game Over! ===")
+		fmt.Println("Game ended due to inactivity")
+		g.GameOver = true
+		g.Winner = "none"
+		return
+	}
+
+	if g.Wave > g.MaxWaves {
+		fmt.Println("\n=== Game Over! ===")
+		fmt.Println("Game ended - maximum waves reached")
+		g.GameOver = true
+		g.Winner = "none"
+		return
+	}
+
+	// Only allow AI to make a move if it's their turn
+	if g.CurrentTurn == "chatgpt" && !g.AIThinking["chatgpt"] && g.AIEnabled {
+		fmt.Println("\n=== ChatGPT's Turn ===")
 		g.AIThinking["chatgpt"] = true
+		g.LastActionTime = currentTime
 
-		// Run in a separate goroutine to avoid blocking
 		go func() {
-			// Get tower decision from ChatGPT
 			decision, err := g.OpenAIHandler.GetTowerDecision(gameState)
-
-			// Process decision (this callback runs after API response)
 			if err == nil {
 				action, _ := decision["action"].(string)
 				fmt.Printf("ChatGPT decided to: %s\n", action)
@@ -593,7 +686,6 @@ func (g *Game) handleAIDecisions() {
 						x = int(position[1].(float64))
 					}
 
-					// Place tower at a valid position near the suggested point
 					placed := false
 					for offY := -5; offY <= 5 && !placed; offY++ {
 						for offX := -5; offX <= 5 && !placed; offX++ {
@@ -607,37 +699,32 @@ func (g *Game) handleAIDecisions() {
 					if placed {
 						fmt.Printf("Successfully placed %s tower\n", towerType)
 						g.LastDecisions["chatgpt"] = fmt.Sprintf("Placed %s tower", towerType)
+						g.CurrentTurn = "gemini" // Switch to Gemini's turn
 					} else {
 						fmt.Printf("Failed to place %s tower\n", towerType)
 						g.LastDecisions["chatgpt"] = fmt.Sprintf("Failed to place %s tower", towerType)
+						g.CurrentTurn = "gemini" // Still switch turns even on failure
 					}
 				} else {
 					fmt.Println("ChatGPT decided to save resources")
 					g.LastDecisions["chatgpt"] = "Saving resources"
+					g.CurrentTurn = "gemini" // Switch to Gemini's turn
 				}
 			} else {
 				fmt.Printf("ChatGPT API error: %v\n", err)
 				g.LastDecisions["chatgpt"] = "API error"
+				g.CurrentTurn = "gemini" // Switch to Gemini's turn on error
 			}
 
 			g.AIThinking["chatgpt"] = false
-			g.LastAIDecision["chatgpt"] = time.Now()
 		}()
-	}
-
-	// Gemini's turn to make a decision
-	geminiIntervalDuration := time.Duration(g.AIDecisionInterval["gemini"]) * time.Second
-	if currentTime.Sub(g.LastAIDecision["gemini"]) >= geminiIntervalDuration &&
-		!g.AIThinking["gemini"] && g.AIEnabled {
-		fmt.Println("\n=== Gemini Decision Time ===")
+	} else if g.CurrentTurn == "gemini" && !g.AIThinking["gemini"] && g.AIEnabled {
+		fmt.Println("\n=== Gemini's Turn ===")
 		g.AIThinking["gemini"] = true
+		g.LastActionTime = currentTime
 
-		// Run in a separate goroutine to avoid blocking
 		go func() {
-			// Get enemy decision from Gemini
 			decision, err := g.GeminiHandler.GetEnemyDecision(gameState)
-
-			// Process decision
 			if err == nil {
 				action, _ := decision["action"].(string)
 				fmt.Printf("Gemini decided to: %s\n", action)
@@ -648,67 +735,88 @@ func (g *Game) handleAIDecisions() {
 						enemyType = "basic"
 					}
 
+					fmt.Printf("Attempting to spawn %s enemy\n", enemyType)
 					spawned := g.spawnEnemy(enemyType, nil)
 					if spawned {
 						fmt.Printf("Successfully spawned %s enemy\n", enemyType)
 						g.LastDecisions["gemini"] = fmt.Sprintf("Spawned %s enemy", enemyType)
+						g.CurrentTurn = "chatgpt" // Switch to ChatGPT's turn
 					} else {
-						fmt.Printf("Failed to spawn %s enemy\n", enemyType)
+						fmt.Printf("Failed to spawn %s enemy (not enough resources or invalid type)\n", enemyType)
 						g.LastDecisions["gemini"] = fmt.Sprintf("Failed to spawn %s enemy", enemyType)
+						g.CurrentTurn = "chatgpt" // Still switch turns even on failure
 					}
 				} else if action == "wave" {
-					if g.spawnWave() {
-						fmt.Printf("Successfully launched wave %d\n", g.Wave)
-						g.LastDecisions["gemini"] = fmt.Sprintf("Launched wave %d", g.Wave)
-					} else {
-						fmt.Println("Failed to launch wave (not enough resources)")
+					waveCost := g.Wave * 100
+					fmt.Printf("Attempting to launch wave %d (cost: %d, available: %d)\n",
+						g.Wave, waveCost, g.Resources["gemini"])
+
+					if g.Resources["gemini"] < waveCost {
+						fmt.Printf("Not enough resources to launch wave %d\n", g.Wave)
 						g.LastDecisions["gemini"] = "Failed to launch wave (not enough resources)"
-					}
-				} else if action == "custom" {
-					params := map[string]interface{}{
-						"char":   "X",
-						"health": 200.0,
-						"speed":  1.5,
-						"reward": 35.0,
-					}
-
-					customData, ok := decision["custom_params"].(map[string]interface{})
-					if ok {
-						for k, v := range customData {
-							params[k] = v
-						}
-					}
-
-					spawned := g.spawnEnemy("custom", params)
-					if spawned {
-						fmt.Println("Successfully spawned custom enemy")
-						g.LastDecisions["gemini"] = "Spawned custom enemy"
+						g.CurrentTurn = "chatgpt" // Still switch turns even on failure
 					} else {
-						fmt.Println("Failed to spawn custom enemy")
-						g.LastDecisions["gemini"] = "Failed to spawn custom enemy"
+						fmt.Printf("Wave %d launched successfully\n", g.Wave)
+						g.LastDecisions["gemini"] = fmt.Sprintf("Launched wave %d", g.Wave)
+						g.CurrentTurn = "chatgpt" // Switch to ChatGPT's turn
 					}
 				} else {
 					fmt.Println("Gemini decided to save resources")
 					g.LastDecisions["gemini"] = "Saving resources"
+					g.CurrentTurn = "chatgpt" // Switch to ChatGPT's turn
 				}
 			} else {
 				fmt.Printf("Gemini API error: %v\n", err)
 				g.LastDecisions["gemini"] = "API error"
+				g.CurrentTurn = "chatgpt" // Switch to ChatGPT's turn on error
 			}
 
 			g.AIThinking["gemini"] = false
-			g.LastAIDecision["gemini"] = time.Now()
 		}()
 	}
 }
 
 func (g *Game) updateGameState() {
-	// Process wave queue
+	// Cap resources at maximum
+	if g.Resources["chatgpt"] > g.MaxResources {
+		g.Resources["chatgpt"] = g.MaxResources
+	}
+	if g.Resources["gemini"] > g.MaxResources {
+		g.Resources["gemini"] = g.MaxResources
+	}
+
+	// Process wave queue - spawn enemies from queue
 	if len(g.WaveQueue) > 0 && len(g.Enemies) < 20 {
 		enemyType := g.WaveQueue[0]
 		g.WaveQueue = g.WaveQueue[1:]
-		if g.spawnEnemy(enemyType, nil) {
-			fmt.Printf("Spawned enemy from wave queue: %s\n", enemyType)
+
+		// Create enemy from queue without reducing resources
+		// (resources were already deducted when the wave was created)
+		if len(g.Path) > 0 {
+			startPos := g.Path[0]
+			enemy := NewEnemy(startPos.Y, startPos.X, enemyType, nil)
+			g.Enemies = append(g.Enemies, &enemy)
+			fmt.Printf("Spawned enemy from wave queue: %s (Health: %d, Speed: %.1f)\n",
+				enemyType, enemy.Health, enemy.Speed)
+		}
+	}
+
+	// Auto-progress wave if no enemies and no wave queue
+	if len(g.Enemies) == 0 && len(g.WaveQueue) == 0 {
+		g.Wave++
+		fmt.Printf("\n=== Wave %d Starting ===\n", g.Wave)
+		// Give resources to both players at the start of each wave
+		g.Resources["chatgpt"] += 50
+		g.Resources["gemini"] += 50
+		fmt.Printf("Resources added - ChatGPT: +50, Gemini: +50\n")
+
+		// For every 10th wave, give bonus resources
+		if g.Wave%10 == 0 {
+			bonusAmount := 100
+			g.Resources["chatgpt"] += bonusAmount
+			g.Resources["gemini"] += bonusAmount
+			fmt.Printf("BONUS resources for wave %d - ChatGPT: +%d, Gemini: +%d\n",
+				g.Wave, bonusAmount, bonusAmount)
 		}
 	}
 
@@ -836,15 +944,33 @@ func (g *Game) placeTower(y, x int, towerType string) bool {
 }
 
 func (g *Game) spawnEnemy(enemyType string, params map[string]interface{}) bool {
+	// Validate the enemy type
+	validTypes := map[string]bool{
+		"basic":  true,
+		"fast":   true,
+		"tank":   true,
+		"custom": true,
+	}
+
+	if !validTypes[enemyType] {
+		fmt.Printf("Invalid enemy type: %s\n", enemyType)
+		return false
+	}
+
 	enemyCosts := map[string]int{"basic": 20, "fast": 30, "tank": 50, "custom": 40}
 	cost := enemyCosts[enemyType]
 
+	fmt.Printf("Attempting to spawn %s enemy (cost: %d, available: %d)\n",
+		enemyType, cost, g.Resources["gemini"])
+
 	if g.Resources["gemini"] < cost {
+		fmt.Printf("Not enough resources to spawn %s enemy\n", enemyType)
 		return false
 	}
 
 	// Get starting position (beginning of path)
 	if len(g.Path) == 0 {
+		fmt.Println("No path defined for enemies")
 		return false
 	}
 
@@ -854,52 +980,97 @@ func (g *Game) spawnEnemy(enemyType string, params map[string]interface{}) bool 
 	enemy := NewEnemy(startPos.Y, startPos.X, enemyType, params)
 	g.Enemies = append(g.Enemies, &enemy)
 	g.Resources["gemini"] -= cost
+
+	fmt.Printf("Enemy spawned - Type: %s, Health: %d, Speed: %.1f, Reward: %d\n",
+		enemy.EnemyType, enemy.Health, enemy.Speed, enemy.Reward)
+
 	return true
 }
 
 func (g *Game) spawnWave() bool {
 	waveCost := g.Wave * 100
+
+	fmt.Printf("Attempting to launch wave %d (cost: %d, available: %d)\n",
+		g.Wave, waveCost, g.Resources["gemini"])
+
 	if g.Resources["gemini"] < waveCost {
+		fmt.Printf("Not enough resources to launch wave %d\n", g.Wave)
 		return false
 	}
 
-	// Create a mix of enemies
-	numEnemies := g.Wave*3 + 2
+	// Create a mix of enemies based on the current wave
+	numEnemies := g.Wave*2 + 5
+	if numEnemies > 30 {
+		numEnemies = 30 // Cap to avoid extremely large waves
+	}
+
+	fmt.Printf("Creating wave with %d enemies\n", numEnemies)
+
 	enemyTypes := make([]string, 0)
 
 	// More varied waves as game progresses
-	if g.Wave < 3 {
-		for i := 0; i < numEnemies; i++ {
+	if g.Wave < 5 {
+		// Early waves: Mostly basic enemies
+		basicCount := int(float64(numEnemies) * 0.8)
+		fastCount := numEnemies - basicCount
+
+		for i := 0; i < basicCount; i++ {
 			enemyTypes = append(enemyTypes, "basic")
 		}
-	} else if g.Wave < 5 {
-		for i := 0; i < numEnemies/2; i++ {
-			enemyTypes = append(enemyTypes, "basic")
-		}
-		for i := 0; i < numEnemies/2; i++ {
+		for i := 0; i < fastCount; i++ {
 			enemyTypes = append(enemyTypes, "fast")
 		}
+
+	} else if g.Wave < 15 {
+		// Mid waves: Mix of basic and fast enemies with a few tanks
+		basicCount := int(float64(numEnemies) * 0.5)
+		fastCount := int(float64(numEnemies) * 0.4)
+		tankCount := numEnemies - basicCount - fastCount
+
+		for i := 0; i < basicCount; i++ {
+			enemyTypes = append(enemyTypes, "basic")
+		}
+		for i := 0; i < fastCount; i++ {
+			enemyTypes = append(enemyTypes, "fast")
+		}
+		for i := 0; i < tankCount; i++ {
+			enemyTypes = append(enemyTypes, "tank")
+		}
+
 	} else {
-		for i := 0; i < numEnemies/3; i++ {
+		// Late waves: Even mix with more tanks
+		basicCount := int(float64(numEnemies) * 0.3)
+		fastCount := int(float64(numEnemies) * 0.3)
+		tankCount := numEnemies - basicCount - fastCount
+
+		for i := 0; i < basicCount; i++ {
 			enemyTypes = append(enemyTypes, "basic")
 		}
-		for i := 0; i < numEnemies/3; i++ {
+		for i := 0; i < fastCount; i++ {
 			enemyTypes = append(enemyTypes, "fast")
 		}
-		for i := 0; i < numEnemies/3; i++ {
+		for i := 0; i < tankCount; i++ {
 			enemyTypes = append(enemyTypes, "tank")
 		}
 	}
 
-	// Shuffle the types
+	// Shuffle the types for variety
 	rand.Shuffle(len(enemyTypes), func(i, j int) {
 		enemyTypes[i], enemyTypes[j] = enemyTypes[j], enemyTypes[i]
 	})
 
+	fmt.Printf("Wave composition: %d total enemies (%d in queue before adding)\n",
+		len(enemyTypes), len(g.WaveQueue))
+
+	// Add to wave queue
 	g.WaveQueue = append(g.WaveQueue, enemyTypes...)
 
+	// Subtract cost and increment wave
 	g.Resources["gemini"] -= waveCost
-	g.Wave++
+
+	fmt.Printf("Wave %d launched successfully with %d enemies in queue\n",
+		g.Wave, len(g.WaveQueue))
+
 	return true
 }
 
