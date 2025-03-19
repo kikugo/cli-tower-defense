@@ -352,114 +352,36 @@ func (h *OpenAIHandler) createTowerPrompt(gameState map[string]interface{}) stri
 		}
 	}
 
-	// Calculate what tower we need most based on current wave, enemies, and resources
-	var recommendedTower string
-
-	// First determine the strategically best tower based on enemies and wave
-	if tankCount > 2 || wave > 15 {
-		recommendedTower = "sniper"
-	} else if fastCount > 3 || wave > 8 {
-		recommendedTower = "splash"
-	} else {
-		recommendedTower = "basic"
-	}
-
-	// Then adjust based on available resources
-	towerCosts := map[string]string{
-		"basic":  "100",
-		"splash": "200",
-		"sniper": "250",
-	}
-
-	// Now check if we can afford the recommended tower
-	if recommendedTower == "sniper" && resources < 250 {
-		if resources >= 200 {
-			recommendedTower = "splash"
-		} else {
-			recommendedTower = "basic"
-		}
-	} else if recommendedTower == "splash" && resources < 200 {
-		recommendedTower = "basic"
-	}
-
-	// Determine affordability message based on resources
-	var affordabilityMsg string
-	if resources < 100 {
-		affordabilityMsg = "You don't have enough resources for any tower right now. You will need to save for your next turn."
-	} else if resources < 200 {
-		affordabilityMsg = "You can only afford a basic tower right now."
-	} else if resources < 250 {
-		affordabilityMsg = "You can afford a basic or splash tower right now."
-	} else {
-		affordabilityMsg = "You can afford any tower type."
-	}
-
-	// Random position suggestions to avoid getting stuck on the same position
-	positionOptions := [][]int{
-		{5, 5}, {5, 15}, {5, 25}, {5, 35}, {5, 45},
-		{15, 5}, {15, 15}, {15, 25}, {15, 35}, {15, 45},
-		{2, 2}, {2, 20}, {2, 40}, {2, 60},
-		{20, 2}, {20, 20}, {20, 40}, {20, 60},
-	}
-
-	// Choose random position from options
-	rand.Seed(time.Now().UnixNano())
-	randomPos := positionOptions[rand.Intn(len(positionOptions))]
-
-	// Determine example position based on number of existing towers
-	examplePos := randomPos
-	if len(towers) == 0 {
-		// First tower - place at a corner for good coverage
-		examplePos = []int{2, 2}
-	} else if len(towers) == 1 {
-		// Second tower - place at opposite corner
-		examplePos = []int{2, 60}
-	} else if len(towers)%2 == 0 {
-		// Even towers - try top half
-		examplePos = []int{2 + rand.Intn(5), 10 + rand.Intn(50)}
-	} else {
-		// Odd towers - try bottom half
-		examplePos = []int{15 + rand.Intn(5), 10 + rand.Intn(50)}
-	}
-
 	prompt := fmt.Sprintf(
 		"You are playing a tower defense game as ChatGPT. You have %d resources, %d lives, and are on wave %d.\n\n"+
-			"CRITICAL: You MUST place towers aggressively to defend! Only choose tower types you can afford.\n\n"+
-			"Enemy Analysis:\n"+
-			"- Current Wave: %d\n"+
-			"- Active Enemies: %d basic, %d fast, %d tank enemies\n"+
+			"Strategic Analysis:\n"+
+			"- Enemy Composition: %d basic, %d fast, %d tank enemies\n"+
 			"- Your Defense: %d basic, %d sniper, %d splash towers\n\n"+
-			"Tower Options (cost):\n"+
-			"- basic (%s): Good all-around, effective early game\n"+
-			"- sniper (%s): High damage, excellent against tanks and late waves\n"+
-			"- splash (%s): Area damage, optimal against groups of fast enemies\n\n"+
+			"Your goal is to defend your base by placing towers strategically.\n"+
+			"CRITICAL: Place towers based on the current wave and enemy composition.\n\n"+
+			"Tower Options (choose wisely):\n"+
+			"- basic (100): Balanced tower, effective for early waves\n"+
+			"- sniper (250): High damage & range, excellent against tanks and late waves\n"+
+			"- splash (200): Area damage, optimal against groups of fast enemies\n\n"+
+			"Strategic Guidelines:\n"+
+			"- Early waves (1-5): Basic towers provide good value\n"+
+			"- Middle waves (6-15): Mix of all tower types is most effective\n"+
+			"- Later waves (16+): Prioritize snipers and splash towers\n"+
+			"- Consider your resource income vs. saving for powerful towers\n\n"+
 			"Current status:\n"+
+			"- Wave: %d\n"+
 			"- Resources: %d\n"+
-			"- Lives: %d\n\n"+
-			"AFFORDABILITY: %s\n\n"+
-			"POSITIONING STRATEGY:\n"+
-			"- If this is your first tower, try placing at corners or edges of map (like [2,2] or [2,60])\n"+
-			"- IMPORTANT: Vary your tower positions! Don't place all towers in the same area\n"+
-			"- Try positions at least 10 units apart from existing towers\n"+
-			"- Good positions include: [2,2], [5,5], [2,50], [5,40], [20,2], [20,20], [20,60], etc.\n\n"+
-			"RESPONSE INSTRUCTIONS:\n"+
-			"1. If wave > 15 AND you can afford it: Choose sniper towers\n"+
-			"2. If fast enemies present AND you can afford it: Choose splash towers\n"+
-			"3. If resources < 200: Choose basic towers\n"+
-			"4. Recommended tower for current situation: %s\n\n"+
-			"Respond ONLY in this exact JSON format: {\"action\": \"place\", \"tower_type\": \"%s\", \"position\": [%d, %d]}\n"+
-			"Valid tower types: \"basic\", \"sniper\", \"splash\"\n"+
-			"IMPORTANT: ALWAYS place a tower if you have resources. NEVER request a tower type you cannot afford.",
+			"- Lives remaining: %d\n\n"+
+			"IMPORTANT: Choose ONE action now:\n"+
+			"1. Place a new tower (specify type and position)\n"+
+			"2. Save resources for a stronger tower (only if you have adequate defenses)\n\n"+
+			"Respond ONLY in this exact JSON format: {\"action\": \"place\", \"tower_type\": \"basic\", \"position\": [y, x]}\n"+
+			"Valid actions: place, save\n"+
+			"Valid tower types: basic, sniper, splash",
 		resources, lives, wave,
-		wave,
 		basicCount, fastCount, tankCount,
 		basicTowers, sniperTowers, splashTowers,
-		towerCosts["basic"], towerCosts["sniper"], towerCosts["splash"],
-		resources, lives,
-		affordabilityMsg,
-		recommendedTower,
-		recommendedTower,             // Default to the recommended tower type in the example JSON
-		examplePos[0], examplePos[1], // Use strategic position in example
+		wave, resources, lives,
 	)
 	return prompt
 }
@@ -488,24 +410,15 @@ func (h *OpenAIHandler) parseTowerResponse(response string) (map[string]interfac
 					}
 					return decision, nil
 				} else if action == "save" {
-					// Convert "save" to "place" action if it's an early wave or we have enough resources
-					// This makes the AI more aggressive about tower placement
-					return map[string]interface{}{
-						"action":     "place",
-						"tower_type": "basic",
-						"position":   []int{10, 10},
-						"reason":     "Converted save to place for better defense",
-					}, nil
+					return decision, nil
 				}
 			}
 		}
 	}
 
-	// Fallback to basic parsing - prioritize placing towers over saving
+	// Fallback to basic parsing
 	responseText := strings.ToLower(response)
-	if strings.Contains(responseText, "place") || strings.Contains(responseText, "tower") ||
-		strings.Contains(responseText, "sniper") || strings.Contains(responseText, "splash") ||
-		strings.Contains(responseText, "basic") {
+	if strings.Contains(responseText, "place") {
 		towerType := "basic"
 		if strings.Contains(responseText, "sniper") {
 			towerType = "sniper"
@@ -516,16 +429,21 @@ func (h *OpenAIHandler) parseTowerResponse(response string) (map[string]interfac
 			"action":     "place",
 			"tower_type": towerType,
 			"position":   []int{10, 10},
-			"reason":     "Extracted tower type from text response",
+			"reason":     "Extracted from text response",
+		}, nil
+	} else if strings.Contains(responseText, "save") {
+		return map[string]interface{}{
+			"action": "save",
+			"reason": "Saving resources",
 		}, nil
 	}
 
-	// Default to placing a basic tower in almost all cases
+	// Default to placing a basic tower
 	return map[string]interface{}{
 		"action":     "place",
 		"tower_type": "basic",
 		"position":   []int{10, 10},
-		"reason":     "Default action - placing basic tower for defense",
+		"reason":     "Default action - placing basic tower",
 	}, nil
 }
 
@@ -535,38 +453,14 @@ type GeminiHandler struct {
 
 func (h *GeminiHandler) GetEnemyDecision(gameState map[string]interface{}) (map[string]interface{}, error) {
 	fmt.Println("\n=== Gemini's Turn ===")
-
-	// Extract resources for decision making
-	var resources int = 0
-	if resourcesMap, ok := gameState["resources"].(map[string]interface{}); ok {
-		if geminiResources, ok := resourcesMap["gemini"].(int); ok {
-			resources = geminiResources
-		}
-	}
-
-	// Extract wave number
-	var wave int = 1
-	if waveVal, ok := gameState["wave"].(int); ok {
-		wave = waveVal
-	}
-
-	fmt.Printf("Current resources: %d\n", resources)
-	fmt.Printf("Current wave: %d\n", wave)
+	fmt.Printf("Current resources: %d\n", gameState["resources"].(map[string]interface{})["gemini"].(int))
+	fmt.Printf("Current wave: %d\n", gameState["wave"].(int))
 	fmt.Printf("Current enemies: %d\n", len(gameState["enemies"].([]interface{})))
-
-	// Make direct decision based on resources for efficiency if high resources
-	if resources >= 200 {
-		fmt.Println("Skipping API call - Resources sufficient for wave launch")
-		return map[string]interface{}{
-			"action": "wave",
-			"reason": "Auto-decision: High resources available for wave launch",
-		}, nil
-	}
 
 	prompt := h.createEnemyPrompt(gameState)
 	fmt.Println("Sending prompt to Gemini...")
 
-	// Create request body with proper structure
+	// Create request body
 	reqBody := map[string]interface{}{
 		"contents": []map[string]interface{}{
 			{
@@ -584,8 +478,7 @@ func (h *GeminiHandler) GetEnemyDecision(gameState map[string]interface{}) (map[
 	reqJSON, err := json.Marshal(reqBody)
 	if err != nil {
 		fmt.Println("Error marshaling request:", err)
-		// Return fallback decision on error
-		return getFallbackEnemyDecision(resources), nil
+		return nil, err
 	}
 
 	req, err := http.NewRequest("POST",
@@ -593,7 +486,7 @@ func (h *GeminiHandler) GetEnemyDecision(gameState map[string]interface{}) (map[
 		bytes.NewBuffer(reqJSON))
 	if err != nil {
 		fmt.Println("Error creating request:", err)
-		return getFallbackEnemyDecision(resources), nil
+		return nil, err
 	}
 
 	req.Header.Set("Content-Type", "application/json")
@@ -602,7 +495,7 @@ func (h *GeminiHandler) GetEnemyDecision(gameState map[string]interface{}) (map[
 	resp, err := h.Client.Do(req)
 	if err != nil {
 		fmt.Println("Error sending request:", err)
-		return getFallbackEnemyDecision(resources), nil
+		return nil, err
 	}
 	defer resp.Body.Close()
 
@@ -610,14 +503,14 @@ func (h *GeminiHandler) GetEnemyDecision(gameState map[string]interface{}) (map[
 	err = json.NewDecoder(resp.Body).Decode(&result)
 	if err != nil {
 		fmt.Println("Error decoding response:", err)
-		return getFallbackEnemyDecision(resources), nil
+		return nil, err
 	}
 
 	// Extract response content
 	candidates, ok := result["candidates"].([]interface{})
 	if !ok || len(candidates) == 0 {
 		fmt.Println("No candidates in response")
-		return getFallbackEnemyDecision(resources), nil
+		return map[string]interface{}{"action": "none", "reason": "API response error"}, nil
 	}
 
 	candidate := candidates[0].(map[string]interface{})
@@ -673,53 +566,54 @@ func (h *GeminiHandler) createEnemyPrompt(gameState map[string]interface{}) stri
 		}
 	}
 
-	// Calculate wave cost with more affordable values to encourage spawning
-	waveCost := 40 + (wave * 5)
-	if waveCost > 200 {
-		waveCost = 200 // Cap at 200 to ensure it's affordable
+	// Calculate the approximate wave cost to help with strategic planning
+	baseCost := 45
+	scalingFactor := int(math.Pow(float64(wave), 0.8) * 8)
+	estimatedWaveCost := baseCost + scalingFactor
+	maxCost := 250 + (wave/10)*50
+	if maxCost > 500 {
+		maxCost = 500
+	}
+	if estimatedWaveCost > maxCost {
+		estimatedWaveCost = maxCost
 	}
 
 	prompt := fmt.Sprintf(
 		"You are playing a tower defense game as Gemini. You have %d resources, %d lives, and are on wave %d.\n\n"+
-			"IMPORTANT: Your goal is to AGGRESSIVELY send enemies to overwhelm the opponent. You MUST spawn multiple enemies every turn!\n\n"+
 			"Strategic Analysis:\n"+
 			"- Opponent's Defense: %d basic, %d sniper, %d splash towers\n"+
 			"- Active enemies: %d\n\n"+
-			"Enemy Options (cost) - CHOOSE ONE NOW:\n"+
-			"- basic (20): Good value basic enemy\n"+
-			"- fast (30): Excellent against snipers\n"+
-			"- tank (50): Strong against all towers\n"+
-			"- wave (%d): Launches multiple enemies at once (best value)\n\n"+
+			"Your goal is to overwhelm the opponent by spawning strategic enemies.\n\n"+
+			"Enemy Options (choose strategically):\n"+
+			"- basic (20): Balanced stats, cost-effective for overwhelming with numbers\n"+
+			"- fast (30): Fast movement, good against sniper towers and for quick pressure\n"+
+			"- tank (50): High health, effective against basic towers and late game\n\n"+
+			"Wave Launch: Costs ~%d resources, sends multiple varied enemies at once\n\n"+
+			"Strategic Guidelines:\n"+
+			"- Against basic towers: Use tanks or large numbers of basic enemies\n"+
+			"- Against sniper towers: Use fast enemies to overwhelm them\n"+
+			"- Against splash towers: Use tanks or spaced-out enemies\n"+
+			"- Launching waves creates more pressure but requires resource planning\n\n"+
 			"Current status:\n"+
 			"- Wave: %d\n"+
-			"- Resources: %d\n\n"+
-			"RESPONSE INSTRUCTIONS:\n"+
-			"1. If you have 200+ resources: ALWAYS launch a wave\n"+
-			"2. If you have 50+ resources: Spawn a tank enemy\n"+
-			"3. Otherwise: Spawn a basic or fast enemy\n"+
-			"Respond ONLY in this JSON format: {\"action\": \"spawn\", \"enemy_type\": \"fast\"}\n"+
-			"Valid actions: \"spawn\" or \"wave\" ONLY\n"+
+			"- Resources: %d\n"+
+			"- Lives remaining: %d\n\n"+
+			"IMPORTANT: Choose ONE action now:\n"+
+			"1. Spawn a single enemy (specify type for targeted pressure)\n"+
+			"2. Launch a wave (for overwhelming force, if you have enough resources)\n"+
+			"3. Save resources (only if you need to accumulate for a strategic wave)\n\n"+
+			"Respond ONLY in this exact JSON format: {\"action\": \"spawn\", \"enemy_type\": \"fast\"}\n"+
+			"Valid actions are ONLY: \"spawn\", \"wave\", or \"save\"\n"+
 			"Valid enemy types: \"basic\", \"fast\", or \"tank\"",
 		resources, lives, wave,
 		basicTowers, sniperTowers, splashTowers, len(enemies),
-		waveCost,
-		wave, resources,
+		estimatedWaveCost,
+		wave, resources, lives,
 	)
 	return prompt
 }
 
 func (h *GeminiHandler) parseEnemyResponse(response string) (map[string]interface{}, error) {
-	// Handle empty response
-	if response == "" {
-		// Default to spawn action with basic enemy when no response
-		fmt.Println("Empty response from Gemini API, using fallback action")
-		return map[string]interface{}{
-			"action":     "spawn",
-			"enemy_type": "basic",
-			"reason":     "Fallback due to empty API response",
-		}, nil
-	}
-
 	// Try to extract JSON from the response
 	re := regexp.MustCompile(`\{.*\}`)
 	match := re.FindString(response)
@@ -744,7 +638,6 @@ func (h *GeminiHandler) parseEnemyResponse(response string) (map[string]interfac
 						"reason": "Launching wave attack",
 					}, nil
 				} else if action == "save" {
-					// Only allow saving if resources are low and there are no enemies
 					return map[string]interface{}{
 						"action": "save",
 						"reason": "Saving resources",
@@ -756,12 +649,7 @@ func (h *GeminiHandler) parseEnemyResponse(response string) (map[string]interfac
 
 	// Fallback to basic parsing based on text content
 	responseText := strings.ToLower(response)
-	if strings.Contains(responseText, "wave") {
-		return map[string]interface{}{
-			"action": "wave",
-			"reason": "Launching wave based on text analysis",
-		}, nil
-	} else if strings.Contains(responseText, "spawn") {
+	if strings.Contains(responseText, "spawn") {
 		enemyType := "basic"
 		if strings.Contains(responseText, "fast") {
 			enemyType = "fast"
@@ -774,60 +662,24 @@ func (h *GeminiHandler) parseEnemyResponse(response string) (map[string]interfac
 			"enemy_type": enemyType,
 			"reason":     "Spawning enemy based on text analysis",
 		}, nil
+	} else if strings.Contains(responseText, "wave") {
+		return map[string]interface{}{
+			"action": "wave",
+			"reason": "Launching wave based on text analysis",
+		}, nil
 	} else if strings.Contains(responseText, "save") {
 		return map[string]interface{}{
-			"action":     "spawn", // Convert save to spawn for more aggressive gameplay
-			"enemy_type": "basic",
-			"reason":     "Converted save action to spawn basic",
+			"action": "save",
+			"reason": "Saving resources based on text analysis",
 		}, nil
 	}
 
-	// Make decision based on available resources
-	if len(responseText) > 0 {
-		fmt.Printf("Couldn't parse response '%s', using resource-based fallback\n", responseText)
-	} else {
-		fmt.Println("Empty or invalid response, using resource-based fallback")
-	}
-
-	// Default to spawning a basic enemy or wave based on available resources
+	// Default to spawning a basic enemy
 	return map[string]interface{}{
 		"action":     "spawn",
 		"enemy_type": "basic",
 		"reason":     "Default action - spawning basic enemy",
 	}, nil
-}
-
-// Helper function to get a reasonable fallback decision based on resources
-func getFallbackEnemyDecision(resources int) map[string]interface{} {
-	if resources >= 200 {
-		return map[string]interface{}{
-			"action": "wave",
-			"reason": "Fallback decision: high resources available",
-		}
-	} else if resources >= 50 {
-		return map[string]interface{}{
-			"action":     "spawn",
-			"enemy_type": "tank",
-			"reason":     "Fallback decision: spawn tank with medium resources",
-		}
-	} else if resources >= 30 {
-		return map[string]interface{}{
-			"action":     "spawn",
-			"enemy_type": "fast",
-			"reason":     "Fallback decision: spawn fast with low resources",
-		}
-	} else if resources >= 20 {
-		return map[string]interface{}{
-			"action":     "spawn",
-			"enemy_type": "basic",
-			"reason":     "Fallback decision: spawn basic with minimal resources",
-		}
-	} else {
-		return map[string]interface{}{
-			"action": "save",
-			"reason": "Fallback decision: insufficient resources for any enemy",
-		}
-	}
 }
 
 // Game struct and methods
@@ -904,9 +756,9 @@ func NewGame() *Game {
 		},
 		CurrentTurn:        "chatgpt", // ChatGPT goes first
 		LastActionTime:     time.Now(),
-		MaxResources:       800,              // Reduced maximum resources to encourage spending
-		MaxWaves:           30,               // Reduced to have a more focused game
-		TurnTimeout:        45 * time.Second, // Increased timeout to allow more API response time
+		MaxResources:       1000,             // Maximum resources per player
+		MaxWaves:           50,               // Maximum number of waves
+		TurnTimeout:        30 * time.Second, // Timeout for each turn
 		lastStatePrintTime: time.Now(),
 		lastEnemyCount:     0,
 		lastTowerCount:     0,
@@ -920,94 +772,77 @@ func NewGame() *Game {
 
 func (g *Game) generatePath() []Position {
 	path := make([]Position, 0)
+	zigzagHeight := g.MapHeight / 3
+	centerY := g.MapHeight / 2
 
-	// Create a path that leaves more space for tower placement
-	// Use a more compact zigzag that stays centered in the map
-
-	// Adjust zigzag parameters to leave more space
-	zigzagHeight := g.MapHeight / 4           // Reduced from /3 to /4 to make narrower
-	centerY := g.MapHeight / 2                // Keep center at middle
-	pathWidth := int(float64(g.Width) * 0.65) // Use only 65% of width
-
-	// Entry point from left side - keep compact
-	startY := centerY
-	startX := 1
-	for i := 0; i < 3; i++ { // Reduced from 5 to 3
-		path = append(path, Position{Y: startY, X: startX + i})
+	// Entry point
+	for i := 0; i < 5; i++ {
+		path = append(path, Position{Y: centerY, X: i})
 	}
 
-	// Calculate bounds of zigzag to keep it more centered
-	leftBound := 5                           // Start zigzag further to the right
-	rightBound := pathWidth                  // End before reaching far right
-	zigzagTop := centerY - zigzagHeight/2    // Raise the top of zigzag
-	zigzagBottom := centerY + zigzagHeight/2 // Lower the bottom of zigzag
-
-	// Create more gentle zigzag
-	x := leftBound
-	goingDown := true
-
-	for x < rightBound {
-		x++ // Move right one step at a time
-
-		if goingDown {
-			// Going from top to bottom
-			for y := zigzagTop; y <= zigzagBottom; y++ {
+	// Zigzag across
+	x := 5
+	goingUp := true
+	for x < g.Width-10 {
+		x++
+		if goingUp {
+			for y := centerY; y > centerY-zigzagHeight; y-- {
 				path = append(path, Position{Y: y, X: x})
 			}
-			goingDown = false
+			goingUp = false
 		} else {
-			// Going from bottom to top
-			for y := zigzagBottom; y >= zigzagTop; y-- {
+			for y := centerY - zigzagHeight; y < centerY; y++ {
 				path = append(path, Position{Y: y, X: x})
 			}
-			goingDown = true
-		}
-
-		// Skip some horizontal space to make zigzag wider and leave room for towers
-		if x < rightBound-10 {
-			x += 2 // Add horizontal spacing between zigzags
+			goingUp = true
 		}
 	}
 
-	// Exit path to right edge
+	// Exit point
 	lastPos := path[len(path)-1]
-	for i := 1; i <= 3; i++ { // Reduced from 5 to 3
+	for i := 1; i <= 5; i++ {
 		path = append(path, Position{Y: lastPos.Y, X: lastPos.X + i})
 	}
-
-	// Print path dimensions for debugging
-	minY, maxY := g.MapHeight, 0
-	minX, maxX := g.Width, 0
-
-	for _, pos := range path {
-		if pos.Y < minY {
-			minY = pos.Y
-		}
-		if pos.Y > maxY {
-			maxY = pos.Y
-		}
-		if pos.X < minX {
-			minX = pos.X
-		}
-		if pos.X > maxX {
-			maxX = pos.X
-		}
-	}
-
-	pathWidthDim := maxX - minX
-	pathHeightDim := maxY - minY
-
-	fmt.Printf("Path generated: %d positions, bounds: Y[%d-%d], X[%d-%d], dimensions: %d×%d\n",
-		len(path), minY, maxY, minX, maxX, pathWidthDim, pathHeightDim)
-	fmt.Printf("Free area for towers: approximately %.1f%% of map\n",
-		100.0-(float64(len(path)*4)/float64(g.MapHeight*g.Width)*100.0))
 
 	return path
 }
 
 func (g *Game) handleAIDecisions() {
-	gameState := g.getGameState()
+	if !g.AIEnabled {
+		return
+	}
+
 	currentTime := time.Now()
+	gameState := g.getGameState()
+
+	// Log game state periodically for debugging
+	if currentTime.Sub(g.lastStatePrintTime) > 10*time.Second {
+		fmt.Println("\n=== Game State ===")
+		fmt.Printf("Wave: %d\n", g.Wave)
+		fmt.Printf("Current Turn: %s\n", g.CurrentTurn)
+		fmt.Printf("ChatGPT - Lives: %d, Resources: %d, Score: %d\n",
+			g.Lives["chatgpt"], g.Resources["chatgpt"], g.Score["chatgpt"])
+		fmt.Printf("Gemini - Resources: %d, Score: %d\n",
+			g.Resources["gemini"], g.Score["gemini"])
+		fmt.Printf("Active Towers: %d, Active Enemies: %d\n",
+			len(g.Towers), len(g.Enemies))
+		fmt.Printf("Wave Queue: %d enemies\n", len(g.WaveQueue))
+		fmt.Printf("Time since last action: %.1f seconds\n",
+			currentTime.Sub(g.LastActionTime).Seconds())
+		fmt.Println("==================\n")
+		g.lastStatePrintTime = currentTime
+	}
+
+	// If any AI is thinking, don't allow new decisions
+	if g.AIThinking["chatgpt"] || g.AIThinking["gemini"] {
+		// Only print once every few seconds to avoid log spam
+		timeLastPrinted := g.LastAIDecision[g.CurrentTurn].Add(2 * time.Second)
+		if currentTime.After(timeLastPrinted) {
+			fmt.Printf("Waiting for %s to finish thinking...\n", g.CurrentTurn)
+			g.LastAIDecision[g.CurrentTurn] = currentTime
+		}
+		return
+	}
 
 	// Check if game should end due to timeout or max waves
 	if currentTime.Sub(g.LastActionTime) > g.TurnTimeout {
@@ -1026,18 +861,6 @@ func (g *Game) handleAIDecisions() {
 	// Only allow AI to make a move if it's their turn
 	if g.CurrentTurn == "chatgpt" && !g.AIThinking["chatgpt"] && g.AIEnabled {
 		fmt.Println("\n=== ChatGPT's Turn ===")
-
-		// Check if there are enough resources for at least a basic tower before making the API call
-		chatgptResources := g.Resources["chatgpt"]
-		lowestTowerCost := 100 // Cost of the cheapest tower (basic)
-
-		if chatgptResources < lowestTowerCost {
-			fmt.Printf("ChatGPT has insufficient resources (%d) for any tower. Saving resources.\n", chatgptResources)
-			g.LastDecisions["chatgpt"] = "Insufficient resources for any tower"
-			g.CurrentTurn = "gemini" // Switch to Gemini's turn
-			return
-		}
-
 		g.AIThinking["chatgpt"] = true
 		g.LastActionTime = currentTime
 
@@ -1053,127 +876,35 @@ func (g *Game) handleAIDecisions() {
 						towerType = "basic"
 					}
 
-					// Check if we have enough resources for the chosen tower type
-					towerCosts := map[string]int{"basic": 100, "sniper": 250, "splash": 200, "custom": 150}
-					cost, exists := towerCosts[towerType]
-					if !exists {
-						cost = 100 // Default to basic cost if type not found
-					}
-
-					if g.Resources["chatgpt"] < cost {
-						// Not enough resources for this tower type, downgrade to a more affordable type
-						if g.Resources["chatgpt"] >= 200 {
-							fmt.Printf("Downgrading choice from %s to splash tower due to resource constraints\n", towerType)
-							towerType = "splash"
-						} else if g.Resources["chatgpt"] >= 100 {
-							fmt.Printf("Downgrading choice from %s to basic tower due to resource constraints\n", towerType)
-							towerType = "basic"
-						} else {
-							fmt.Printf("Not enough resources (%d) for any tower, saving for next turn\n", g.Resources["chatgpt"])
-							g.LastDecisions["chatgpt"] = "Insufficient resources - saving for next turn"
-							g.CurrentTurn = "gemini" // Switch to Gemini's turn
-							g.AIThinking["chatgpt"] = false
-							return
-						}
-					}
-
 					position, ok := decision["position"].([]interface{})
-
-					// Set default position near the corners or edges for better coverage
-					y, x := 2, 2 // Default to top-left corner
-
-					// If position is specified in the response, use it
+					y, x := 10, 10
 					if ok && len(position) >= 2 {
 						y = int(position[0].(float64))
 						x = int(position[1].(float64))
-					} else {
-						// Use strategic positions
-						rand.Seed(time.Now().UnixNano())
-
-						// Array of good strategic positions to try
-						goodPositions := [][]int{
-							{2, 2}, {2, g.Width - 3},
-							{g.MapHeight - 3, 2}, {g.MapHeight - 3, g.Width - 3},
-							{g.MapHeight / 3, g.Width / 3},
-							{g.MapHeight / 3, 2 * g.Width / 3},
-							{2 * g.MapHeight / 3, g.Width / 3},
-							{2 * g.MapHeight / 3, 2 * g.Width / 3},
-						}
-
-						// Select a random good position
-						pos := goodPositions[rand.Intn(len(goodPositions))]
-						y, x = pos[0], pos[1]
 					}
 
-					// Attempt to place the tower
-					placed := g.placeTower(y, x, towerType)
+					placed := false
+					for offY := -5; offY <= 5 && !placed; offY++ {
+						for offX := -5; offX <= 5 && !placed; offX++ {
+							tryY, tryX := y+offY, x+offX
+							if tryY > 0 && tryY < g.MapHeight && tryX > 0 && tryX < g.Width {
+								placed = g.placeTower(tryY, tryX, towerType)
+							}
+						}
+					}
 
 					if placed {
 						fmt.Printf("Successfully placed %s tower\n", towerType)
 						g.LastDecisions["chatgpt"] = fmt.Sprintf("Placed %s tower", towerType)
+						g.CurrentTurn = "gemini" // Switch to Gemini's turn
 					} else {
-						// Try a different tower type if placement failed - maybe the map is crowded
-						if towerType != "basic" {
-							fmt.Printf("Failed to place %s tower, trying basic tower instead\n", towerType)
-							placed = g.placeTower(y, x, "basic")
-							if placed {
-								fmt.Printf("Successfully placed basic tower as fallback\n")
-								g.LastDecisions["chatgpt"] = "Placed basic tower as fallback"
-							} else {
-								fmt.Printf("Failed to place any tower - map may be too crowded\n")
-								g.LastDecisions["chatgpt"] = "Failed to place any tower"
-							}
-						} else {
-							fmt.Printf("Failed to place basic tower - map may be too crowded\n")
-							g.LastDecisions["chatgpt"] = "Failed to place basic tower"
-						}
+						fmt.Printf("Failed to place %s tower\n", towerType)
+						g.LastDecisions["chatgpt"] = fmt.Sprintf("Failed to place %s tower", towerType)
+						g.CurrentTurn = "gemini" // Still switch turns even on failure
 					}
-					g.CurrentTurn = "gemini" // Switch to Gemini's turn
-				} else if action == "save" {
-					// Only allow saving if we have a lot of towers already
-					if len(g.Towers) >= 5 {
-						fmt.Println("ChatGPT decided to save resources")
-						g.LastDecisions["chatgpt"] = "Saving resources"
-					} else {
-						// Force tower placement for better defense if fewer than 5 towers
-						fmt.Println("Converting save action to tower placement for better defense")
-						towerType := "basic"
-						if g.Resources["chatgpt"] >= 250 {
-							towerType = "sniper"
-						} else if g.Resources["chatgpt"] >= 200 {
-							towerType = "splash"
-						}
-
-						// Use strategic default position
-						y, x := 2, 2
-						if len(g.Towers) == 1 {
-							y, x = 2, g.Width-3 // Top right
-						} else if len(g.Towers) == 2 {
-							y, x = g.MapHeight-3, 2 // Bottom left
-						} else if len(g.Towers) == 3 {
-							y, x = g.MapHeight-3, g.Width-3 // Bottom right
-						} else {
-							y, x = g.MapHeight/2, g.Width/2 // Center
-						}
-
-						placed := g.placeTower(y, x, towerType)
-						if placed {
-							fmt.Printf("Successfully placed %s tower at strategic position\n", towerType)
-							g.LastDecisions["chatgpt"] = fmt.Sprintf("Placed %s tower at strategic position", towerType)
-						} else {
-							fmt.Println("Failed to place tower at strategic position")
-							g.LastDecisions["chatgpt"] = "Failed to place tower at strategic position"
-						}
-					}
-					g.CurrentTurn = "gemini" // Switch to Gemini's turn
 				} else {
-					fmt.Println("ChatGPT made invalid decision, defaulting to placing basic tower")
-					placed := g.placeTower(2, 2, "basic")
-					if placed {
-						g.LastDecisions["chatgpt"] = "Placed basic tower (default action)"
-					} else {
-						g.LastDecisions["chatgpt"] = "Failed to place tower (invalid decision)"
-					}
+					fmt.Println("ChatGPT decided to save resources")
+					g.LastDecisions["chatgpt"] = "Saving resources"
 					g.CurrentTurn = "gemini" // Switch to Gemini's turn
 				}
 			} else {
@@ -1186,15 +917,6 @@ func (g *Game) handleAIDecisions() {
 		}()
 	} else if g.CurrentTurn == "gemini" && !g.AIThinking["gemini"] && g.AIEnabled {
 		fmt.Println("\n=== Gemini's Turn ===")
-
-		// Check if Gemini has enough resources for at least a basic enemy
-		if g.Resources["gemini"] < 20 { // 20 is cost of basic enemy
-			fmt.Printf("Gemini has insufficient resources (%d) for any enemy. Saving resources.\n", g.Resources["gemini"])
-			g.LastDecisions["gemini"] = "Insufficient resources for any enemy"
-			g.CurrentTurn = "chatgpt" // Switch to ChatGPT's turn
-			return
-		}
-
 		g.AIThinking["gemini"] = true
 		g.LastActionTime = currentTime
 
@@ -1210,103 +932,38 @@ func (g *Game) handleAIDecisions() {
 						enemyType = "basic"
 					}
 
-					// Check if we have enough resources for the chosen enemy type
-					enemyCosts := map[string]int{"basic": 20, "fast": 30, "tank": 50, "custom": 40}
-					cost, exists := enemyCosts[enemyType]
-					if !exists {
-						cost = 20 // Default to basic cost if type not found
-					}
-
-					// Downgrade enemy type if not enough resources
-					if g.Resources["gemini"] < cost {
-						if g.Resources["gemini"] >= 30 {
-							fmt.Printf("Downgrading choice from %s to fast enemy due to resource constraints\n", enemyType)
-							enemyType = "fast"
-						} else if g.Resources["gemini"] >= 20 {
-							fmt.Printf("Downgrading choice from %s to basic enemy due to resource constraints\n", enemyType)
-							enemyType = "basic"
-						} else {
-							fmt.Printf("Not enough resources (%d) for any enemy, saving for next turn\n", g.Resources["gemini"])
-							g.LastDecisions["gemini"] = "Insufficient resources - saving for next turn"
-							g.CurrentTurn = "chatgpt" // Switch to ChatGPT's turn
-							g.AIThinking["gemini"] = false
-							return
-						}
-					}
-
 					fmt.Printf("Attempting to spawn %s enemy\n", enemyType)
 					spawned := g.spawnEnemy(enemyType, nil)
 					if spawned {
 						fmt.Printf("Successfully spawned %s enemy\n", enemyType)
 						g.LastDecisions["gemini"] = fmt.Sprintf("Spawned %s enemy", enemyType)
+						g.CurrentTurn = "chatgpt" // Switch to ChatGPT's turn
 					} else {
 						fmt.Printf("Failed to spawn %s enemy (not enough resources or invalid type)\n", enemyType)
 						g.LastDecisions["gemini"] = fmt.Sprintf("Failed to spawn %s enemy", enemyType)
+						g.CurrentTurn = "chatgpt" // Still switch turns even on failure
 					}
-					g.CurrentTurn = "chatgpt" // Switch to ChatGPT's turn
 				} else if action == "wave" {
-					waveCost := 40 + (g.Wave * 5) // Match the calculation in spawnWave
-					if waveCost > 200 {
-						waveCost = 200 // Cap at 200 to ensure it's affordable
-					}
-
+					waveCost := g.Wave * 50 // Make sure this matches the cost in spawnWave
 					fmt.Printf("Attempting to launch wave %d (cost: %d, available: %d)\n",
 						g.Wave, waveCost, g.Resources["gemini"])
 
 					if g.spawnWave() {
 						fmt.Printf("Wave %d launched successfully\n", g.Wave)
 						g.LastDecisions["gemini"] = fmt.Sprintf("Launched wave %d", g.Wave)
+						g.CurrentTurn = "chatgpt" // Switch to ChatGPT's turn
 					} else {
 						fmt.Printf("Failed to launch wave (not enough resources, need %d)\n", waveCost)
-
-						// Fall back to spawning a basic enemy if wave launch fails
-						if g.Resources["gemini"] >= 20 {
-							fmt.Printf("Falling back to spawning basic enemy\n")
-							if g.spawnEnemy("basic", nil) {
-								g.LastDecisions["gemini"] = "Spawned basic enemy (fallback from wave)"
-							} else {
-								g.LastDecisions["gemini"] = "Failed to spawn fallback enemy"
-							}
-						} else {
-							g.LastDecisions["gemini"] = "Failed to launch wave (not enough resources)"
-						}
+						g.LastDecisions["gemini"] = "Failed to launch wave (not enough resources)"
+						g.CurrentTurn = "chatgpt" // Still switch turns even on failure
 					}
-					g.CurrentTurn = "chatgpt" // Switch to ChatGPT's turn
 				} else if action == "save" {
-					// Only allow saving if resources are very low
-					if g.Resources["gemini"] < 30 {
-						fmt.Println("Gemini decided to save resources")
-						g.LastDecisions["gemini"] = "Saving resources"
-					} else {
-						// Convert save to spawn for more aggression
-						fmt.Println("Converting save action to spawn for better aggression")
-						enemyType := "basic"
-						if g.Resources["gemini"] >= 50 {
-							enemyType = "tank"
-						} else if g.Resources["gemini"] >= 30 {
-							enemyType = "fast"
-						}
-
-						if g.spawnEnemy(enemyType, nil) {
-							g.LastDecisions["gemini"] = fmt.Sprintf("Spawned %s enemy (converted from save)", enemyType)
-						} else {
-							g.LastDecisions["gemini"] = "Failed to spawn enemy (converted from save)"
-						}
-					}
+					fmt.Println("Gemini decided to save resources")
+					g.LastDecisions["gemini"] = "Saving resources"
 					g.CurrentTurn = "chatgpt" // Switch to ChatGPT's turn
 				} else {
 					fmt.Printf("Gemini made an invalid decision: %s\n", action)
-
-					// Default to spawning a basic enemy on invalid decision
-					if g.Resources["gemini"] >= 20 {
-						if g.spawnEnemy("basic", nil) {
-							g.LastDecisions["gemini"] = "Spawned basic enemy (default action)"
-						} else {
-							g.LastDecisions["gemini"] = "Failed to spawn enemy (invalid decision)"
-						}
-					} else {
-						g.LastDecisions["gemini"] = "Invalid decision - not enough resources"
-					}
+					g.LastDecisions["gemini"] = "Invalid decision"
 					g.CurrentTurn = "chatgpt" // Switch to ChatGPT's turn on error
 				}
 			} else {
@@ -1349,30 +1006,20 @@ func (g *Game) updateGameState() {
 		g.Resources["gemini"] = g.MaxResources
 	}
 
-	// Process enemies from the wave queue more aggressively
-	enemiesSpawnedThisTick := 0
-	maxEnemiesToSpawnPerTick := 3 // Spawn multiple enemies per tick for better gameplay
-
-	for len(g.WaveQueue) > 0 && len(g.Enemies) < 30 && enemiesSpawnedThisTick < maxEnemiesToSpawnPerTick {
+	// Process wave queue - spawn enemies from queue
+	if len(g.WaveQueue) > 0 && len(g.Enemies) < 20 {
 		enemyType := g.WaveQueue[0]
 		g.WaveQueue = g.WaveQueue[1:]
 
-		// Create enemy from queue
+		// Create enemy from queue without reducing resources
+		// (resources were already deducted when the wave was created)
 		if len(g.Path) > 0 {
 			startPos := g.Path[0]
 			enemy := NewEnemy(startPos.Y, startPos.X, enemyType, nil)
 			g.Enemies = append(g.Enemies, &enemy)
-			enemiesSpawnedThisTick++
-
-			if enemiesSpawnedThisTick == 1 || enemiesSpawnedThisTick == maxEnemiesToSpawnPerTick {
-				fmt.Printf("Spawned %s enemy from wave queue (Health: %d, Speed: %.1f)\n",
-					enemyType, enemy.Health, enemy.Speed)
-			}
+			fmt.Printf("Spawned enemy from wave queue: %s (Health: %d, Speed: %.1f)\n",
+				enemyType, enemy.Health, enemy.Speed)
 		}
-	}
-
-	if enemiesSpawnedThisTick > 0 {
-		fmt.Printf("Spawned %d enemies from wave queue this tick\n", enemiesSpawnedThisTick)
 	}
 
 	// Auto-progress wave if no enemies and no wave queue
@@ -1380,22 +1027,13 @@ func (g *Game) updateGameState() {
 		g.Wave++
 		fmt.Printf("\n=== Wave %d Starting ===\n", g.Wave)
 		// Give resources to both players at the start of each wave
-		waveBonus := 30 + (g.Wave/5)*10
-		if waveBonus > 80 {
-			waveBonus = 80 // Cap the wave bonus
-		}
+		g.Resources["chatgpt"] += 50
+		g.Resources["gemini"] += 50
+		fmt.Printf("Resources added - ChatGPT: +50, Gemini: +50\n")
 
-		g.Resources["chatgpt"] += waveBonus
-		g.Resources["gemini"] += waveBonus
-		fmt.Printf("Resources added - ChatGPT: +%d, Gemini: +%d\n",
-			waveBonus, waveBonus)
-
-		// For every 5th wave, give bonus resources
-		if g.Wave%5 == 0 {
-			bonusAmount := 50 + (g.Wave/10)*20
-			if bonusAmount > 150 {
-				bonusAmount = 150 // Cap bonus amount
-			}
+		// For every 10th wave, give bonus resources
+		if g.Wave%10 == 0 {
+			bonusAmount := 100
 			g.Resources["chatgpt"] += bonusAmount
 			g.Resources["gemini"] += bonusAmount
 			fmt.Printf("BONUS resources for wave %d - ChatGPT: +%d, Gemini: +%d\n",
@@ -1502,8 +1140,9 @@ func (g *Game) placeTower(y, x int, towerType string) bool {
 	// Validate tower type
 	validTypes := map[string]bool{
 		"basic":  true,
-		"splash": true,
 		"sniper": true,
+		"splash": true,
+		"custom": true,
 	}
 
 	if !validTypes[towerType] {
@@ -1511,181 +1150,39 @@ func (g *Game) placeTower(y, x int, towerType string) bool {
 		return false
 	}
 
-	// Check if resources are available
-	towerCosts := map[string]int{"basic": 100, "splash": 200, "sniper": 250}
-	cost := towerCosts[towerType]
+	// Check if position is valid (not on path)
+	for _, pos := range g.Path {
+		if abs(pos.Y-y) < 2 && abs(pos.X-x) < 2 {
+			return false
+		}
+	}
 
-	fmt.Printf("Attempting to place %s tower (cost: %d, available: %d) at position (%d,%d)\n",
-		towerType, cost, g.Resources["chatgpt"], y, x)
+	// Check if tower already exists at position
+	for _, tower := range g.Towers {
+		if abs(tower.Pos.Y-y) < 2 && abs(tower.Pos.X-x) < 2 {
+			return false
+		}
+	}
+
+	// Check if enough resources
+	towerCosts := map[string]int{"basic": 100, "sniper": 250, "splash": 200, "custom": 150}
+	cost, exists := towerCosts[towerType]
+	if !exists {
+		cost = 100 // Default to basic cost if type not found
+	}
+
+	fmt.Printf("Attempting to place %s tower (cost: %d, available: %d)\n",
+		towerType, cost, g.Resources["chatgpt"])
 
 	if g.Resources["chatgpt"] < cost {
 		fmt.Printf("Not enough resources to place %s tower\n", towerType)
 		return false
 	}
 
-	// Validate position
-	isValidPosition := true
-
-	// Check if position is valid (not on path)
-	for _, pos := range g.Path {
-		if abs(pos.Y-y) < 1 && abs(pos.X-x) < 1 {
-			isValidPosition = false
-			break
-		}
-	}
-
-	// Check if tower already exists at position
-	for _, tower := range g.Towers {
-		if abs(tower.Pos.Y-y) < 1 && abs(tower.Pos.X-x) < 1 {
-			isValidPosition = false
-			break
-		}
-	}
-
-	// Check if position is out of bounds
-	if y < 0 || y >= g.MapHeight || x < 0 || x >= g.MapWidth {
-		isValidPosition = false
-	}
-
-	// If the position is invalid, try to find nearby valid positions
-	if !isValidPosition {
-		fmt.Printf("Original position (%d,%d) invalid, searching for nearby valid positions...\n", y, x)
-
-		// Strategic positions (corners, edges)
-		strategicPositions := [][]int{
-			{2, 2}, {2, g.MapWidth - 3}, {g.MapHeight - 3, 2}, {g.MapHeight - 3, g.MapWidth - 3},
-			{2, 20}, {2, 40}, {2, 60}, {2, 77},
-			{5, 20}, {5, 40}, {5, 60}, {5, 77},
-			{15, 20}, {15, 40}, {15, 60}, {15, 77},
-			{g.MapHeight - 3, 20}, {g.MapHeight - 3, 40}, {g.MapHeight - 3, 60}, {g.MapHeight - 3, 77},
-			// Additional strategic positions
-			{3, 10}, {3, 30}, {3, 50}, {3, 70},
-			{7, 10}, {7, 30}, {7, 50}, {7, 70},
-			{10, 10}, {10, 30}, {10, 50}, {10, 70},
-			{13, 10}, {13, 30}, {13, 50}, {13, 70},
-		}
-
-		// Try strategic positions first
-		for _, pos := range strategicPositions {
-			tryY, tryX := pos[0], pos[1]
-
-			// Check if valid position
-			isValid := true
-
-			// Check if valid from path
-			for _, pathPos := range g.Path {
-				if abs(pathPos.Y-tryY) < 1 && abs(pathPos.X-tryX) < 1 {
-					isValid = false
-					break
-				}
-			}
-
-			// Check if tower exists nearby
-			for _, tower := range g.Towers {
-				if abs(tower.Pos.Y-tryY) < 1 && abs(tower.Pos.X-tryX) < 1 {
-					isValid = false
-					break
-				}
-			}
-
-			// Check if out of bounds
-			if tryY < 0 || tryY >= g.MapHeight || tryX < 0 || tryX >= g.MapWidth {
-				isValid = false
-			}
-
-			if isValid {
-				fmt.Printf("Successfully placed %s tower at strategic position (%d,%d)\n",
-					towerType, tryY, tryX)
-
-				tower := NewTower(tryY, tryX, towerType, nil)
-				g.Towers = append(g.Towers, &tower)
-				g.Resources["chatgpt"] -= cost
-
-				return true
-			}
-		}
-
-		// If no strategic position works, try spiral search (up to 12 steps)
-		maxSteps := 24 // Increased from 12 to 24 to expand search area
-		steps := 0
-
-		// Spiral search pattern
-		directions := [][]int{{0, 1}, {1, 0}, {0, -1}, {-1, 0}}
-		dirIdx := 0
-		stepSize := 1
-		stepsInCurrentDirection := 0
-
-		tryY, tryX := y, x
-
-		for steps < maxSteps {
-			tryY += directions[dirIdx][0]
-			tryX += directions[dirIdx][1]
-			steps++
-			stepsInCurrentDirection++
-
-			// Change direction when needed
-			if stepsInCurrentDirection == stepSize {
-				dirIdx = (dirIdx + 1) % 4
-				stepsInCurrentDirection = 0
-				if dirIdx == 0 || dirIdx == 2 {
-					stepSize++
-				}
-			}
-
-			// Check if too close to path
-			tooCloseToPath := false
-			for _, pathPos := range g.Path {
-				if abs(pathPos.Y-tryY) < 1 && abs(pathPos.X-tryX) < 1 {
-					tooCloseToPath = true
-					break
-				}
-			}
-
-			if tooCloseToPath {
-				continue
-			}
-
-			// Check if tower exists nearby
-			towerExists := false
-			for _, tower := range g.Towers {
-				if abs(tower.Pos.Y-tryY) < 1 && abs(tower.Pos.X-tryX) < 1 {
-					towerExists = true
-					break
-				}
-			}
-
-			if towerExists {
-				continue
-			}
-
-			// Check if out of bounds
-			if tryY < 0 || tryY >= g.MapHeight || tryX < 0 || tryX >= g.MapWidth {
-				continue
-			}
-
-			// Found a valid position
-			fmt.Printf("Successfully placed %s tower at position (%d,%d)\n",
-				towerType, tryY, tryX)
-
-			tower := NewTower(tryY, tryX, towerType, nil)
-			g.Towers = append(g.Towers, &tower)
-			g.Resources["chatgpt"] -= cost
-
-			return true
-		}
-
-		fmt.Printf("Failed to place %s tower after %d attempts\n", towerType, steps)
-		return false
-	}
-
-	// Original position is valid
-	fmt.Printf("Successfully placed %s tower at position (%d,%d)\n",
-		towerType, y, x)
-
+	// Place tower
 	tower := NewTower(y, x, towerType, nil)
 	g.Towers = append(g.Towers, &tower)
-	g.Resources["chatgpt"] -= cost
-
+	g.Resources["chatgpt"] -= tower.Cost
 	return true
 }
 
@@ -1742,10 +1239,20 @@ func minInt(a, b int) int {
 }
 
 func (g *Game) spawnWave() bool {
-	// Calculate wave cost with simplified affordable scaling to encourage more wave spawning
-	waveCost := 40 + (g.Wave * 5)
-	if waveCost > 200 {
-		waveCost = 200 // Cap at 200 to ensure it's affordable
+	// Calculate wave cost with better scaling that creates more strategic decisions
+	baseCost := 45 // Slightly reduced base cost
+	// More gradual scaling that increases difficulty but remains manageable
+	scalingFactor := int(math.Pow(float64(g.Wave), 0.8) * 8)
+	waveCost := baseCost + scalingFactor
+
+	// Progressive cap to allow for strategic resource management in late game
+	maxCost := 250 + (g.Wave/10)*50
+	if maxCost > 500 {
+		maxCost = 500 // Hard cap at 500 to keep the game balanced
+	}
+
+	if waveCost > maxCost {
+		waveCost = maxCost
 	}
 
 	fmt.Printf("Attempting to launch wave %d (cost: %d, available: %d)\n",
@@ -1756,21 +1263,20 @@ func (g *Game) spawnWave() bool {
 		return false
 	}
 
-	// Ensure a minimum number of enemies for each wave to make it challenging
-	baseEnemies := 5
-	numEnemies := baseEnemies + g.Wave
-	if numEnemies > 30 {
-		numEnemies = 30 // Reasonable cap for better game balance
+	// More strategic enemy count that scales better with wave number
+	numEnemies := g.Wave + int(math.Sqrt(float64(g.Wave))*5)
+	if numEnemies > 25 {
+		numEnemies = 25 // Reduced cap for better performance and game balance
 	}
 
 	fmt.Printf("Creating wave with %d enemies\n", numEnemies)
 
 	enemyTypes := make([]string, 0)
 
-	// More varied and aggressive waves as game progresses
+	// More varied waves as game progresses with better enemy distribution
 	if g.Wave < 5 {
-		// Early waves: Mostly basic enemies with some fast ones
-		basicCount := int(float64(numEnemies) * 0.6)
+		// Early waves: Mostly basic enemies with a few fast ones for variety
+		basicCount := int(float64(numEnemies) * 0.75)
 		fastCount := numEnemies - basicCount
 
 		for i := 0; i < basicCount; i++ {
@@ -1780,10 +1286,10 @@ func (g *Game) spawnWave() bool {
 			enemyTypes = append(enemyTypes, "fast")
 		}
 
-	} else if g.Wave < 15 {
-		// Mid waves: Balanced mix with more fast enemies
-		basicCount := int(float64(numEnemies) * 0.4)
-		fastCount := int(float64(numEnemies) * 0.4)
+	} else if g.Wave < 12 {
+		// Mid waves: Better balance of basic, fast and a few tanks
+		basicCount := int(float64(numEnemies) * 0.5)
+		fastCount := int(float64(numEnemies) * 0.35)
 		tankCount := numEnemies - basicCount - fastCount
 
 		for i := 0; i < basicCount; i++ {
@@ -1797,9 +1303,9 @@ func (g *Game) spawnWave() bool {
 		}
 
 	} else {
-		// Late waves: Tank-heavy mix for challenge
-		basicCount := int(float64(numEnemies) * 0.2)
-		fastCount := int(float64(numEnemies) * 0.4)
+		// Late waves: Even mix with more tanks
+		basicCount := int(float64(numEnemies) * 0.3)
+		fastCount := int(float64(numEnemies) * 0.3)
 		tankCount := numEnemies - basicCount - fastCount
 
 		for i := 0; i < basicCount; i++ {
@@ -1813,10 +1319,19 @@ func (g *Game) spawnWave() bool {
 		}
 	}
 
+	// Shuffle the types for variety
+	rand.Shuffle(len(enemyTypes), func(i, j int) {
+		enemyTypes[i], enemyTypes[j] = enemyTypes[j], enemyTypes[i]
+	})
+
+	fmt.Printf("Wave composition: %d total enemies (%d in queue before adding)\n",
+		len(enemyTypes), len(g.WaveQueue))
+
 	// Add to wave queue
 	g.WaveQueue = append(g.WaveQueue, enemyTypes...)
 
-	// Subtract cost
+	// Subtract cost but DO NOT increment wave
+	// Wave only increments when all enemies are cleared
 	g.Resources["gemini"] -= waveCost
 
 	fmt.Printf("Wave %d launched successfully with %d enemies in queue\n",
@@ -1837,21 +1352,37 @@ func (g *Game) Run() {
 	ticker := time.NewTicker(time.Duration(g.GameSpeed * float64(time.Second)))
 	defer ticker.Stop()
 
-	for !g.GameOver {
+	running := true
+	for running {
 		select {
 		case <-ticker.C:
-			g.updateGameState()
-			g.handleAIDecisions()
-			g.printGameState()
+			if !g.GameOver {
+				g.handleAIDecisions()
+				g.updateGameState()
+
+				// Print game state only when something important changes
+				g.printGameState()
+			} else {
+				fmt.Println("\n=== Game Over! ===")
+				winner := "ChatGPT"
+				if g.Winner == "gemini" {
+					winner = "Gemini"
+				} else if g.Winner == "tie" {
+					winner = "Tie - No winner"
+				}
+
+				if g.Winner != "none" {
+					fmt.Printf("%s wins!\n", winner)
+				}
+
+				fmt.Printf("Final scores - ChatGPT: %d, Gemini: %d\n",
+					g.Score["chatgpt"], g.Score["gemini"])
+				running = false
+			}
 		default:
-			time.Sleep(10 * time.Millisecond)
+			time.Sleep(time.Millisecond * 10)
 		}
 	}
-
-	fmt.Println("\n=== Game Over! ===")
-	fmt.Printf("%s wins!\n", g.Winner)
-	fmt.Printf("Final scores - ChatGPT: %d, Gemini: %d\n",
-		g.Score["chatgpt"], g.Score["gemini"])
 }
 
 func (g *Game) printGameState() {
