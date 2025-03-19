@@ -292,32 +292,96 @@ func (h *OpenAIHandler) GetTowerDecision(gameState map[string]interface{}) (map[
 }
 
 func (h *OpenAIHandler) createTowerPrompt(gameState map[string]interface{}) string {
-	enemies := gameState["enemies"].([]interface{})
-	towers := gameState["towers"].([]interface{})
-	resources := gameState["resources"].(map[string]interface{})["chatgpt"].(int)
-	wave := gameState["wave"].(int)
+	// Safely extract values with type assertions and fallbacks
+	enemies, _ := gameState["enemies"].([]interface{})
+	towers, _ := gameState["towers"].([]interface{})
+	wave := 1
+	resources := 300
+	lives := 20
+	
+	// Extract wave
+	if waveVal, ok := gameState["wave"].(int); ok {
+		wave = waveVal
+	}
+	
+	// Extract resources safely
+	if resourcesMap, ok := gameState["resources"].(map[string]interface{}); ok {
+		if chatgptResources, ok := resourcesMap["chatgpt"].(int); ok {
+			resources = chatgptResources
+		}
+	}
+	
+	// Extract lives safely
+	if livesMap, ok := gameState["lives"].(map[string]interface{}); ok {
+		if chatgptLives, ok := livesMap["chatgpt"].(int); ok {
+			lives = chatgptLives
+		}
+	}
+
+	// Count enemy types to provide better strategic information
+	basicCount, fastCount, tankCount := 0, 0, 0
+	for _, enemy := range enemies {
+		if enemyMap, ok := enemy.(map[string]interface{}); ok {
+			if enemyType, ok := enemyMap["type"].(string); ok {
+				switch eType := enemyType; eType {
+				case "basic":
+					basicCount++
+				case "fast":
+					fastCount++
+				case "tank":
+					tankCount++
+				}
+			}
+		}
+	}
+
+	// Count tower types for better decision making
+	basicTowers, sniperTowers, splashTowers := 0, 0, 0
+	for _, tower := range towers {
+		if towerMap, ok := tower.(map[string]interface{}); ok {
+			if towerType, ok := towerMap["type"].(string); ok {
+				switch tType := towerType; tType {
+				case "basic":
+					basicTowers++
+				case "sniper":
+					sniperTowers++
+				case "splash":
+					splashTowers++ 
+				}
+			}
+		}
+	}
 
 	prompt := fmt.Sprintf(
-		"You are playing a tower defense game as ChatGPT. You have %d resources and are on wave %d. "+
-			"There are %d enemies and %d towers on the map.\n\n"+
-			"Your goal is to defend your base by placing towers strategically. "+
-			"CRITICAL: YOU MUST PLACE TOWERS IMMEDIATELY TO DEFEND AGAINST ENEMIES! "+
-			"If you don't place towers, you will lose lives when enemies reach the end.\n\n"+
-			"Available towers:\n"+
-			"- basic (100): Balanced tower, good for early waves\n"+
-			"- sniper (250): High damage, long range, good for strong enemies\n"+
-			"- splash (200): Area damage, good for groups of weak enemies\n\n"+
-			"Current wave: %d\n"+
-			"Current resources: %d\n"+
-			"Current towers: %d\n"+
-			"Active enemies: %d\n\n"+
-			"IMPORTANT: You MUST choose one of these actions NOW:\n"+
-			"1. Place a new tower (specify type)\n"+
-			"2. Save resources for a stronger tower (ONLY if you have a specific plan and already have some towers)\n\n"+
-			"Respond ONLY in this exact JSON format: {\"action\": \"place\", \"tower_type\": \"basic\"}\n"+
+		"You are playing a tower defense game as ChatGPT. You have %d resources, %d lives, and are on wave %d.\n\n"+
+			"Strategic Analysis:\n"+
+			"- Enemy Composition: %d basic, %d fast, %d tank enemies\n"+
+			"- Your Defense: %d basic, %d sniper, %d splash towers\n\n"+
+			"Your goal is to defend your base by placing towers strategically.\n"+
+			"CRITICAL: Place towers based on the current wave and enemy composition.\n\n"+
+			"Tower Options (choose wisely):\n"+
+			"- basic (100): Balanced tower, effective for early waves\n"+
+			"- sniper (250): High damage & range, excellent against tanks and late waves\n"+
+			"- splash (200): Area damage, optimal against groups of fast enemies\n\n"+
+			"Strategic Guidelines:\n"+
+			"- Early waves (1-5): Basic towers provide good value\n"+
+			"- Middle waves (6-15): Mix of all tower types is most effective\n"+
+			"- Later waves (16+): Prioritize snipers and splash towers\n"+
+			"- Consider your resource income vs. saving for powerful towers\n\n"+
+			"Current status:\n"+
+			"- Wave: %d\n"+
+			"- Resources: %d\n"+
+			"- Lives remaining: %d\n\n"+
+			"IMPORTANT: Choose ONE action now:\n"+
+			"1. Place a new tower (specify type and position)\n"+
+			"2. Save resources for a stronger tower (only if you have adequate defenses)\n\n"+
+			"Respond ONLY in this exact JSON format: {\"action\": \"place\", \"tower_type\": \"basic\", \"position\": [y, x]}\n"+
 			"Valid actions: place, save\n"+
 			"Valid tower types: basic, sniper, splash",
-		resources, wave, len(enemies), len(towers), wave, resources, len(towers), len(enemies),
+		resources, lives, wave, 
+		basicCount, fastCount, tankCount,
+		basicTowers, sniperTowers, splashTowers,
+		wave, resources, lives,
 	)
 	return prompt
 }
@@ -459,32 +523,92 @@ func (h *GeminiHandler) GetEnemyDecision(gameState map[string]interface{}) (map[
 }
 
 func (h *GeminiHandler) createEnemyPrompt(gameState map[string]interface{}) string {
-	enemies := gameState["enemies"].([]interface{})
-	towers := gameState["towers"].([]interface{})
-	resources := gameState["resources"].(map[string]interface{})["gemini"].(int)
-	wave := gameState["wave"].(int)
+	// Safely extract values with type assertions and fallbacks
+	enemies, _ := gameState["enemies"].([]interface{})
+	towers, _ := gameState["towers"].([]interface{})
+	wave := 1
+	resources := 300
+	lives := 20
+	
+	// Extract wave
+	if waveVal, ok := gameState["wave"].(int); ok {
+		wave = waveVal
+	}
+	
+	// Extract resources safely
+	if resourcesMap, ok := gameState["resources"].(map[string]interface{}); ok {
+		if geminiResources, ok := resourcesMap["gemini"].(int); ok {
+			resources = geminiResources
+		}
+	}
+	
+	// Extract lives safely
+	if livesMap, ok := gameState["lives"].(map[string]interface{}); ok {
+		if geminiLives, ok := livesMap["gemini"].(int); ok {
+			lives = geminiLives
+		}
+	}
+	
+	// Count tower types to provide better strategic information
+	basicTowers, sniperTowers, splashTowers := 0, 0, 0
+	for _, tower := range towers {
+		if towerMap, ok := tower.(map[string]interface{}); ok {
+			if towerType, ok := towerMap["type"].(string); ok {
+				switch tType := towerType; tType {
+				case "basic":
+					basicTowers++
+				case "sniper":
+					sniperTowers++
+				case "splash":
+					splashTowers++ 
+				}
+			}
+		}
+	}
+
+	// Calculate the approximate wave cost to help with strategic planning
+	baseCost := 45
+	scalingFactor := int(math.Pow(float64(wave), 0.8) * 8)
+	estimatedWaveCost := baseCost + scalingFactor
+	maxCost := 250 + (wave / 10) * 50
+	if maxCost > 500 {
+		maxCost = 500
+	}
+	if estimatedWaveCost > maxCost {
+		estimatedWaveCost = maxCost
+	}
 
 	prompt := fmt.Sprintf(
-		"You are playing a tower defense game as Gemini. You have %d resources and are on wave %d. "+
-			"There are %d active enemies and %d defensive towers.\n\n"+
-			"Your goal is to overwhelm the opponent by sending enemies. "+
-			"CRITICAL: YOU MUST SPAWN ENEMIES IMMEDIATELY TO ATTACK THE OPPONENT!\n\n"+
-			"Available enemies and their costs:\n"+
-			"- basic (20): Balanced enemy, good for early waves\n"+
-			"- fast (30): Fast but weak, good for overwhelming\n"+
-			"- tank (50): Slow but strong, good for late waves\n\n"+
-			"Current wave: %d\n"+
-			"Current resources: %d\n"+
-			"Active enemies: %d\n"+
-			"Defensive towers: %d\n\n"+
-			"IMPORTANT: You MUST choose exactly one of these actions NOW:\n"+
-			"1. Spawn a single enemy (specify type)\n"+
-			"2. Launch a wave (costs 100 resources, sends multiple enemies)\n"+
-			"3. Save resources (ONLY if you have a specific plan and already sent some enemies)\n\n"+
+		"You are playing a tower defense game as Gemini. You have %d resources, %d lives, and are on wave %d.\n\n"+
+			"Strategic Analysis:\n"+
+			"- Opponent's Defense: %d basic, %d sniper, %d splash towers\n"+
+			"- Active enemies: %d\n\n"+
+			"Your goal is to overwhelm the opponent by spawning strategic enemies.\n\n"+
+			"Enemy Options (choose strategically):\n"+
+			"- basic (20): Balanced stats, cost-effective for overwhelming with numbers\n"+
+			"- fast (30): Fast movement, good against sniper towers and for quick pressure\n"+
+			"- tank (50): High health, effective against basic towers and late game\n\n"+
+			"Wave Launch: Costs ~%d resources, sends multiple varied enemies at once\n\n"+
+			"Strategic Guidelines:\n"+
+			"- Against basic towers: Use tanks or large numbers of basic enemies\n"+
+			"- Against sniper towers: Use fast enemies to overwhelm them\n"+
+			"- Against splash towers: Use tanks or spaced-out enemies\n"+
+			"- Launching waves creates more pressure but requires resource planning\n\n"+
+			"Current status:\n"+
+			"- Wave: %d\n"+
+			"- Resources: %d\n"+
+			"- Lives remaining: %d\n\n"+
+			"IMPORTANT: Choose ONE action now:\n"+
+			"1. Spawn a single enemy (specify type for targeted pressure)\n"+
+			"2. Launch a wave (for overwhelming force, if you have enough resources)\n"+
+			"3. Save resources (only if you need to accumulate for a strategic wave)\n\n"+
 			"Respond ONLY in this exact JSON format: {\"action\": \"spawn\", \"enemy_type\": \"fast\"}\n"+
 			"Valid actions are ONLY: \"spawn\", \"wave\", or \"save\"\n"+
 			"Valid enemy types: \"basic\", \"fast\", or \"tank\"",
-		resources, wave, len(enemies), len(towers), wave, resources, len(enemies), len(towers),
+		resources, lives, wave, 
+		basicTowers, sniperTowers, splashTowers, len(enemies),
+		estimatedWaveCost,
+		wave, resources, lives,
 	)
 	return prompt
 }
@@ -618,17 +742,17 @@ func NewGame() *Game {
 		AIThinking:         map[string]bool{"chatgpt": false, "gemini": false},
 		OpenAIHandler:      &OpenAIHandler{AIHandler: NewAIHandler()},
 		GeminiHandler:      &GeminiHandler{AIHandler: NewAIHandler()},
-		GameSpeed:          0.1,
-		AIDecisionInterval: map[string]int{"chatgpt": 2, "gemini": 2},
+		GameSpeed:          0.5,                // Slowed down game speed for better observation
+		AIDecisionInterval: map[string]int{"chatgpt": 5, "gemini": 5}, // More time between decisions
 		LastAIDecision: map[string]time.Time{
 			"chatgpt": time.Now(),
 			"gemini":  time.Now(),
 		},
 		CurrentTurn:    "chatgpt", // ChatGPT goes first
 		LastActionTime: time.Now(),
-		MaxResources:   1000,             // Maximum resources per player
+		MaxResources:   1500,             // Increased maximum resources per player
 		MaxWaves:       50,               // Maximum number of waves before game ends
-		TurnTimeout:    30 * time.Second, // Timeout for each turn
+		TurnTimeout:    60 * time.Second, // Increased timeout for each turn
 	}
 
 	// Generate path
@@ -674,8 +798,23 @@ func (g *Game) generatePath() []Position {
 }
 
 func (g *Game) handleAIDecisions() {
+	if !g.AIEnabled {
+		return
+	}
+
 	currentTime := time.Now()
 	gameState := g.getGameState()
+
+	// If any AI is thinking, don't allow new decisions
+	if g.AIThinking["chatgpt"] || g.AIThinking["gemini"] {
+		// Only print once every few seconds to avoid log spam
+		timeLastPrinted := g.LastAIDecision[g.CurrentTurn].Add(2 * time.Second)
+		if currentTime.After(timeLastPrinted) {
+			fmt.Printf("Waiting for %s to finish thinking...\n", g.CurrentTurn)
+			g.LastAIDecision[g.CurrentTurn] = currentTime
+		}
+		return
+	}
 
 	// Check if game should end due to timeout or max waves
 	if currentTime.Sub(g.LastActionTime) > g.TurnTimeout {
@@ -1107,15 +1246,20 @@ func (g *Game) spawnEnemy(enemyType string, params map[string]interface{}) bool 
 }
 
 func (g *Game) spawnWave() bool {
-	// Calculate wave cost based on current wave with a more balanced formula
-	// Base cost + scaling factor that increases more slowly in later waves
-	baseCost := 50
-	scalingFactor := int(math.Sqrt(float64(g.Wave)) * 10)
+	// Calculate wave cost with better scaling that creates more strategic decisions
+	baseCost := 45  // Slightly reduced base cost
+	// More gradual scaling that increases difficulty but remains manageable
+	scalingFactor := int(math.Pow(float64(g.Wave), 0.8) * 8)
 	waveCost := baseCost + scalingFactor
 	
-	// Cap the maximum cost to prevent it from becoming too expensive
-	if waveCost > 300 {
-		waveCost = 300
+	// Progressive cap to allow for strategic resource management in late game
+	maxCost := 250 + (g.Wave / 10) * 50
+	if maxCost > 500 {
+		maxCost = 500 // Hard cap at 500 to keep the game balanced
+	}
+	
+	if waveCost > maxCost {
+		waveCost = maxCost
 	}
 
 	fmt.Printf("Attempting to launch wave %d (cost: %d, available: %d)\n",
@@ -1126,20 +1270,20 @@ func (g *Game) spawnWave() bool {
 		return false
 	}
 
-	// Create a mix of enemies based on the current wave
-	numEnemies := g.Wave*2 + 5
-	if numEnemies > 30 {
-		numEnemies = 30 // Cap to avoid extremely large waves
+	// More strategic enemy count that scales better with wave number
+	numEnemies := g.Wave + int(math.Sqrt(float64(g.Wave))*5)
+	if numEnemies > 25 {
+		numEnemies = 25 // Reduced cap for better performance and game balance
 	}
 
 	fmt.Printf("Creating wave with %d enemies\n", numEnemies)
 
 	enemyTypes := make([]string, 0)
 
-	// More varied waves as game progresses
+	// More varied waves as game progresses with better enemy distribution
 	if g.Wave < 5 {
-		// Early waves: Mostly basic enemies
-		basicCount := int(float64(numEnemies) * 0.8)
+		// Early waves: Mostly basic enemies with a few fast ones for variety
+		basicCount := int(float64(numEnemies) * 0.75)
 		fastCount := numEnemies - basicCount
 
 		for i := 0; i < basicCount; i++ {
@@ -1149,10 +1293,10 @@ func (g *Game) spawnWave() bool {
 			enemyTypes = append(enemyTypes, "fast")
 		}
 
-	} else if g.Wave < 15 {
-		// Mid waves: Mix of basic and fast enemies with a few tanks
+	} else if g.Wave < 12 {
+		// Mid waves: Better balance of basic, fast and a few tanks
 		basicCount := int(float64(numEnemies) * 0.5)
-		fastCount := int(float64(numEnemies) * 0.4)
+		fastCount := int(float64(numEnemies) * 0.35)
 		tankCount := numEnemies - basicCount - fastCount
 
 		for i := 0; i < basicCount; i++ {
