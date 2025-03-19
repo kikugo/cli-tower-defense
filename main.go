@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gdamore/tcell/v2"
 	"github.com/joho/godotenv"
 )
 
@@ -167,7 +166,7 @@ func NewEnemy(y, x int, enemyType string, params map[string]interface{}) Enemy {
 		}
 	}
 
-	char := []rune(e["char"].(string))[0]
+	char := e["char"].(rune)
 	health := int(e["health"].(float64))
 	speed := e["speed"].(float64)
 	reward := int(e["reward"].(float64))
@@ -208,11 +207,17 @@ type OpenAIHandler struct {
 }
 
 func (h *OpenAIHandler) GetTowerDecision(gameState map[string]interface{}) (map[string]interface{}, error) {
+	fmt.Println("\n=== ChatGPT's Turn ===")
+	fmt.Printf("Current resources: %d\n", gameState["resources"].(map[string]interface{})["chatgpt"].(int))
+	fmt.Printf("Current towers: %d\n", len(gameState["towers"].([]interface{})))
+	fmt.Printf("Current enemies: %d\n", len(gameState["enemies"].([]interface{})))
+
 	prompt := h.createTowerPrompt(gameState)
+	fmt.Println("Sending prompt to ChatGPT...")
 
 	// Create request body
 	reqBody := map[string]interface{}{
-		"model": "gpt-3.5-turbo",
+		"model": "gpt-4o-mini-2024-07-18",
 		"messages": []map[string]interface{}{
 			{"role": "user", "content": prompt},
 		},
@@ -222,19 +227,23 @@ func (h *OpenAIHandler) GetTowerDecision(gameState map[string]interface{}) (map[
 
 	reqJSON, err := json.Marshal(reqBody)
 	if err != nil {
+		fmt.Println("Error marshaling request:", err)
 		return nil, err
 	}
 
 	req, err := http.NewRequest("POST", "https://api.openai.com/v1/chat/completions", bytes.NewBuffer(reqJSON))
 	if err != nil {
+		fmt.Println("Error creating request:", err)
 		return nil, err
 	}
 
 	req.Header.Set("Authorization", "Bearer "+openaiAPIKey)
 	req.Header.Set("Content-Type", "application/json")
 
+	fmt.Println("Sending request to OpenAI API...")
 	resp, err := h.Client.Do(req)
 	if err != nil {
+		fmt.Println("Error sending request:", err)
 		return nil, err
 	}
 	defer resp.Body.Close()
@@ -242,18 +251,21 @@ func (h *OpenAIHandler) GetTowerDecision(gameState map[string]interface{}) (map[
 	var result map[string]interface{}
 	err = json.NewDecoder(resp.Body).Decode(&result)
 	if err != nil {
+		fmt.Println("Error decoding response:", err)
 		return nil, err
 	}
 
 	// Extract response content
 	choices, ok := result["choices"].([]interface{})
 	if !ok || len(choices) == 0 {
+		fmt.Println("No choices in response")
 		return map[string]interface{}{"action": "none", "reason": "API response error"}, nil
 	}
 
 	choice := choices[0].(map[string]interface{})
 	message := choice["message"].(map[string]interface{})
 	content := message["content"].(string)
+	fmt.Printf("ChatGPT response: %s\n", content)
 
 	return h.parseTowerResponse(content)
 }
@@ -318,7 +330,13 @@ type GeminiHandler struct {
 }
 
 func (h *GeminiHandler) GetEnemyDecision(gameState map[string]interface{}) (map[string]interface{}, error) {
+	fmt.Println("\n=== Gemini's Turn ===")
+	fmt.Printf("Current resources: %d\n", gameState["resources"].(map[string]interface{})["gemini"].(int))
+	fmt.Printf("Current wave: %d\n", gameState["wave"].(int))
+	fmt.Printf("Current enemies: %d\n", len(gameState["enemies"].([]interface{})))
+
 	prompt := h.createEnemyPrompt(gameState)
+	fmt.Println("Sending prompt to Gemini...")
 
 	// Create request body
 	reqBody := map[string]interface{}{
@@ -337,20 +355,24 @@ func (h *GeminiHandler) GetEnemyDecision(gameState map[string]interface{}) (map[
 
 	reqJSON, err := json.Marshal(reqBody)
 	if err != nil {
+		fmt.Println("Error marshaling request:", err)
 		return nil, err
 	}
 
 	req, err := http.NewRequest("POST",
-		fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=%s", googleAPIKey),
+		fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=%s", googleAPIKey),
 		bytes.NewBuffer(reqJSON))
 	if err != nil {
+		fmt.Println("Error creating request:", err)
 		return nil, err
 	}
 
 	req.Header.Set("Content-Type", "application/json")
 
+	fmt.Println("Sending request to Gemini API...")
 	resp, err := h.Client.Do(req)
 	if err != nil {
+		fmt.Println("Error sending request:", err)
 		return nil, err
 	}
 	defer resp.Body.Close()
@@ -358,12 +380,14 @@ func (h *GeminiHandler) GetEnemyDecision(gameState map[string]interface{}) (map[
 	var result map[string]interface{}
 	err = json.NewDecoder(resp.Body).Decode(&result)
 	if err != nil {
+		fmt.Println("Error decoding response:", err)
 		return nil, err
 	}
 
 	// Extract response content
 	candidates, ok := result["candidates"].([]interface{})
 	if !ok || len(candidates) == 0 {
+		fmt.Println("No candidates in response")
 		return map[string]interface{}{"action": "none", "reason": "API response error"}, nil
 	}
 
@@ -371,6 +395,7 @@ func (h *GeminiHandler) GetEnemyDecision(gameState map[string]interface{}) (map[
 	content := candidate["content"].(map[string]interface{})
 	parts := content["parts"].([]interface{})
 	text := parts[0].(map[string]interface{})["text"].(string)
+	fmt.Printf("Gemini response: %s\n", text)
 
 	return h.parseEnemyResponse(text)
 }
@@ -432,7 +457,6 @@ func (h *GeminiHandler) parseEnemyResponse(response string) (map[string]interfac
 
 // Game struct and methods
 type Game struct {
-	Screen        tcell.Screen
 	Height        int
 	Width         int
 	MapHeight     int
@@ -461,13 +485,13 @@ type Game struct {
 	LastAIDecision     map[string]time.Time
 }
 
-func NewGame(screen tcell.Screen) *Game {
-	// Initialize screen
-	width, height := screen.Size()
-	mapHeight := height - 10 // Reserve space for UI
+func NewGame() *Game {
+	// Initialize with fixed dimensions
+	width := 80
+	height := 24
+	mapHeight := height - 10
 
 	game := &Game{
-		Screen:             screen,
 		Height:             height,
 		Width:              width,
 		MapHeight:          mapHeight,
@@ -485,7 +509,7 @@ func NewGame(screen tcell.Screen) *Game {
 		AIThinking:         map[string]bool{"chatgpt": false, "gemini": false},
 		OpenAIHandler:      &OpenAIHandler{AIHandler: NewAIHandler()},
 		GeminiHandler:      &GeminiHandler{AIHandler: NewAIHandler()},
-		GameSpeed:          0.1,
+		GameSpeed:          0.02,
 		AIDecisionInterval: map[string]int{"chatgpt": 5, "gemini": 5},
 		LastAIDecision: map[string]time.Time{
 			"chatgpt": time.Now(),
@@ -495,7 +519,6 @@ func NewGame(screen tcell.Screen) *Game {
 
 	// Generate path
 	game.Path = game.generatePath()
-
 	return game
 }
 
@@ -536,80 +559,212 @@ func (g *Game) generatePath() []Position {
 	return path
 }
 
-func (g *Game) drawUI() {
-	// Clear screen
-	g.Screen.Clear()
+func (g *Game) handleAIDecisions() {
+	currentTime := time.Now()
+	gameState := g.getGameState()
 
-	// Draw path
-	for _, pos := range g.Path {
-		if pos.Y >= 0 && pos.Y < g.Height && pos.X >= 0 && pos.X < g.Width {
-			g.Screen.SetContent(pos.X, pos.Y, '·', nil, tcell.StyleDefault)
-		}
+	// ChatGPT's turn to make a decision
+	chatgptIntervalDuration := time.Duration(g.AIDecisionInterval["chatgpt"]) * time.Second
+	if currentTime.Sub(g.LastAIDecision["chatgpt"]) >= chatgptIntervalDuration &&
+		!g.AIThinking["chatgpt"] && g.AIEnabled {
+		fmt.Println("\n=== ChatGPT Decision Time ===")
+		g.AIThinking["chatgpt"] = true
+
+		// Run in a separate goroutine to avoid blocking
+		go func() {
+			// Get tower decision from ChatGPT
+			decision, err := g.OpenAIHandler.GetTowerDecision(gameState)
+
+			// Process decision (this callback runs after API response)
+			if err == nil {
+				action, _ := decision["action"].(string)
+				fmt.Printf("ChatGPT decided to: %s\n", action)
+
+				if action == "place" {
+					towerType, _ := decision["tower_type"].(string)
+					if towerType == "" {
+						towerType = "basic"
+					}
+
+					position, ok := decision["position"].([]interface{})
+					y, x := 10, 10
+					if ok && len(position) >= 2 {
+						y = int(position[0].(float64))
+						x = int(position[1].(float64))
+					}
+
+					// Place tower at a valid position near the suggested point
+					placed := false
+					for offY := -5; offY <= 5 && !placed; offY++ {
+						for offX := -5; offX <= 5 && !placed; offX++ {
+							tryY, tryX := y+offY, x+offX
+							if tryY > 0 && tryY < g.MapHeight && tryX > 0 && tryX < g.Width {
+								placed = g.placeTower(tryY, tryX, towerType)
+							}
+						}
+					}
+
+					if placed {
+						fmt.Printf("Successfully placed %s tower\n", towerType)
+						g.LastDecisions["chatgpt"] = fmt.Sprintf("Placed %s tower", towerType)
+					} else {
+						fmt.Printf("Failed to place %s tower\n", towerType)
+						g.LastDecisions["chatgpt"] = fmt.Sprintf("Failed to place %s tower", towerType)
+					}
+				} else {
+					fmt.Println("ChatGPT decided to save resources")
+					g.LastDecisions["chatgpt"] = "Saving resources"
+				}
+			} else {
+				fmt.Printf("ChatGPT API error: %v\n", err)
+				g.LastDecisions["chatgpt"] = "API error"
+			}
+
+			g.AIThinking["chatgpt"] = false
+			g.LastAIDecision["chatgpt"] = time.Now()
+		}()
 	}
 
-	// Draw towers
-	for _, tower := range g.Towers {
-		if tower.Pos.Y >= 0 && tower.Pos.Y < g.Height && tower.Pos.X >= 0 && tower.Pos.X < g.Width {
-			g.Screen.SetContent(tower.Pos.X, tower.Pos.Y, tower.Char, nil, tcell.StyleDefault.Foreground(tcell.ColorGreen))
-		}
+	// Gemini's turn to make a decision
+	geminiIntervalDuration := time.Duration(g.AIDecisionInterval["gemini"]) * time.Second
+	if currentTime.Sub(g.LastAIDecision["gemini"]) >= geminiIntervalDuration &&
+		!g.AIThinking["gemini"] && g.AIEnabled {
+		fmt.Println("\n=== Gemini Decision Time ===")
+		g.AIThinking["gemini"] = true
+
+		// Run in a separate goroutine to avoid blocking
+		go func() {
+			// Get enemy decision from Gemini
+			decision, err := g.GeminiHandler.GetEnemyDecision(gameState)
+
+			// Process decision
+			if err == nil {
+				action, _ := decision["action"].(string)
+				fmt.Printf("Gemini decided to: %s\n", action)
+
+				if action == "spawn" {
+					enemyType, _ := decision["enemy_type"].(string)
+					if enemyType == "" {
+						enemyType = "basic"
+					}
+
+					spawned := g.spawnEnemy(enemyType, nil)
+					if spawned {
+						fmt.Printf("Successfully spawned %s enemy\n", enemyType)
+						g.LastDecisions["gemini"] = fmt.Sprintf("Spawned %s enemy", enemyType)
+					} else {
+						fmt.Printf("Failed to spawn %s enemy\n", enemyType)
+						g.LastDecisions["gemini"] = fmt.Sprintf("Failed to spawn %s enemy", enemyType)
+					}
+				} else if action == "wave" {
+					if g.spawnWave() {
+						fmt.Printf("Successfully launched wave %d\n", g.Wave)
+						g.LastDecisions["gemini"] = fmt.Sprintf("Launched wave %d", g.Wave)
+					} else {
+						fmt.Println("Failed to launch wave (not enough resources)")
+						g.LastDecisions["gemini"] = "Failed to launch wave (not enough resources)"
+					}
+				} else if action == "custom" {
+					params := map[string]interface{}{
+						"char":   "X",
+						"health": 200.0,
+						"speed":  1.5,
+						"reward": 35.0,
+					}
+
+					customData, ok := decision["custom_params"].(map[string]interface{})
+					if ok {
+						for k, v := range customData {
+							params[k] = v
+						}
+					}
+
+					spawned := g.spawnEnemy("custom", params)
+					if spawned {
+						fmt.Println("Successfully spawned custom enemy")
+						g.LastDecisions["gemini"] = "Spawned custom enemy"
+					} else {
+						fmt.Println("Failed to spawn custom enemy")
+						g.LastDecisions["gemini"] = "Failed to spawn custom enemy"
+					}
+				} else {
+					fmt.Println("Gemini decided to save resources")
+					g.LastDecisions["gemini"] = "Saving resources"
+				}
+			} else {
+				fmt.Printf("Gemini API error: %v\n", err)
+				g.LastDecisions["gemini"] = "API error"
+			}
+
+			g.AIThinking["gemini"] = false
+			g.LastAIDecision["gemini"] = time.Now()
+		}()
 	}
-
-	// Draw enemies
-	for _, enemy := range g.Enemies {
-		if enemy.Pos.Y >= 0 && enemy.Pos.Y < g.Height && enemy.Pos.X >= 0 && enemy.Pos.X < g.Width {
-			g.Screen.SetContent(enemy.Pos.X, enemy.Pos.Y, enemy.Char, nil, tcell.StyleDefault.Foreground(tcell.ColorBlue))
-		}
-	}
-
-	// Draw status bar
-	statusY := g.Height - 9
-
-	// ChatGPT status
-	drawText(g.Screen, 1, statusY, "ChatGPT:", tcell.StyleDefault.Foreground(tcell.ColorGreen))
-	drawText(g.Screen, 10, statusY, fmt.Sprintf("Lives: %d | Resources: %d | Score: %d",
-		g.Lives["chatgpt"], g.Resources["chatgpt"], g.Score["chatgpt"]), tcell.StyleDefault)
-
-	// Gemini status
-	drawText(g.Screen, 1, statusY+1, "Gemini:", tcell.StyleDefault.Foreground(tcell.ColorBlue))
-	drawText(g.Screen, 10, statusY+1, fmt.Sprintf("Resources: %d | Score: %d | Wave: %d",
-		g.Resources["gemini"], g.Score["gemini"], g.Wave), tcell.StyleDefault)
-
-	// AI thinking indicators
-	thinkingStatus := "  "
-	if g.AIThinking["chatgpt"] {
-		thinkingStatus = "🤔"
-	}
-	drawText(g.Screen, g.Width-10, statusY, thinkingStatus, tcell.StyleDefault)
-
-	thinkingStatus = "  "
-	if g.AIThinking["gemini"] {
-		thinkingStatus = "🤔"
-	}
-	drawText(g.Screen, g.Width-10, statusY+1, thinkingStatus, tcell.StyleDefault)
-
-	// Last decisions
-	drawText(g.Screen, 1, statusY+3, fmt.Sprintf("ChatGPT decision: %s", g.LastDecisions["chatgpt"]),
-		tcell.StyleDefault.Foreground(tcell.ColorGreen))
-	drawText(g.Screen, 1, statusY+4, fmt.Sprintf("Gemini decision: %s", g.LastDecisions["gemini"]),
-		tcell.StyleDefault.Foreground(tcell.ColorBlue))
-
-	// Controls and settings
-	aiStatus := "ON"
-	if !g.AIEnabled {
-		aiStatus = "OFF"
-	}
-	drawText(g.Screen, 1, statusY+6, fmt.Sprintf("[Q]uit [A]I: %s [+/-] Speed: %.1fx",
-		aiStatus, 1/g.GameSpeed), tcell.StyleDefault.Foreground(tcell.ColorYellow))
-	drawText(g.Screen, 1, statusY+7, "Tower types: basic (^) sniper (⌖) splash (⊕) | Enemy types: basic (o) fast (>) tank (□)",
-		tcell.StyleDefault.Foreground(tcell.ColorYellow))
-
-	// Show the screen
-	g.Screen.Show()
 }
 
-func drawText(s tcell.Screen, x, y int, text string, style tcell.Style) {
-	for i, r := range []rune(text) {
-		s.SetContent(x+i, y, r, nil, style)
+func (g *Game) updateGameState() {
+	// Process wave queue
+	if len(g.WaveQueue) > 0 && len(g.Enemies) < 20 {
+		enemyType := g.WaveQueue[0]
+		g.WaveQueue = g.WaveQueue[1:]
+		if g.spawnEnemy(enemyType, nil) {
+			fmt.Printf("Spawned enemy from wave queue: %s\n", enemyType)
+		}
+	}
+
+	// Update towers
+	for _, tower := range g.Towers {
+		if tower.Cooldown > 0 {
+			tower.Cooldown--
+		}
+
+		if tower.CanAttack() {
+			hitEnemies := tower.Attack(g.Enemies)
+			if len(hitEnemies) > 0 {
+				fmt.Printf("Tower %s attacked %d enemies\n", tower.TowerType, len(hitEnemies))
+			}
+		}
+	}
+
+	// Update enemies
+	for i := 0; i < len(g.Enemies); i++ {
+		enemy := g.Enemies[i]
+
+		// Check if enemy is dead
+		if enemy.Health <= 0 {
+			fmt.Printf("Enemy %s died, reward: %d\n", enemy.EnemyType, enemy.Reward)
+			g.Resources["chatgpt"] += enemy.Reward
+			g.Score["chatgpt"] += enemy.Reward
+			g.Enemies = append(g.Enemies[:i], g.Enemies[i+1:]...)
+			i--
+			continue
+		}
+
+		// Move enemy along path
+		enemy.DistanceMoved += enemy.Speed
+		pathIndex := int(math.Min(float64(enemy.DistanceMoved), float64(len(g.Path)-1)))
+		if pathIndex < len(g.Path) {
+			enemy.Pos = g.Path[pathIndex]
+		}
+
+		// Check if enemy reached the end
+		if pathIndex >= len(g.Path)-1 {
+			fmt.Printf("Enemy %s reached the end, lives lost: 1\n", enemy.EnemyType)
+			g.Lives["chatgpt"]--
+			g.Resources["gemini"] += enemy.Reward / 2
+			g.Score["gemini"] += enemy.Reward
+			g.Enemies = append(g.Enemies[:i], g.Enemies[i+1:]...)
+			i--
+		}
+	}
+
+	// Check win/lose conditions
+	if g.Lives["chatgpt"] <= 0 {
+		fmt.Println("\n=== Game Over! ===")
+		fmt.Printf("Gemini wins! Final score - ChatGPT: %d, Gemini: %d\n",
+			g.Score["chatgpt"], g.Score["gemini"])
+		g.GameOver = true
+		g.Winner = "gemini"
 	}
 }
 
@@ -748,247 +903,48 @@ func (g *Game) spawnWave() bool {
 	return true
 }
 
-func (g *Game) handleAIDecisions() {
-	currentTime := time.Now()
-	gameState := g.getGameState()
-
-	// ChatGPT's turn to make a decision
-	chatgptIntervalDuration := time.Duration(g.AIDecisionInterval["chatgpt"]) * time.Second
-	if currentTime.Sub(g.LastAIDecision["chatgpt"]) >= chatgptIntervalDuration &&
-		!g.AIThinking["chatgpt"] && g.AIEnabled {
-		g.AIThinking["chatgpt"] = true
-
-		// Run in a separate goroutine to avoid blocking
-		go func() {
-			// Get tower decision from ChatGPT
-			decision, err := g.OpenAIHandler.GetTowerDecision(gameState)
-
-			// Process decision (this callback runs after API response)
-			if err == nil {
-				action, _ := decision["action"].(string)
-
-				if action == "place" {
-					towerType, _ := decision["tower_type"].(string)
-					if towerType == "" {
-						towerType = "basic"
-					}
-
-					position, ok := decision["position"].([]interface{})
-					y, x := 10, 10
-					if ok && len(position) >= 2 {
-						y = int(position[0].(float64))
-						x = int(position[1].(float64))
-					}
-
-					// Place tower at a valid position near the suggested point
-					placed := false
-					for offY := -5; offY <= 5 && !placed; offY++ {
-						for offX := -5; offX <= 5 && !placed; offX++ {
-							tryY, tryX := y+offY, x+offX
-							if tryY > 0 && tryY < g.MapHeight && tryX > 0 && tryX < g.Width {
-								placed = g.placeTower(tryY, tryX, towerType)
-							}
-						}
-					}
-
-					if placed {
-						g.LastDecisions["chatgpt"] = fmt.Sprintf("Placed %s tower", towerType)
-					} else {
-						g.LastDecisions["chatgpt"] = fmt.Sprintf("Failed to place %s tower", towerType)
-					}
-				} else {
-					g.LastDecisions["chatgpt"] = "Saving resources"
-				}
-			} else {
-				g.LastDecisions["chatgpt"] = "API error"
-			}
-
-			g.AIThinking["chatgpt"] = false
-			g.LastAIDecision["chatgpt"] = time.Now()
-		}()
-	}
-
-	// Gemini's turn to make a decision
-	geminiIntervalDuration := time.Duration(g.AIDecisionInterval["gemini"]) * time.Second
-	if currentTime.Sub(g.LastAIDecision["gemini"]) >= geminiIntervalDuration &&
-		!g.AIThinking["gemini"] && g.AIEnabled {
-		g.AIThinking["gemini"] = true
-
-		// Run in a separate goroutine to avoid blocking
-		go func() {
-			// Get enemy decision from Gemini
-			decision, err := g.GeminiHandler.GetEnemyDecision(gameState)
-
-			// Process decision
-			if err == nil {
-				action, _ := decision["action"].(string)
-
-				if action == "spawn" {
-					enemyType, _ := decision["enemy_type"].(string)
-					if enemyType == "" {
-						enemyType = "basic"
-					}
-
-					spawned := g.spawnEnemy(enemyType, nil)
-					if spawned {
-						g.LastDecisions["gemini"] = fmt.Sprintf("Spawned %s enemy", enemyType)
-					} else {
-						g.LastDecisions["gemini"] = fmt.Sprintf("Failed to spawn %s enemy", enemyType)
-					}
-				} else if action == "wave" {
-					if g.spawnWave() {
-						g.LastDecisions["gemini"] = fmt.Sprintf("Launched wave %d", g.Wave)
-					} else {
-						g.LastDecisions["gemini"] = "Failed to launch wave (not enough resources)"
-					}
-				} else if action == "custom" {
-					params := map[string]interface{}{
-						"char":   "X",
-						"health": 200.0,
-						"speed":  1.5,
-						"reward": 35.0,
-					}
-
-					customData, ok := decision["custom_params"].(map[string]interface{})
-					if ok {
-						for k, v := range customData {
-							params[k] = v
-						}
-					}
-
-					spawned := g.spawnEnemy("custom", params)
-					if spawned {
-						g.LastDecisions["gemini"] = "Spawned custom enemy"
-					} else {
-						g.LastDecisions["gemini"] = "Failed to spawn custom enemy"
-					}
-				} else {
-					g.LastDecisions["gemini"] = "Saving resources"
-				}
-			} else {
-				g.LastDecisions["gemini"] = "API error"
-			}
-
-			g.AIThinking["gemini"] = false
-			g.LastAIDecision["gemini"] = time.Now()
-		}()
-	}
-}
-
-func (g *Game) updateGameState() {
-	// Process wave queue
-	if len(g.WaveQueue) > 0 && len(g.Enemies) < 20 {
-		enemyType := g.WaveQueue[0]
-		g.WaveQueue = g.WaveQueue[1:]
-		g.spawnEnemy(enemyType, nil)
-	}
-
-	// Update towers
-	for _, tower := range g.Towers {
-		if tower.Cooldown > 0 {
-			tower.Cooldown--
-		}
-
-		if tower.CanAttack() {
-			hitEnemies := tower.Attack(g.Enemies)
-			for range hitEnemies {
-				// Animate attack (future implementation)
-			}
-		}
-	}
-
-	// Update enemies
-	for i := 0; i < len(g.Enemies); i++ {
-		enemy := g.Enemies[i]
-
-		// Check if enemy is dead
-		if enemy.Health <= 0 {
-			g.Resources["chatgpt"] += enemy.Reward
-			g.Score["chatgpt"] += enemy.Reward
-			g.Enemies = append(g.Enemies[:i], g.Enemies[i+1:]...)
-			i--
-			continue
-		}
-
-		// Move enemy along path
-		enemy.DistanceMoved += enemy.Speed
-		pathIndex := int(math.Min(float64(enemy.DistanceMoved), float64(len(g.Path)-1)))
-		if pathIndex < len(g.Path) {
-			enemy.Pos = g.Path[pathIndex]
-		}
-
-		// Check if enemy reached the end
-		if pathIndex >= len(g.Path)-1 {
-			g.Lives["chatgpt"]--
-			g.Resources["gemini"] += enemy.Reward / 2
-			g.Score["gemini"] += enemy.Reward
-			g.Enemies = append(g.Enemies[:i], g.Enemies[i+1:]...)
-			i--
-		}
-	}
-
-	// Check win/lose conditions
-	if g.Lives["chatgpt"] <= 0 {
-		g.GameOver = true
-		g.Winner = "gemini"
-	}
-}
-
-func (g *Game) handleInput(ev tcell.Event) bool {
-	switch ev := ev.(type) {
-	case *tcell.EventKey:
-		switch ev.Key() {
-		case tcell.KeyEscape, tcell.KeyCtrlC:
-			return false
-		case tcell.KeyRune:
-			switch ev.Rune() {
-			case 'q', 'Q':
-				return false
-			case 'a', 'A':
-				g.AIEnabled = !g.AIEnabled
-			case '+', '=':
-				g.GameSpeed = math.Max(0.05, g.GameSpeed*0.9)
-			case '-', '_':
-				g.GameSpeed = math.Min(1.0, g.GameSpeed*1.1)
-			}
-		}
-	}
-	return true
-}
-
 func (g *Game) Run() {
+	fmt.Println("\n=== Game Started ===")
+	fmt.Printf("Initial resources - ChatGPT: %d, Gemini: %d\n", g.Resources["chatgpt"], g.Resources["gemini"])
+	fmt.Printf("Initial lives - ChatGPT: %d\n", g.Lives["chatgpt"])
+	fmt.Printf("Game speed: %.2f\n", g.GameSpeed)
+	fmt.Printf("AI decision intervals - ChatGPT: %ds, Gemini: %ds\n",
+		g.AIDecisionInterval["chatgpt"], g.AIDecisionInterval["gemini"])
+	fmt.Println("================================\n")
+
 	// Game loop
 	ticker := time.NewTicker(time.Duration(g.GameSpeed * float64(time.Second)))
 	defer ticker.Stop()
 
 	running := true
 	for running {
-		// Handle events
-		for {
-			ev := g.Screen.PollEvent()
-			if ev == nil {
-				break
-			}
-			running = g.handleInput(ev)
-		}
-
 		select {
 		case <-ticker.C:
-			// AI decision logic
 			if !g.GameOver {
 				g.handleAIDecisions()
 				g.updateGameState()
-				g.drawUI()
+
+				// Print current game state
+				fmt.Printf("\n=== Game State ===\n")
+				fmt.Printf("Wave: %d\n", g.Wave)
+				fmt.Printf("ChatGPT - Lives: %d, Resources: %d, Score: %d\n",
+					g.Lives["chatgpt"], g.Resources["chatgpt"], g.Score["chatgpt"])
+				fmt.Printf("Gemini - Resources: %d, Score: %d\n",
+					g.Resources["gemini"], g.Score["gemini"])
+				fmt.Printf("Active Towers: %d, Active Enemies: %d\n",
+					len(g.Towers), len(g.Enemies))
+				fmt.Printf("Wave Queue: %d enemies\n", len(g.WaveQueue))
+				fmt.Println("==================\n")
 			} else {
-				// Draw game over screen
-				g.Screen.Clear()
+				fmt.Println("\n=== Game Over! ===")
 				winner := "ChatGPT"
 				if g.Winner == "gemini" {
 					winner = "Gemini"
 				}
-				drawText(g.Screen, g.Width/2-10, g.Height/2, fmt.Sprintf("Game Over! %s wins!", winner), tcell.StyleDefault.Foreground(tcell.ColorYellow))
-				drawText(g.Screen, g.Width/2-15, g.Height/2+2, "Press 'Q' to quit", tcell.StyleDefault)
-				g.Screen.Show()
+				fmt.Printf("%s wins!\n", winner)
+				fmt.Printf("Final scores - ChatGPT: %d, Gemini: %d\n",
+					g.Score["chatgpt"], g.Score["gemini"])
+				running = false
 			}
 		default:
 			time.Sleep(time.Millisecond * 10)
@@ -1020,51 +976,10 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Initialize screen
-	screen, err := tcell.NewScreen()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error creating screen: %v\n", err)
-		os.Exit(1)
-	}
-
-	if err := screen.Init(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error initializing screen: %v\n", err)
-		os.Exit(1)
-	}
-
-	// Set screen options
-	screen.SetStyle(tcell.StyleDefault.
-		Background(tcell.ColorBlack).
-		Foreground(tcell.ColorWhite))
-	screen.Clear()
+	fmt.Println("API keys loaded successfully")
 
 	// Create and run game
 	rand.Seed(time.Now().UnixNano())
-	game := NewGame(screen)
-
-	// Clean up
-	defer func() {
-		screen.Fini()
-	}()
-
-	// Show welcome screen
-	screen.Clear()
-	drawText(screen, game.Width/2-30, game.Height/2-5, "ChatGPT vs Gemini Tower Defense", tcell.StyleDefault.Foreground(tcell.ColorYellow))
-	drawText(screen, game.Width/2-25, game.Height/2-3, "A battle of AI models!", tcell.StyleDefault)
-	drawText(screen, game.Width/2-20, game.Height/2, "Controls:", tcell.StyleDefault.Foreground(tcell.ColorGreen))
-	drawText(screen, game.Width/2-15, game.Height/2+2, "[Q] - Quit game", tcell.StyleDefault)
-	drawText(screen, game.Width/2-15, game.Height/2+3, "[A] - Toggle AI", tcell.StyleDefault)
-	drawText(screen, game.Width/2-15, game.Height/2+4, "[+/-] - Change game speed", tcell.StyleDefault)
-	drawText(screen, game.Width/2-25, game.Height/2+7, "Press any key to start the game...", tcell.StyleDefault.Foreground(tcell.ColorYellow))
-	screen.Show()
-
-	// Wait for key press
-	for {
-		ev := screen.PollEvent()
-		switch ev.(type) {
-		case *tcell.EventKey:
-			game.Run()
-			return
-		}
-	}
+	game := NewGame()
+	game.Run()
 }
