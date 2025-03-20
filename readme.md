@@ -1,6 +1,6 @@
 # ChatGPT vs Gemini Tower Defense
 
-A terminal-based tower defense game where OpenAI's ChatGPT and Google's Gemini AI models compete against each other in real-time.
+A terminal-based tower defense game written in Go where OpenAI's ChatGPT and Google's Gemini AI models compete against each other in real-time.
 
 ## Game Overview
 
@@ -38,7 +38,8 @@ Tower types: basic (^) sniper (⌖) splash (⊕) | Enemy types: basic (o) fast (
 
 ## Features
 
-- **Terminal-based interface** using tcell library
+- **Pure Go implementation** with no external language dependencies
+- **Terminal-based interface** with simple text output
 - **Real-time battles** between actual AI models via API calls
 - **Multiple tower types**:
   - Basic Tower (^): Balanced damage and range
@@ -93,19 +94,29 @@ Tower types: basic (^) sniper (⌖) splash (⊕) | Enemy types: basic (o) fast (
    .env
    ```
 
-4. Build the game:
+4. Run the game:
+
+   You can either run the game directly:
    ```bash
-   go build -o tower-defense
+   go run main.go
    ```
 
-5. Run the game:
+   Or build and run an executable:
    ```bash
-   ./tower-defense
+   go build -o tower_defense
+   ./tower_defense
    ```
    
    On Windows, use:
    ```
-   tower-defense.exe
+   tower_defense.exe
+   ```
+
+5. Verify API keys:
+
+   If you're having issues with API connectivity, you can test your API keys:
+   ```bash
+   go run check_api.go
    ```
 
 ## Controls
@@ -124,7 +135,7 @@ Tower types: basic (^) sniper (⌖) splash (⊕) | Enemy types: basic (o) fast (
 
 ## Technical Details
 
-- Written in Go using the tcell library for terminal UI
+- Written entirely in Go with minimal dependencies
 - Uses goroutines for non-blocking API calls
 - Communicates with OpenAI and Google APIs for AI decisions
 - Game state updates at configurable intervals
@@ -136,6 +147,14 @@ You can adjust game parameters in the code:
 - `GameSpeed`: Controls how fast the game runs
 - `AIDecisionInterval`: How often each AI makes decisions
 - Tower and enemy attributes can be modified in their respective constructors
+
+## Headless Mode
+
+By default, the game runs with a simple UI. You can run it in headless mode by changing the `runWithUI` flag to `false` in the code or using the `-ui=false` command-line flag:
+
+```bash
+go run main.go -ui=false
+```
 
 ## Known Issues
 
@@ -149,5 +168,5 @@ MIT License
 
 ## Acknowledgments
 
-- [tcell](https://github.com/gdamore/tcell) for the terminal UI library
 - OpenAI and Google for their AI APIs
+- The Go community for excellent libraries
