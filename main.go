@@ -48,9 +48,9 @@ type Tower struct {
 
 func NewTower(y, x int, towerType string, params map[string]interface{}) Tower {
 	types := map[string]map[string]interface{}{
-		"basic":  {"char": '^', "damage": 20, "range": 5, "cooldown": 4, "cost": 100},   // Increased damage from 15 to 20, reduced cooldown from 5 to 4
-		"sniper": {"char": '⌖', "damage": 60, "range": 15, "cooldown": 12, "cost": 250}, // Increased damage from 50 to 60, range from 12 to 15, reduced cooldown from 15 to 12
-		"splash": {"char": '⊕', "damage": 12, "range": 4, "cooldown": 2, "cost": 200},   // Increased damage from 10 to 12, range from 3 to 4, reduced cooldown from 3 to 2
+		"basic":  {"char": '^', "damage": 15, "range": 5, "cooldown": 5, "cost": 100},
+		"sniper": {"char": '⌖', "damage": 50, "range": 12, "cooldown": 15, "cost": 250},
+		"splash": {"char": '⊕', "damage": 10, "range": 3, "cooldown": 3, "cost": 200},
 		"custom": {"char": '?', "damage": 20, "range": 7, "cooldown": 8, "cost": 150},
 	}
 
@@ -217,21 +217,20 @@ func NewEnemy(y, x int, enemyType string, params map[string]interface{}) Enemy {
 // AI API handlers
 type AIHandler struct {
 	Client *http.Client
+	rng    *rand.Rand
 }
 
-func NewAIHandler() *AIHandler {
+func NewAIHandler(rng *rand.Rand) *AIHandler {
 	return &AIHandler{
 		Client: &http.Client{
 			Timeout: 10 * time.Second,
 		},
+		rng: rng,
 	}
 }
 
 type OpenAIHandler struct {
 	*AIHandler
-	LastPrompt        string
-	LastResponse      string
-	ConsecutivePrompt int // Track how many similar prompts we've had
 }
 
 func (h *OpenAIHandler) GetTowerDecision(gameState map[string]interface{}) (map[string]interface{}, error) {
@@ -240,46 +239,7 @@ func (h *OpenAIHandler) GetTowerDecision(gameState map[string]interface{}) (map[
 	fmt.Printf("Current towers: %d\n", len(gameState["towers"].([]interface{})))
 	fmt.Printf("Current enemies: %d\n", len(gameState["enemies"].([]interface{})))
 
-	// Create the current prompt
 	prompt := h.createTowerPrompt(gameState)
-
-	// Check for token optimization opportunities - if game state is similar to last time
-	// and the last response was valid, we can reuse it to save API calls
-
-	// Determine if the current situation is similar to the previous one
-	enemyCount := len(gameState["enemies"].([]interface{}))
-	towerCount := len(gameState["towers"].([]interface{}))
-	resources := gameState["resources"].(map[string]interface{})["chatgpt"].(int)
-
-	// Check if we should use the cached response (similar game state and reasonable decision last time)
-	shouldUseCache := h.LastResponse != "" &&
-		h.ConsecutivePrompt < 3 && // Don't reuse more than 3 times in a row
-		enemyCount > 0 && // Only reuse when there are enemies (we need to defend)
-		towerCount > 0 && // Only reuse when we already have some towers
-		resources >= 100 // Only reuse when we have at least enough for a basic tower
-
-	if shouldUseCache {
-		h.ConsecutivePrompt++
-		fmt.Println("Using cached decision to save API tokens")
-
-		// Extract the previous response and return it
-		lastDecision, err := h.parseTowerResponse(h.LastResponse)
-		if err == nil && lastDecision != nil {
-			// Modify the position slightly to avoid placing all towers in the same spot
-			if position, ok := lastDecision["position"].([]interface{}); ok && len(position) >= 2 {
-				// Add small random offset to the position
-				rand.Seed(time.Now().UnixNano())
-				y := int(position[0].(float64)) + rand.Intn(3) - 1 // -1, 0, or 1
-				x := int(position[1].(float64)) + rand.Intn(3) - 1 // -1, 0, or 1
-				lastDecision["position"] = []interface{}{float64(y), float64(x)}
-			}
-
-			return lastDecision, nil
-		}
-	}
-
-	// If caching not applicable, make a real API call
-	h.LastPrompt = prompt
 	fmt.Println("Sending prompt to ChatGPT...")
 
 	// Create request body
@@ -333,10 +293,6 @@ func (h *OpenAIHandler) GetTowerDecision(gameState map[string]interface{}) (map[
 	message := choice["message"].(map[string]interface{})
 	content := message["content"].(string)
 	fmt.Printf("ChatGPT response: %s\n", content)
-
-	// Cache the response
-	h.LastResponse = content
-	h.ConsecutivePrompt = 0 // Reset the counter as we just got a fresh response
 
 	return h.parseTowerResponse(content)
 }
@@ -455,8 +411,7 @@ func (h *OpenAIHandler) createTowerPrompt(gameState map[string]interface{}) stri
 	}
 
 	// Choose random position from options
-	rand.Seed(time.Now().UnixNano())
-	randomPos := positionOptions[rand.Intn(len(positionOptions))]
+	randomPos := positionOptions[h.rng.Intn(len(positionOptions))]
 
 	// Determine example position based on number of existing towers
 	examplePos := randomPos
@@ -468,10 +423,10 @@ func (h *OpenAIHandler) createTowerPrompt(gameState map[string]interface{}) stri
 		examplePos = []int{2, 75}
 	} else if len(towers)%2 == 0 {
 		// Even towers - try top half
-		examplePos = []int{2 + rand.Intn(5), 10 + rand.Intn(60)}
+		examplePos = []int{2 + h.rng.Intn(5), 10 + h.rng.Intn(60)}
 	} else {
 		// Odd towers - try bottom half
-		examplePos = []int{15 + rand.Intn(5), 10 + rand.Intn(60)}
+		examplePos = []int{15 + h.rng.Intn(5), 10 + h.rng.Intn(60)}
 	}
 
 	prompt := fmt.Sprintf(
@@ -494,7 +449,8 @@ func (h *OpenAIHandler) createTowerPrompt(gameState map[string]interface{}) stri
 			"- IMPORTANT: The path validation has been improved! You can now place towers MUCH closer to the path!\n"+
 			"- We now allow towers to be placed right next to each other, so you can build dense defensive clusters\n"+
 			"- Good positions include: [2,2], [5,5], [2,75], [5,75], [20,20], [20,60], etc.\n"+
-			"- If unsure, place near coordinates: [%d,%d] or try one of the built-in strategic positions\n\n"+
+			"- If unsure, place near coordinates: [%d,%d] or try one of the built-in strategic positions\n"+
+			"- Example strategic position: [%d,%d]\n\n"+
 			"RESPONSE INSTRUCTIONS:\n"+
 			"1. If wave > 15 AND you can afford it: Choose sniper towers\n"+
 			"2. If fast enemies present AND you can afford it: Choose splash towers\n"+
@@ -510,6 +466,7 @@ func (h *OpenAIHandler) createTowerPrompt(gameState map[string]interface{}) stri
 		towerCosts["basic"], towerCosts["sniper"], towerCosts["splash"],
 		resources, lives,
 		affordabilityMsg,
+		randomPos[0], randomPos[1],
 		examplePos[0], examplePos[1],
 		recommendedTower,
 		recommendedTower,             // Default to the recommended tower type in the example JSON
@@ -585,8 +542,6 @@ func (h *OpenAIHandler) parseTowerResponse(response string) (map[string]interfac
 
 type GeminiHandler struct {
 	*AIHandler
-	LastResponse      string
-	ConsecutivePrompt int
 }
 
 func (h *GeminiHandler) GetEnemyDecision(gameState map[string]interface{}) (map[string]interface{}, error) {
@@ -617,24 +572,6 @@ func (h *GeminiHandler) GetEnemyDecision(gameState map[string]interface{}) (map[
 			"action": "wave",
 			"reason": "Auto-decision: High resources available for wave launch",
 		}, nil
-	}
-
-	// Check if we should reuse the last response to save tokens
-	enemyCount := len(gameState["enemies"].([]interface{}))
-	shouldUseCache := h.LastResponse != "" &&
-		h.ConsecutivePrompt < 3 && // Don't reuse more than 3 times in a row
-		resources > 30 && // Only reuse when we have some resources to work with
-		(enemyCount <= 5 || wave < 10) // Only reuse when enemy count is low or early waves
-
-	if shouldUseCache {
-		h.ConsecutivePrompt++
-		fmt.Println("Using cached decision to save API tokens")
-
-		// Parse the cached response
-		decision, err := h.parseEnemyResponse(h.LastResponse)
-		if err == nil && decision != nil {
-			return decision, nil
-		}
 	}
 
 	prompt := h.createEnemyPrompt(gameState)
@@ -699,10 +636,6 @@ func (h *GeminiHandler) GetEnemyDecision(gameState map[string]interface{}) (map[
 	parts := content["parts"].([]interface{})
 	text := parts[0].(map[string]interface{})["text"].(string)
 	fmt.Printf("Gemini response: %s\n", text)
-
-	// Cache the response
-	h.LastResponse = text
-	h.ConsecutivePrompt = 0 // Reset the counter since we got a fresh response
 
 	return h.parseEnemyResponse(text)
 }
@@ -950,65 +883,59 @@ type Game struct {
 	lastEnemyCount     int
 	lastTowerCount     int
 	stateChangeCounter int
+	rng                *rand.Rand
 }
 
-func NewGame() (*Game, error) {
-	// Load API keys
-	openAIKey, googleAPIKey, err := loadAPIKeys()
-	if err != nil {
-		return nil, err
-	}
-	fmt.Println("API keys loaded successfully")
+func NewGame() *Game {
+	// Initialize with fixed dimensions
+	width := 80
+	height := 24
+	mapHeight := height - 10
 
-	// Create HTTP client
-	client := &http.Client{
-		Timeout: time.Second * 60,
-	}
+	// Create RNG for the game
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 
-	// Initialize AI handlers
-	aiHandler := &AIHandler{
-		Client: client,
-	}
-
-	openAIHandler := &OpenAIHandler{
-		AIHandler:         aiHandler,
-		APIKey:            openAIKey,
-		LastContext:       "",
-		ConsecutivePrompt: 0,
-	}
-
-	geminiHandler := &GeminiHandler{
-		AIHandler:         aiHandler,
-		LastResponse:      "",
-		ConsecutivePrompt: 0,
-	}
-
-	// Create game instance
 	game := &Game{
-		Wave:          1,
-		Path:          generatePath(),
-		Towers:        []Tower{},
-		Enemies:       []Enemy{},
-		OpenAIHandler: openAIHandler,
-		GeminiHandler: geminiHandler,
-		Resources: map[string]int{
-			"chatgpt": 300,
-			"gemini":  300,
+		Height:             height,
+		Width:              width,
+		MapHeight:          mapHeight,
+		MapWidth:           width,
+		Towers:             make([]*Tower, 0),
+		Enemies:            make([]*Enemy, 0),
+		Resources:          map[string]int{"chatgpt": 300, "gemini": 300},
+		Lives:              map[string]int{"chatgpt": 20},
+		Wave:               1,
+		Score:              map[string]int{"chatgpt": 0, "gemini": 0},
+		LastDecisions:      map[string]string{"chatgpt": "None", "gemini": "None"},
+		WaveQueue:          make([]string, 0),
+		GameOver:           false,
+		AIEnabled:          true,
+		AIThinking:         map[string]bool{"chatgpt": false, "gemini": false},
+		OpenAIHandler:      &OpenAIHandler{AIHandler: NewAIHandler(rng)},
+		GeminiHandler:      &GeminiHandler{AIHandler: NewAIHandler(rng)},
+		GameSpeed:          0.1,
+		AIDecisionInterval: map[string]int{"chatgpt": 2, "gemini": 2},
+		LastAIDecision: map[string]time.Time{
+			"chatgpt": time.Now(),
+			"gemini":  time.Now(),
 		},
-		Lives: map[string]int{
-			"chatgpt": 30, // Increased from 20 to 30
-			"gemini":  20,
-		},
-		MaxResources: 800,
-		Score: map[string]int{
-			"chatgpt": 0,
-			"gemini":  0,
-		},
-		TowerID: 0,
-		EnemyID: 0,
+		CurrentTurn:        "chatgpt", // ChatGPT goes first
+		LastActionTime:     time.Now(),
+		MaxResources:       800,              // Reduced maximum resources to encourage spending
+		MaxWaves:           30,               // Reduced to have a more focused game
+		TurnTimeout:        45 * time.Second, // Increased timeout to allow more API response time
+		PauseBetweenTurns:  true,             // Pause between turns for better visualization
+		PauseDuration:      1 * time.Second,  // Duration of pause between turns
+		lastStatePrintTime: time.Now(),
+		lastEnemyCount:     0,
+		lastTowerCount:     0,
+		stateChangeCounter: 0,
+		rng:                rng,
 	}
 
-	return game, nil
+	// Generate path
+	game.Path = game.generatePath()
+	return game
 }
 
 func (g *Game) generatePath() []Position {
@@ -1223,8 +1150,6 @@ func (g *Game) handleAIDecisions() {
 						x = int(position[1].(float64))
 					} else {
 						// Use strategic positions
-						rand.Seed(time.Now().UnixNano())
-
 						// Define good strategic positions away from the path
 						goodPositions := [][]int{
 							{2, 2}, {2, g.Width - 3},
@@ -1236,7 +1161,7 @@ func (g *Game) handleAIDecisions() {
 						}
 
 						// Select a random good position
-						pos := goodPositions[rand.Intn(len(goodPositions))]
+						pos := goodPositions[g.rng.Intn(len(goodPositions))]
 						y, x = pos[0], pos[1]
 					}
 
@@ -2243,12 +2168,7 @@ func main() {
 	fmt.Println("API keys loaded successfully")
 
 	// Create and run game
-	rand.Seed(time.Now().UnixNano())
-	game, err := NewGame()
-	if err != nil {
-		fmt.Println("Error creating game:", err)
-		os.Exit(1)
-	}
+	game := NewGame()
 
 	// Apply command line settings
 	game.PauseBetweenTurns = *pause
