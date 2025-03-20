@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"math"
 	"math/rand"
@@ -18,6 +19,9 @@ import (
 // API Keys
 var openaiAPIKey string
 var googleAPIKey string
+
+// Global settings
+var runWithUI bool = true
 
 // Game entities
 type Position struct {
@@ -859,11 +863,13 @@ type Game struct {
 	AIDecisionInterval map[string]int
 	LastAIDecision     map[string]time.Time
 
-	CurrentTurn    string // "chatgpt" or "gemini"
-	LastActionTime time.Time
-	MaxResources   int
-	MaxWaves       int
-	TurnTimeout    time.Duration
+	CurrentTurn       string // "chatgpt" or "gemini"
+	LastActionTime    time.Time
+	MaxResources      int
+	MaxWaves          int
+	TurnTimeout       time.Duration
+	PauseBetweenTurns bool
+	PauseDuration     time.Duration
 
 	// State tracking for reduced output
 	lastStatePrintTime time.Time
@@ -907,6 +913,8 @@ func NewGame() *Game {
 		MaxResources:       800,              // Reduced maximum resources to encourage spending
 		MaxWaves:           30,               // Reduced to have a more focused game
 		TurnTimeout:        45 * time.Second, // Increased timeout to allow more API response time
+		PauseBetweenTurns:  true,             // Pause between turns for better visualization
+		PauseDuration:      1 * time.Second,  // Duration of pause between turns
 		lastStatePrintTime: time.Now(),
 		lastEnemyCount:     0,
 		lastTowerCount:     0,
@@ -1006,8 +1014,41 @@ func (g *Game) generatePath() []Position {
 }
 
 func (g *Game) handleAIDecisions() {
-	gameState := g.getGameState()
+	if !g.AIEnabled {
+		return
+	}
+
 	currentTime := time.Now()
+	gameState := g.getGameState()
+
+	// Log game state periodically for debugging
+	if currentTime.Sub(g.lastStatePrintTime) > 10*time.Second {
+		fmt.Println("\n=== Game State ===")
+		fmt.Printf("Wave: %d\n", g.Wave)
+		fmt.Printf("Current Turn: %s\n", g.CurrentTurn)
+		fmt.Printf("ChatGPT - Lives: %d, Resources: %d, Score: %d\n",
+			g.Lives["chatgpt"], g.Resources["chatgpt"], g.Score["chatgpt"])
+		fmt.Printf("Gemini - Resources: %d, Score: %d\n",
+			g.Resources["gemini"], g.Score["gemini"])
+		fmt.Printf("Active Towers: %d, Active Enemies: %d\n",
+			len(g.Towers), len(g.Enemies))
+		fmt.Printf("Wave Queue: %d enemies\n", len(g.WaveQueue))
+		fmt.Printf("Time since last action: %.1f seconds\n",
+			currentTime.Sub(g.LastActionTime).Seconds())
+		fmt.Println("==================\n")
+		g.lastStatePrintTime = currentTime
+	}
+
+	// If any AI is thinking, don't allow new decisions
+	if g.AIThinking["chatgpt"] || g.AIThinking["gemini"] {
+		// Only print once every few seconds to avoid log spam
+		timeLastPrinted := g.LastAIDecision[g.CurrentTurn].Add(2 * time.Second)
+		if currentTime.After(timeLastPrinted) {
+			fmt.Printf("Waiting for %s to finish thinking...\n", g.CurrentTurn)
+			g.LastAIDecision[g.CurrentTurn] = currentTime
+		}
+		return
+	}
 
 	// Check if game should end due to timeout or max waves
 	if currentTime.Sub(g.LastActionTime) > g.TurnTimeout {
@@ -1034,7 +1075,14 @@ func (g *Game) handleAIDecisions() {
 		if chatgptResources < lowestTowerCost {
 			fmt.Printf("ChatGPT has insufficient resources (%d) for any tower. Saving resources.\n", chatgptResources)
 			g.LastDecisions["chatgpt"] = "Insufficient resources for any tower"
-			g.CurrentTurn = "gemini" // Switch to Gemini's turn
+			g.CurrentTurn = "gemini"       // Switch to Gemini's turn
+			g.LastActionTime = currentTime // Update last action time to prevent timeout
+
+			// Add pause between turns if enabled
+			if g.PauseBetweenTurns {
+				time.Sleep(g.PauseDuration)
+			}
+
 			return
 		}
 
@@ -1044,6 +1092,7 @@ func (g *Game) handleAIDecisions() {
 		go func() {
 			decision, err := g.OpenAIHandler.GetTowerDecision(gameState)
 			if err == nil {
+
 				action, _ := decision["action"].(string)
 				fmt.Printf("ChatGPT decided to: %s\n", action)
 
@@ -1054,7 +1103,7 @@ func (g *Game) handleAIDecisions() {
 					}
 
 					// Check if we have enough resources for the chosen tower type
-					towerCosts := map[string]int{"basic": 100, "sniper": 250, "splash": 200, "custom": 150}
+					towerCosts := map[string]int{"basic": 100, "sniper": 250, "splash": 200}
 					cost, exists := towerCosts[towerType]
 					if !exists {
 						cost = 100 // Default to basic cost if type not found
@@ -1090,14 +1139,14 @@ func (g *Game) handleAIDecisions() {
 						// Use strategic positions
 						rand.Seed(time.Now().UnixNano())
 
-						// Array of good strategic positions to try
+						// Define good strategic positions away from the path
 						goodPositions := [][]int{
 							{2, 2}, {2, g.Width - 3},
 							{g.MapHeight - 3, 2}, {g.MapHeight - 3, g.Width - 3},
-							{g.MapHeight / 3, g.Width / 3},
-							{g.MapHeight / 3, 2 * g.Width / 3},
-							{2 * g.MapHeight / 3, g.Width / 3},
-							{2 * g.MapHeight / 3, 2 * g.Width / 3},
+							{g.MapHeight / 4, g.Width / 4},
+							{g.MapHeight / 4, 3 * g.Width / 4},
+							{3 * g.MapHeight / 4, g.Width / 4},
+							{3 * g.MapHeight / 4, 3 * g.Width / 4},
 						}
 
 						// Select a random good position
@@ -1129,6 +1178,11 @@ func (g *Game) handleAIDecisions() {
 						}
 					}
 					g.CurrentTurn = "gemini" // Switch to Gemini's turn
+
+					// Add pause between turns if enabled
+					if g.PauseBetweenTurns {
+						time.Sleep(g.PauseDuration)
+					}
 				} else if action == "save" {
 					// Only allow saving if we have a lot of towers already
 					if len(g.Towers) >= 5 {
@@ -1166,6 +1220,11 @@ func (g *Game) handleAIDecisions() {
 						}
 					}
 					g.CurrentTurn = "gemini" // Switch to Gemini's turn
+
+					// Add pause between turns if enabled
+					if g.PauseBetweenTurns {
+						time.Sleep(g.PauseDuration)
+					}
 				} else {
 					fmt.Println("ChatGPT made invalid decision, defaulting to placing basic tower")
 					placed := g.placeTower(2, 2, "basic")
@@ -1175,11 +1234,21 @@ func (g *Game) handleAIDecisions() {
 						g.LastDecisions["chatgpt"] = "Failed to place tower (invalid decision)"
 					}
 					g.CurrentTurn = "gemini" // Switch to Gemini's turn
+
+					// Add pause between turns if enabled
+					if g.PauseBetweenTurns {
+						time.Sleep(g.PauseDuration)
+					}
 				}
 			} else {
 				fmt.Printf("ChatGPT API error: %v\n", err)
 				g.LastDecisions["chatgpt"] = "API error"
 				g.CurrentTurn = "gemini" // Switch to Gemini's turn on error
+
+				// Add pause between turns if enabled
+				if g.PauseBetweenTurns {
+					time.Sleep(g.PauseDuration)
+				}
 			}
 
 			g.AIThinking["chatgpt"] = false
@@ -1191,7 +1260,14 @@ func (g *Game) handleAIDecisions() {
 		if g.Resources["gemini"] < 20 { // 20 is cost of basic enemy
 			fmt.Printf("Gemini has insufficient resources (%d) for any enemy. Saving resources.\n", g.Resources["gemini"])
 			g.LastDecisions["gemini"] = "Insufficient resources for any enemy"
-			g.CurrentTurn = "chatgpt" // Switch to ChatGPT's turn
+			g.CurrentTurn = "chatgpt"      // Switch to ChatGPT's turn
+			g.LastActionTime = currentTime // Update last action time to prevent timeout
+
+			// Add pause between turns if enabled
+			if g.PauseBetweenTurns {
+				time.Sleep(g.PauseDuration)
+			}
+
 			return
 		}
 
@@ -1211,7 +1287,7 @@ func (g *Game) handleAIDecisions() {
 					}
 
 					// Check if we have enough resources for the chosen enemy type
-					enemyCosts := map[string]int{"basic": 20, "fast": 30, "tank": 50, "custom": 40}
+					enemyCosts := map[string]int{"basic": 20, "fast": 30, "tank": 50}
 					cost, exists := enemyCosts[enemyType]
 					if !exists {
 						cost = 20 // Default to basic cost if type not found
@@ -1244,6 +1320,11 @@ func (g *Game) handleAIDecisions() {
 						g.LastDecisions["gemini"] = fmt.Sprintf("Failed to spawn %s enemy", enemyType)
 					}
 					g.CurrentTurn = "chatgpt" // Switch to ChatGPT's turn
+
+					// Add pause between turns if enabled
+					if g.PauseBetweenTurns {
+						time.Sleep(g.PauseDuration)
+					}
 				} else if action == "wave" {
 					waveCost := 40 + (g.Wave * 5) // Match the calculation in spawnWave
 					if waveCost > 200 {
@@ -1272,6 +1353,11 @@ func (g *Game) handleAIDecisions() {
 						}
 					}
 					g.CurrentTurn = "chatgpt" // Switch to ChatGPT's turn
+
+					// Add pause between turns if enabled
+					if g.PauseBetweenTurns {
+						time.Sleep(g.PauseDuration)
+					}
 				} else if action == "save" {
 					// Only allow saving if resources are very low
 					if g.Resources["gemini"] < 30 {
@@ -1294,6 +1380,11 @@ func (g *Game) handleAIDecisions() {
 						}
 					}
 					g.CurrentTurn = "chatgpt" // Switch to ChatGPT's turn
+
+					// Add pause between turns if enabled
+					if g.PauseBetweenTurns {
+						time.Sleep(g.PauseDuration)
+					}
 				} else {
 					fmt.Printf("Gemini made an invalid decision: %s\n", action)
 
@@ -1308,11 +1399,21 @@ func (g *Game) handleAIDecisions() {
 						g.LastDecisions["gemini"] = "Invalid decision - not enough resources"
 					}
 					g.CurrentTurn = "chatgpt" // Switch to ChatGPT's turn on error
+
+					// Add pause between turns if enabled
+					if g.PauseBetweenTurns {
+						time.Sleep(g.PauseDuration)
+					}
 				}
 			} else {
 				fmt.Printf("Gemini API error: %v\n", err)
 				g.LastDecisions["gemini"] = "API error"
 				g.CurrentTurn = "chatgpt" // Switch to ChatGPT's turn on error
+
+				// Add pause between turns if enabled
+				if g.PauseBetweenTurns {
+					time.Sleep(g.PauseDuration)
+				}
 			}
 
 			g.AIThinking["gemini"] = false
@@ -1605,9 +1706,10 @@ func (g *Game) placeTower(y, x int, towerType string) bool {
 			}
 		}
 
-		// If no strategic position works, try spiral search (up to 12 steps)
+		// If no strategic position works, try spiral search
 		maxSteps := 24 // Increased from 12 to 24 to expand search area
 		steps := 0
+		foundPositions := 0
 
 		// Spiral search pattern
 		directions := [][]int{{0, 1}, {1, 0}, {0, -1}, {-1, 0}}
@@ -1642,6 +1744,11 @@ func (g *Game) placeTower(y, x int, towerType string) bool {
 			}
 
 			if tooCloseToPath {
+				// Only print every few positions to avoid log spam
+				if foundPositions%5 == 0 {
+					fmt.Printf("Position (%d,%d) is too close to path\n", tryY, tryX)
+				}
+				foundPositions++
 				continue
 			}
 
@@ -1731,14 +1838,6 @@ func (g *Game) spawnEnemy(enemyType string, params map[string]interface{}) bool 
 		enemy.EnemyType, enemy.Health, enemy.Speed, enemy.Reward)
 
 	return true
-}
-
-// Helper function for minimum of two integers (Go 1.21 has this built-in, adding for compatibility)
-func minInt(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }
 
 func (g *Game) spawnWave() bool {
@@ -1900,6 +1999,14 @@ func abs(x int) int {
 }
 
 func main() {
+	// Process command line flags
+	useUI := flag.Bool("ui", true, "Enable UI display")
+	pause := flag.Bool("pause", true, "Enable pause between turns")
+	pauseDuration := flag.Int("pause-duration", 1, "Duration of pause between turns in seconds")
+	gameSpeed := flag.Float64("speed", 0.1, "Game speed (lower is faster)")
+
+	flag.Parse()
+
 	// Load environment variables from .env file
 	err := godotenv.Load()
 	if err != nil {
@@ -1921,5 +2028,14 @@ func main() {
 	// Create and run game
 	rand.Seed(time.Now().UnixNano())
 	game := NewGame()
+
+	// Apply command line settings
+	game.PauseBetweenTurns = *pause
+	game.PauseDuration = time.Duration(*pauseDuration) * time.Second
+	game.GameSpeed = *gameSpeed
+
+	// Override the rendering flag in Run method
+	runWithUI = *useUI
+
 	game.Run()
 }
