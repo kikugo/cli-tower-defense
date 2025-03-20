@@ -48,9 +48,9 @@ type Tower struct {
 
 func NewTower(y, x int, towerType string, params map[string]interface{}) Tower {
 	types := map[string]map[string]interface{}{
-		"basic":  {"char": '^', "damage": 15, "range": 5, "cooldown": 5, "cost": 100},
-		"sniper": {"char": '⌖', "damage": 50, "range": 12, "cooldown": 15, "cost": 250},
-		"splash": {"char": '⊕', "damage": 10, "range": 3, "cooldown": 3, "cost": 200},
+		"basic":  {"char": '^', "damage": 20, "range": 5, "cooldown": 4, "cost": 100},   // Increased damage from 15 to 20, reduced cooldown from 5 to 4
+		"sniper": {"char": '⌖', "damage": 60, "range": 15, "cooldown": 12, "cost": 250}, // Increased damage from 50 to 60, range from 12 to 15, reduced cooldown from 15 to 12
+		"splash": {"char": '⊕', "damage": 12, "range": 4, "cooldown": 2, "cost": 200},   // Increased damage from 10 to 12, range from 3 to 4, reduced cooldown from 3 to 2
 		"custom": {"char": '?', "damage": 20, "range": 7, "cooldown": 8, "cost": 150},
 	}
 
@@ -229,6 +229,9 @@ func NewAIHandler() *AIHandler {
 
 type OpenAIHandler struct {
 	*AIHandler
+	LastPrompt        string
+	LastResponse      string
+	ConsecutivePrompt int // Track how many similar prompts we've had
 }
 
 func (h *OpenAIHandler) GetTowerDecision(gameState map[string]interface{}) (map[string]interface{}, error) {
@@ -237,7 +240,46 @@ func (h *OpenAIHandler) GetTowerDecision(gameState map[string]interface{}) (map[
 	fmt.Printf("Current towers: %d\n", len(gameState["towers"].([]interface{})))
 	fmt.Printf("Current enemies: %d\n", len(gameState["enemies"].([]interface{})))
 
+	// Create the current prompt
 	prompt := h.createTowerPrompt(gameState)
+
+	// Check for token optimization opportunities - if game state is similar to last time
+	// and the last response was valid, we can reuse it to save API calls
+
+	// Determine if the current situation is similar to the previous one
+	enemyCount := len(gameState["enemies"].([]interface{}))
+	towerCount := len(gameState["towers"].([]interface{}))
+	resources := gameState["resources"].(map[string]interface{})["chatgpt"].(int)
+
+	// Check if we should use the cached response (similar game state and reasonable decision last time)
+	shouldUseCache := h.LastResponse != "" &&
+		h.ConsecutivePrompt < 3 && // Don't reuse more than 3 times in a row
+		enemyCount > 0 && // Only reuse when there are enemies (we need to defend)
+		towerCount > 0 && // Only reuse when we already have some towers
+		resources >= 100 // Only reuse when we have at least enough for a basic tower
+
+	if shouldUseCache {
+		h.ConsecutivePrompt++
+		fmt.Println("Using cached decision to save API tokens")
+
+		// Extract the previous response and return it
+		lastDecision, err := h.parseTowerResponse(h.LastResponse)
+		if err == nil && lastDecision != nil {
+			// Modify the position slightly to avoid placing all towers in the same spot
+			if position, ok := lastDecision["position"].([]interface{}); ok && len(position) >= 2 {
+				// Add small random offset to the position
+				rand.Seed(time.Now().UnixNano())
+				y := int(position[0].(float64)) + rand.Intn(3) - 1 // -1, 0, or 1
+				x := int(position[1].(float64)) + rand.Intn(3) - 1 // -1, 0, or 1
+				lastDecision["position"] = []interface{}{float64(y), float64(x)}
+			}
+
+			return lastDecision, nil
+		}
+	}
+
+	// If caching not applicable, make a real API call
+	h.LastPrompt = prompt
 	fmt.Println("Sending prompt to ChatGPT...")
 
 	// Create request body
@@ -291,6 +333,10 @@ func (h *OpenAIHandler) GetTowerDecision(gameState map[string]interface{}) (map[
 	message := choice["message"].(map[string]interface{})
 	content := message["content"].(string)
 	fmt.Printf("ChatGPT response: %s\n", content)
+
+	// Cache the response
+	h.LastResponse = content
+	h.ConsecutivePrompt = 0 // Reset the counter as we just got a fresh response
 
 	return h.parseTowerResponse(content)
 }
@@ -398,12 +444,14 @@ func (h *OpenAIHandler) createTowerPrompt(gameState map[string]interface{}) stri
 		affordabilityMsg = "You can afford any tower type."
 	}
 
-	// Random position suggestions to avoid getting stuck on the same position
+	// Expanded position options covering more of the map
 	positionOptions := [][]int{
-		{5, 5}, {5, 15}, {5, 25}, {5, 35}, {5, 45},
-		{15, 5}, {15, 15}, {15, 25}, {15, 35}, {15, 45},
-		{2, 2}, {2, 20}, {2, 40}, {2, 60},
-		{20, 2}, {20, 20}, {20, 40}, {20, 60},
+		{2, 2}, {2, 15}, {2, 25}, {2, 35}, {2, 45}, {2, 55}, {2, 65}, {2, 75},
+		{5, 5}, {5, 15}, {5, 25}, {5, 35}, {5, 45}, {5, 55}, {5, 65}, {5, 75},
+		{8, 5}, {8, 15}, {8, 25}, {8, 35}, {8, 45}, {8, 55}, {8, 65}, {8, 75},
+		{12, 5}, {12, 15}, {12, 25}, {12, 35}, {12, 45}, {12, 55}, {12, 65}, {12, 75},
+		{16, 5}, {16, 15}, {16, 25}, {16, 35}, {16, 45}, {16, 55}, {16, 65}, {16, 75},
+		{20, 5}, {20, 15}, {20, 25}, {20, 35}, {20, 45}, {20, 55}, {20, 65}, {20, 75},
 	}
 
 	// Choose random position from options
@@ -417,13 +465,13 @@ func (h *OpenAIHandler) createTowerPrompt(gameState map[string]interface{}) stri
 		examplePos = []int{2, 2}
 	} else if len(towers) == 1 {
 		// Second tower - place at opposite corner
-		examplePos = []int{2, 60}
+		examplePos = []int{2, 75}
 	} else if len(towers)%2 == 0 {
 		// Even towers - try top half
-		examplePos = []int{2 + rand.Intn(5), 10 + rand.Intn(50)}
+		examplePos = []int{2 + rand.Intn(5), 10 + rand.Intn(60)}
 	} else {
 		// Odd towers - try bottom half
-		examplePos = []int{15 + rand.Intn(5), 10 + rand.Intn(50)}
+		examplePos = []int{15 + rand.Intn(5), 10 + rand.Intn(60)}
 	}
 
 	prompt := fmt.Sprintf(
@@ -442,10 +490,11 @@ func (h *OpenAIHandler) createTowerPrompt(gameState map[string]interface{}) stri
 			"- Lives: %d\n\n"+
 			"AFFORDABILITY: %s\n\n"+
 			"POSITIONING STRATEGY:\n"+
-			"- If this is your first tower, try placing at corners or edges of map (like [2,2] or [2,60])\n"+
-			"- IMPORTANT: Vary your tower positions! Don't place all towers in the same area\n"+
-			"- Try positions at least 10 units apart from existing towers\n"+
-			"- Good positions include: [2,2], [5,5], [2,50], [5,40], [20,2], [20,20], [20,60], etc.\n\n"+
+			"- If this is your first tower, try placing at corners or edges of map (like [2,2] or [2,75])\n"+
+			"- IMPORTANT: The path validation has been improved! You can now place towers MUCH closer to the path!\n"+
+			"- We now allow towers to be placed right next to each other, so you can build dense defensive clusters\n"+
+			"- Good positions include: [2,2], [5,5], [2,75], [5,75], [20,20], [20,60], etc.\n"+
+			"- If unsure, place near coordinates: [%d,%d] or try one of the built-in strategic positions\n\n"+
 			"RESPONSE INSTRUCTIONS:\n"+
 			"1. If wave > 15 AND you can afford it: Choose sniper towers\n"+
 			"2. If fast enemies present AND you can afford it: Choose splash towers\n"+
@@ -461,6 +510,7 @@ func (h *OpenAIHandler) createTowerPrompt(gameState map[string]interface{}) stri
 		towerCosts["basic"], towerCosts["sniper"], towerCosts["splash"],
 		resources, lives,
 		affordabilityMsg,
+		examplePos[0], examplePos[1],
 		recommendedTower,
 		recommendedTower,             // Default to the recommended tower type in the example JSON
 		examplePos[0], examplePos[1], // Use strategic position in example
@@ -535,6 +585,8 @@ func (h *OpenAIHandler) parseTowerResponse(response string) (map[string]interfac
 
 type GeminiHandler struct {
 	*AIHandler
+	LastResponse      string
+	ConsecutivePrompt int
 }
 
 func (h *GeminiHandler) GetEnemyDecision(gameState map[string]interface{}) (map[string]interface{}, error) {
@@ -565,6 +617,24 @@ func (h *GeminiHandler) GetEnemyDecision(gameState map[string]interface{}) (map[
 			"action": "wave",
 			"reason": "Auto-decision: High resources available for wave launch",
 		}, nil
+	}
+
+	// Check if we should reuse the last response to save tokens
+	enemyCount := len(gameState["enemies"].([]interface{}))
+	shouldUseCache := h.LastResponse != "" &&
+		h.ConsecutivePrompt < 3 && // Don't reuse more than 3 times in a row
+		resources > 30 && // Only reuse when we have some resources to work with
+		(enemyCount <= 5 || wave < 10) // Only reuse when enemy count is low or early waves
+
+	if shouldUseCache {
+		h.ConsecutivePrompt++
+		fmt.Println("Using cached decision to save API tokens")
+
+		// Parse the cached response
+		decision, err := h.parseEnemyResponse(h.LastResponse)
+		if err == nil && decision != nil {
+			return decision, nil
+		}
 	}
 
 	prompt := h.createEnemyPrompt(gameState)
@@ -629,6 +699,10 @@ func (h *GeminiHandler) GetEnemyDecision(gameState map[string]interface{}) (map[
 	parts := content["parts"].([]interface{})
 	text := parts[0].(map[string]interface{})["text"].(string)
 	fmt.Printf("Gemini response: %s\n", text)
+
+	// Cache the response
+	h.LastResponse = text
+	h.ConsecutivePrompt = 0 // Reset the counter since we got a fresh response
 
 	return h.parseEnemyResponse(text)
 }
@@ -878,52 +952,63 @@ type Game struct {
 	stateChangeCounter int
 }
 
-func NewGame() *Game {
-	// Initialize with fixed dimensions
-	width := 80
-	height := 24
-	mapHeight := height - 10
+func NewGame() (*Game, error) {
+	// Load API keys
+	openAIKey, googleAPIKey, err := loadAPIKeys()
+	if err != nil {
+		return nil, err
+	}
+	fmt.Println("API keys loaded successfully")
 
-	game := &Game{
-		Height:             height,
-		Width:              width,
-		MapHeight:          mapHeight,
-		MapWidth:           width,
-		Towers:             make([]*Tower, 0),
-		Enemies:            make([]*Enemy, 0),
-		Resources:          map[string]int{"chatgpt": 300, "gemini": 300},
-		Lives:              map[string]int{"chatgpt": 20},
-		Wave:               1,
-		Score:              map[string]int{"chatgpt": 0, "gemini": 0},
-		LastDecisions:      map[string]string{"chatgpt": "None", "gemini": "None"},
-		WaveQueue:          make([]string, 0),
-		GameOver:           false,
-		AIEnabled:          true,
-		AIThinking:         map[string]bool{"chatgpt": false, "gemini": false},
-		OpenAIHandler:      &OpenAIHandler{AIHandler: NewAIHandler()},
-		GeminiHandler:      &GeminiHandler{AIHandler: NewAIHandler()},
-		GameSpeed:          0.1,
-		AIDecisionInterval: map[string]int{"chatgpt": 2, "gemini": 2},
-		LastAIDecision: map[string]time.Time{
-			"chatgpt": time.Now(),
-			"gemini":  time.Now(),
-		},
-		CurrentTurn:        "chatgpt", // ChatGPT goes first
-		LastActionTime:     time.Now(),
-		MaxResources:       800,              // Reduced maximum resources to encourage spending
-		MaxWaves:           30,               // Reduced to have a more focused game
-		TurnTimeout:        45 * time.Second, // Increased timeout to allow more API response time
-		PauseBetweenTurns:  true,             // Pause between turns for better visualization
-		PauseDuration:      1 * time.Second,  // Duration of pause between turns
-		lastStatePrintTime: time.Now(),
-		lastEnemyCount:     0,
-		lastTowerCount:     0,
-		stateChangeCounter: 0,
+	// Create HTTP client
+	client := &http.Client{
+		Timeout: time.Second * 60,
 	}
 
-	// Generate path
-	game.Path = game.generatePath()
-	return game
+	// Initialize AI handlers
+	aiHandler := &AIHandler{
+		Client: client,
+	}
+
+	openAIHandler := &OpenAIHandler{
+		AIHandler:         aiHandler,
+		APIKey:            openAIKey,
+		LastContext:       "",
+		ConsecutivePrompt: 0,
+	}
+
+	geminiHandler := &GeminiHandler{
+		AIHandler:         aiHandler,
+		LastResponse:      "",
+		ConsecutivePrompt: 0,
+	}
+
+	// Create game instance
+	game := &Game{
+		Wave:          1,
+		Path:          generatePath(),
+		Towers:        []Tower{},
+		Enemies:       []Enemy{},
+		OpenAIHandler: openAIHandler,
+		GeminiHandler: geminiHandler,
+		Resources: map[string]int{
+			"chatgpt": 300,
+			"gemini":  300,
+		},
+		Lives: map[string]int{
+			"chatgpt": 30, // Increased from 20 to 30
+			"gemini":  20,
+		},
+		MaxResources: 800,
+		Score: map[string]int{
+			"chatgpt": 0,
+			"gemini":  0,
+		},
+		TowerID: 0,
+		EnemyID: 0,
+	}
+
+	return game, nil
 }
 
 func (g *Game) generatePath() []Position {
@@ -933,9 +1018,9 @@ func (g *Game) generatePath() []Position {
 	// Use a more compact zigzag that stays centered in the map
 
 	// Adjust zigzag parameters to leave more space
-	zigzagHeight := g.MapHeight / 4           // Reduced from /3 to /4 to make narrower
+	zigzagHeight := g.MapHeight / 5           // Reduced from /4 to /5 to make narrower
 	centerY := g.MapHeight / 2                // Keep center at middle
-	pathWidth := int(float64(g.Width) * 0.65) // Use only 65% of width
+	pathWidth := int(float64(g.Width) * 0.60) // Use only 60% of width instead of 65%
 
 	// Entry point from left side - keep compact
 	startY := centerY
@@ -945,18 +1030,19 @@ func (g *Game) generatePath() []Position {
 	}
 
 	// Calculate bounds of zigzag to keep it more centered
-	leftBound := 5                           // Start zigzag further to the right
+	leftBound := 7                           // Start zigzag further to the right (increased from 5)
 	rightBound := pathWidth                  // End before reaching far right
 	zigzagTop := centerY - zigzagHeight/2    // Raise the top of zigzag
 	zigzagBottom := centerY + zigzagHeight/2 // Lower the bottom of zigzag
 
-	// Create more gentle zigzag
+	// Create more gentle zigzag with increased spacing between legs
 	x := leftBound
 	goingDown := true
 
 	for x < rightBound {
 		x++ // Move right one step at a time
 
+		// Use fewer zigzags with more horizontal space between them
 		if goingDown {
 			// Going from top to bottom
 			for y := zigzagTop; y <= zigzagBottom; y++ {
@@ -971,9 +1057,9 @@ func (g *Game) generatePath() []Position {
 			goingDown = true
 		}
 
-		// Skip some horizontal space to make zigzag wider and leave room for towers
+		// Skip more horizontal space to make zigzag wider and leave room for towers
 		if x < rightBound-10 {
-			x += 2 // Add horizontal spacing between zigzags
+			x += 6 // Increased from 2 to 6 for more space between zigzags
 		}
 	}
 
@@ -1627,17 +1713,23 @@ func (g *Game) placeTower(y, x int, towerType string) bool {
 	// Validate position
 	isValidPosition := true
 
+	// Path buffer distance - REDUCED from 1 to 0 to make tower placement easier
+	pathBufferDistance := 0
+
 	// Check if position is valid (not on path)
 	for _, pos := range g.Path {
-		if abs(pos.Y-y) < 1 && abs(pos.X-x) < 1 {
+		if abs(pos.Y-y) <= pathBufferDistance && abs(pos.X-x) <= pathBufferDistance {
 			isValidPosition = false
 			break
 		}
 	}
 
+	// Tower spacing distance - REDUCED from 1 to 0 to allow towers to be placed more densely
+	towerSpacingDistance := 0
+
 	// Check if tower already exists at position
 	for _, tower := range g.Towers {
-		if abs(tower.Pos.Y-y) < 1 && abs(tower.Pos.X-x) < 1 {
+		if abs(tower.Pos.Y-y) <= towerSpacingDistance && abs(tower.Pos.X-x) <= towerSpacingDistance {
 			isValidPosition = false
 			break
 		}
@@ -1673,17 +1765,17 @@ func (g *Game) placeTower(y, x int, towerType string) bool {
 			// Check if valid position
 			isValid := true
 
-			// Check if valid from path
+			// Check if valid from path - use reduced buffer distance
 			for _, pathPos := range g.Path {
-				if abs(pathPos.Y-tryY) < 1 && abs(pathPos.X-tryX) < 1 {
+				if abs(pathPos.Y-tryY) <= pathBufferDistance && abs(pathPos.X-tryX) <= pathBufferDistance {
 					isValid = false
 					break
 				}
 			}
 
-			// Check if tower exists nearby
+			// Check if tower exists nearby - use reduced spacing distance
 			for _, tower := range g.Towers {
-				if abs(tower.Pos.Y-tryY) < 1 && abs(tower.Pos.X-tryX) < 1 {
+				if abs(tower.Pos.Y-tryY) <= towerSpacingDistance && abs(tower.Pos.X-tryX) <= towerSpacingDistance {
 					isValid = false
 					break
 				}
@@ -1706,8 +1798,8 @@ func (g *Game) placeTower(y, x int, towerType string) bool {
 			}
 		}
 
-		// If no strategic position works, try spiral search
-		maxSteps := 24 // Increased from 12 to 24 to expand search area
+		// If no strategic position works, try spiral search with increased search area
+		maxSteps := 36 // Increased from 24 to 36 to expand search area further
 		steps := 0
 		foundPositions := 0
 
@@ -1734,10 +1826,10 @@ func (g *Game) placeTower(y, x int, towerType string) bool {
 				}
 			}
 
-			// Check if too close to path
+			// Check if too close to path - use reduced buffer distance
 			tooCloseToPath := false
 			for _, pathPos := range g.Path {
-				if abs(pathPos.Y-tryY) < 1 && abs(pathPos.X-tryX) < 1 {
+				if abs(pathPos.Y-tryY) <= pathBufferDistance && abs(pathPos.X-tryX) <= pathBufferDistance {
 					tooCloseToPath = true
 					break
 				}
@@ -1745,7 +1837,7 @@ func (g *Game) placeTower(y, x int, towerType string) bool {
 
 			if tooCloseToPath {
 				// Only print every few positions to avoid log spam
-				if foundPositions%5 == 0 {
+				if foundPositions%10 == 0 {
 					fmt.Printf("Position (%d,%d) is too close to path\n", tryY, tryX)
 				}
 				foundPositions++
@@ -1755,7 +1847,7 @@ func (g *Game) placeTower(y, x int, towerType string) bool {
 			// Check if tower exists nearby
 			towerExists := false
 			for _, tower := range g.Towers {
-				if abs(tower.Pos.Y-tryY) < 1 && abs(tower.Pos.X-tryX) < 1 {
+				if abs(tower.Pos.Y-tryY) <= towerSpacingDistance && abs(tower.Pos.X-tryX) <= towerSpacingDistance {
 					towerExists = true
 					break
 				}
@@ -1781,7 +1873,63 @@ func (g *Game) placeTower(y, x int, towerType string) bool {
 			return true
 		}
 
-		fmt.Printf("Failed to place %s tower after %d attempts\n", towerType, steps)
+		// If still no valid position is found, just place the tower anywhere that's not on the path
+		// and not on top of another tower (final fallback)
+		fmt.Printf("Failed to find optimal position after %d attempts, trying fallback placement\n", steps)
+
+		// Try a series of fixed positions as last resort
+		fallbackPositions := [][]int{
+			{2, 2}, {2, 20}, {2, 40}, {2, 60}, {2, 78},
+			{6, 2}, {6, 20}, {6, 40}, {6, 60}, {6, 78},
+			{12, 2}, {12, 20}, {12, 40}, {12, 60}, {12, 78},
+			{18, 2}, {18, 20}, {18, 40}, {18, 60}, {18, 78},
+		}
+
+		for _, pos := range fallbackPositions {
+			tryY, tryX := pos[0], pos[1]
+
+			// Minimal validation - just ensure not directly on path or tower
+			directlyOnPath := false
+			for _, pathPos := range g.Path {
+				if pathPos.Y == tryY && pathPos.X == tryX {
+					directlyOnPath = true
+					break
+				}
+			}
+
+			if directlyOnPath {
+				continue
+			}
+
+			directlyOnTower := false
+			for _, tower := range g.Towers {
+				if tower.Pos.Y == tryY && tower.Pos.X == tryX {
+					directlyOnTower = true
+					break
+				}
+			}
+
+			if directlyOnTower {
+				continue
+			}
+
+			// Check if out of bounds
+			if tryY < 0 || tryY >= g.MapHeight || tryX < 0 || tryX >= g.MapWidth {
+				continue
+			}
+
+			// Place tower with minimal validation
+			fmt.Printf("Successfully placed %s tower at fallback position (%d,%d)\n",
+				towerType, tryY, tryX)
+
+			tower := NewTower(tryY, tryX, towerType, nil)
+			g.Towers = append(g.Towers, &tower)
+			g.Resources["chatgpt"] -= cost
+
+			return true
+		}
+
+		fmt.Printf("Failed to place %s tower after all attempts\n", towerType)
 		return false
 	}
 
@@ -1924,6 +2072,69 @@ func (g *Game) spawnWave() bool {
 	return true
 }
 
+// Simple UI function to display the game state in a cleaner way
+func (g *Game) displayGameUI() {
+	// Clear screen
+	fmt.Print("\033[H\033[2J")
+
+	// Header
+	fmt.Println(strings.Repeat("=", 80))
+	fmt.Printf("ChatGPT vs Gemini Tower Defense - Wave: %d\n", g.Wave)
+	fmt.Printf("ChatGPT - Lives: %d, Resources: %d, Score: %d | ",
+		g.Lives["chatgpt"], g.Resources["chatgpt"], g.Score["chatgpt"])
+	fmt.Printf("Gemini - Resources: %d, Score: %d\n",
+		g.Resources["gemini"], g.Score["gemini"])
+	fmt.Println(strings.Repeat("=", 80))
+
+	// Create a grid for the map
+	grid := make([][]rune, g.MapHeight)
+	for i := range grid {
+		grid[i] = make([]rune, g.MapWidth)
+		// Fill with empty space
+		for j := range grid[i] {
+			grid[i][j] = ' '
+		}
+	}
+
+	// Draw the path
+	for _, pos := range g.Path {
+		if pos.Y >= 0 && pos.Y < g.MapHeight && pos.X >= 0 && pos.X < g.MapWidth {
+			grid[pos.Y][pos.X] = '.'
+		}
+	}
+
+	// Draw towers
+	for _, tower := range g.Towers {
+		pos := tower.Pos
+		if pos.Y >= 0 && pos.Y < g.MapHeight && pos.X >= 0 && pos.X < g.MapWidth {
+			grid[pos.Y][pos.X] = tower.Char
+		}
+	}
+
+	// Draw enemies
+	for _, enemy := range g.Enemies {
+		pos := enemy.Pos
+		if pos.Y >= 0 && pos.Y < g.MapHeight && pos.X >= 0 && pos.X < g.MapWidth {
+			grid[pos.Y][pos.X] = enemy.Char
+		}
+	}
+
+	// Print the grid
+	for _, row := range grid {
+		fmt.Println(string(row))
+	}
+
+	// Footer
+	fmt.Println(strings.Repeat("-", 80))
+	fmt.Printf("Active Towers: %d | Active Enemies: %d | Wave Queue: %d enemies\n",
+		len(g.Towers), len(g.Enemies), len(g.WaveQueue))
+	fmt.Printf("Current Turn: %s | Last Action: %s\n",
+		g.CurrentTurn, g.LastDecisions[g.CurrentTurn])
+	fmt.Println("Tower Types: Basic (^) | Sniper (⌖) | Splash (⊕)")
+	fmt.Println("Enemy Types: Basic (o) | Fast (>) | Tank (□)")
+	fmt.Println(strings.Repeat("-", 80))
+}
+
 func (g *Game) Run() {
 	fmt.Println("\n=== Game Started ===")
 	fmt.Printf("Initial resources - ChatGPT: %d, Gemini: %d\n", g.Resources["chatgpt"], g.Resources["gemini"])
@@ -1941,7 +2152,13 @@ func (g *Game) Run() {
 		case <-ticker.C:
 			g.updateGameState()
 			g.handleAIDecisions()
-			g.printGameState()
+
+			// Use the appropriate display method
+			if runWithUI {
+				g.displayGameUI()
+			} else {
+				g.printGameState()
+			}
 		default:
 			time.Sleep(10 * time.Millisecond)
 		}
@@ -2027,7 +2244,11 @@ func main() {
 
 	// Create and run game
 	rand.Seed(time.Now().UnixNano())
-	game := NewGame()
+	game, err := NewGame()
+	if err != nil {
+		fmt.Println("Error creating game:", err)
+		os.Exit(1)
+	}
 
 	// Apply command line settings
 	game.PauseBetweenTurns = *pause
