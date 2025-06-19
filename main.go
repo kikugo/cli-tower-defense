@@ -28,6 +28,7 @@ type model struct {
 	paused    bool
 	logScroll int // how many lines from the bottom we offset when viewing logs
 	tickDur   time.Duration
+	showRange bool
 }
 
 func initialModel() model {
@@ -77,6 +78,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.logScroll > 0 {
 				m.logScroll--
 			}
+		case "r":
+			m.showRange = !m.showRange
 		}
 	}
 	return m, nil
@@ -148,6 +151,23 @@ func (m model) View() string {
 		enemyAt[key] = e
 	}
 
+	// If range preview enabled, overlay range markers
+	if m.showRange {
+		for _, t := range m.game.Towers {
+			for y2 := 0; y2 < m.game.MapHeight; y2++ {
+				for x2 := 0; x2 < m.game.MapWidth; x2++ {
+					dy := y2 - t.Pos.Y
+					dx := x2 - t.Pos.X
+					if dx*dx+dy*dy <= t.Range*t.Range {
+						if grid[y2][x2] == ' ' {
+							grid[y2][x2] = '•'
+						}
+					}
+				}
+			}
+		}
+	}
+
 	rows := make([]string, m.game.MapHeight)
 	for y := 0; y < m.game.MapHeight; y++ {
 		var b strings.Builder
@@ -176,6 +196,8 @@ func (m model) View() string {
 					}
 				}
 				b.WriteString(style.Render(string(r)))
+			case '•':
+				b.WriteString(pathStyle.Render("•"))
 			default:
 				b.WriteRune(r)
 			}
