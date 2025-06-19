@@ -213,12 +213,7 @@ type AIHandler struct {
 }
 
 func NewAIHandler(rng *rand.Rand) *AIHandler {
-	return &AIHandler{
-		Client: &http.Client{
-			Timeout: 10 * time.Second,
-		},
-		rng: rng,
-	}
+	return &AIHandler{Client: &http.Client{Timeout: 20 * time.Second}, rng: rng}
 }
 
 type OpenAIHandler struct {
