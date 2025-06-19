@@ -34,6 +34,8 @@ type model struct {
 
 func initialModel() model {
 	swap := flag.Bool("swap", false, "swap defender/attacker roles")
+	defInt := flag.Int("def-int", 2, "defender decision interval (seconds)")
+	attInt := flag.Int("att-int", 2, "attacker decision interval (seconds)")
 	flag.Parse()
 	_ = godotenv.Load()
 	openaiKey := os.Getenv("OPENAI_API_KEY")
@@ -49,6 +51,8 @@ func initialModel() model {
 		}
 		g.CurrentTurn = g.Defender
 	}
+	g.AIDecisionInterval[g.Defender] = *defInt
+	g.AIDecisionInterval[g.Attacker] = *attInt
 	return model{game: g, tickDur: 100 * time.Millisecond}
 }
 
