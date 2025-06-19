@@ -21,15 +21,22 @@ func (h *GeminiHandler) GetTowerDecision(gameState map[string]interface{}) (map[
 	req, _ := http.NewRequest("POST", url, bytes.NewBuffer(reqJSON))
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := h.Client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
 	var result map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, err
+	var err error
+	for i := 0; i < 3; i++ {
+		resp, e := h.Client.Do(req)
+		if e != nil {
+			err = e
+			continue
+		}
+		defer resp.Body.Close()
+		if json.NewDecoder(resp.Body).Decode(&result) == nil {
+			err = nil
+			break
+		}
+	}
+	if err != nil {
+		return map[string]interface{}{"action": "save"}, nil
 	}
 
 	preds, ok := result["candidates"].([]interface{})

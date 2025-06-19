@@ -23,15 +23,23 @@ func (h *OpenAIHandler) GetEnemyDecision(gameState map[string]interface{}) (map[
 	req.Header.Set("Authorization", "Bearer "+h.APIKey)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := h.Client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
 	var result map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, err
+	var err error
+	for i := 0; i < 3; i++ {
+		resp, e := h.Client.Do(req)
+		if e != nil {
+			err = e
+			continue
+		}
+		defer resp.Body.Close()
+		if json.NewDecoder(resp.Body).Decode(&result) == nil {
+			err = nil
+			break
+		}
+	}
+	if err != nil {
+		// fallback
+		return getFallbackEnemyDecision(int(gameState["resources"].(map[string]interface{})["chatgpt"].(int))), nil
 	}
 	choices, ok := result["choices"].([]interface{})
 	if !ok || len(choices) == 0 {
