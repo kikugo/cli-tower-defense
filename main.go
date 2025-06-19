@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
 	"math"
@@ -32,6 +33,8 @@ type model struct {
 }
 
 func initialModel() model {
+	swap := flag.Bool("swap", false, "swap defender/attacker roles")
+	flag.Parse()
 	_ = godotenv.Load()
 	openaiKey := os.Getenv("OPENAI_API_KEY")
 	googleKey := os.Getenv("GOOGLE_API_KEY")
@@ -39,6 +42,13 @@ func initialModel() model {
 		log.Fatal("OPENAI_API_KEY and GOOGLE_API_KEY must be set")
 	}
 	g := eng.NewGame(openaiKey, googleKey)
+	if *swap {
+		g.Defender, g.Attacker = "gemini", "chatgpt"
+		if _, ok := g.Lives[g.Defender]; !ok {
+			g.Lives[g.Defender] = 20
+		}
+		g.CurrentTurn = g.Defender
+	}
 	return model{game: g, tickDur: 100 * time.Millisecond}
 }
 
