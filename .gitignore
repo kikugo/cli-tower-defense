@@ -8,7 +8,7 @@
 *.so
 *.dylib
 tower-defense
-
+main
 # Test binary, built with `go test -c`
 *.test
 
