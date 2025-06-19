@@ -1506,6 +1506,29 @@ func (g *Game) HandleAIDecisions() {
 
 			g.AIThinking["gemini"] = false
 		}()
+	} else if g.CurrentTurn == defender && defender == "gemini" && !g.AIThinking["gemini"] && g.AIEnabled {
+		fmt.Println("\n=== Gemini's Turn (defender) ===")
+		if g.Resources["gemini"] < 100 {
+			g.LastDecisions["gemini"] = "Insufficient resources"
+			g.CurrentTurn = attacker
+			return
+		}
+		g.AIThinking["gemini"] = true
+		go func() {
+			decision, err := g.GeminiHandler.GetTowerDecision(gameState)
+			if err == nil {
+				action, _ := decision["action"].(string)
+				if action == "place" {
+					towerType, _ := decision["tower_type"].(string)
+					pos, _ := decision["position"].([]interface{})
+					y, x := int(pos[0].(float64)), int(pos[1].(float64))
+					g.placeTower(y, x, towerType)
+					g.LastDecisions["gemini"] = "Placed tower"
+				}
+			}
+			g.CurrentTurn = attacker
+			g.AIThinking["gemini"] = false
+		}()
 	}
 }
 
