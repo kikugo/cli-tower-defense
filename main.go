@@ -225,6 +225,7 @@ func (m model) View() string {
 	turnStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("34")).Bold(true)
 
 	def := m.game.Defender
+	att := m.game.Attacker
 	infoLines := []string{
 		turnStyle.Render(fmt.Sprintf("Turn: %s", m.game.CurrentTurn)),
 		fmt.Sprintf("Wave: %d", m.game.Wave),
@@ -232,6 +233,7 @@ func (m model) View() string {
 		fmt.Sprintf("Towers: %d", len(m.game.Towers)),
 		fmt.Sprintf("Enemies: %d", len(m.game.Enemies)),
 		fmt.Sprintf("Resources (%s): %d", def, m.game.Resources[def]),
+		fmt.Sprintf("Resources (%s): %d", att, m.game.Resources[att]),
 		"",
 		"Logs (↑/↓):",
 	}
