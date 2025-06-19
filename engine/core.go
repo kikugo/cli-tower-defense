@@ -892,6 +892,10 @@ type Game struct {
 
 	// Collects textual events; UI can display from this instead of direct stdout.
 	Logs []string
+
+	// Role mapping
+	Defender string // name of defending player
+	Attacker string // name of attacking player
 }
 
 func NewGame(openaiKey, googleKey string) *Game {
@@ -919,6 +923,8 @@ func NewGame(openaiKey, googleKey string) *Game {
 		GameOver:           false,
 		AIEnabled:          true,
 		AIThinking:         map[string]bool{"chatgpt": false, "gemini": false},
+		Defender:           "chatgpt",
+		Attacker:           "gemini",
 		OpenAIHandler:      &OpenAIHandler{AIHandler: NewAIHandler(rng), APIKey: openaiKey},
 		GeminiHandler:      &GeminiHandler{AIHandler: NewAIHandler(rng), APIKey: googleKey},
 		GameSpeed:          0.1,

@@ -214,13 +214,14 @@ func (m model) View() string {
 	// Sidebar with stats and logs
 	turnStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("34")).Bold(true)
 
+	def := m.game.Defender
 	infoLines := []string{
 		turnStyle.Render(fmt.Sprintf("Turn: %s", m.game.CurrentTurn)),
 		fmt.Sprintf("Wave: %d", m.game.Wave),
-		fmt.Sprintf("Lives: %d", m.game.Lives["chatgpt"]),
+		fmt.Sprintf("Lives (%s): %d", def, m.game.Lives[def]),
 		fmt.Sprintf("Towers: %d", len(m.game.Towers)),
 		fmt.Sprintf("Enemies: %d", len(m.game.Enemies)),
-		fmt.Sprintf("Resources: %d", m.game.Resources["chatgpt"]),
+		fmt.Sprintf("Resources (%s): %d", def, m.game.Resources[def]),
 		"",
 		"Logs (↑/↓):",
 	}
