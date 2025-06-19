@@ -70,6 +70,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.tickDur < 500*time.Millisecond {
 				m.tickDur = time.Duration(float64(m.tickDur) * 1.25)
 			}
+		case "a":
+			if m.game != nil {
+				m.game.AIEnabled = !m.game.AIEnabled
+			}
 		case "up", "k":
 			if m.logScroll < len(m.game.Logs)-1 {
 				m.logScroll++
@@ -246,7 +250,11 @@ func (m model) View() string {
 
 	// Footer with speed
 	speed := math.Round((100.0/float64(m.tickDur/time.Millisecond))*10) / 10 // 1 decimal
-	footer := fmt.Sprintf("speed %.1fx | (space) pause/resume, +/- adjust, q quit", speed)
+	aiStatus := "on"
+	if m.game != nil && !m.game.AIEnabled {
+		aiStatus = "off"
+	}
+	footer := fmt.Sprintf("speed %.1fx | ai %s | (space) pause/resume, +/- adjust, a toggle ai, q quit", speed, aiStatus)
 	if m.paused {
 		footer = "PAUSED | " + footer
 	}
