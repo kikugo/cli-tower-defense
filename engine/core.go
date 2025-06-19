@@ -1283,6 +1283,64 @@ func (g *Game) HandleAIDecisions() {
 
 			g.AIThinking["chatgpt"] = false
 		}()
+	} else if g.CurrentTurn == attacker && attacker == "chatgpt" && !g.AIThinking["chatgpt"] && g.AIEnabled {
+		// ChatGPT playing attacker role
+		fmt.Println("\n=== ChatGPT's Turn (attacker) ===")
+
+		if g.Resources["chatgpt"] < 20 {
+			fmt.Printf("ChatGPT has insufficient resources (%d) for any enemy. Saving resources.\n", g.Resources["chatgpt"])
+			g.LastDecisions["chatgpt"] = "Insufficient resources for any enemy"
+			g.CurrentTurn = defender
+			g.LastActionTime = currentTime
+			if g.PauseBetweenTurns {
+				time.Sleep(g.PauseDuration)
+			}
+			return
+		}
+
+		g.AIThinking["chatgpt"] = true
+		g.LastActionTime = currentTime
+
+		go func() {
+			decision, err := g.OpenAIHandler.GetEnemyDecision(gameState)
+			if err == nil {
+				action, _ := decision["action"].(string)
+				g.logf("ChatGPT decided to: %s", action)
+
+				if action == "spawn" {
+					enemyType, _ := decision["enemy_type"].(string)
+					if enemyType == "" {
+						enemyType = "basic"
+					}
+
+					if spawned := g.spawnEnemy(enemyType, nil); spawned {
+						g.LastDecisions["chatgpt"] = fmt.Sprintf("Spawned %s enemy", enemyType)
+					} else {
+						g.LastDecisions["chatgpt"] = "Failed to spawn enemy"
+					}
+				} else if action == "wave" {
+					if g.spawnWave() {
+						g.LastDecisions["chatgpt"] = "Launched wave"
+					} else {
+						g.LastDecisions["chatgpt"] = "Failed to launch wave"
+					}
+				} else {
+					g.LastDecisions["chatgpt"] = "Invalid decision"
+				}
+
+				g.CurrentTurn = defender
+				if g.PauseBetweenTurns {
+					time.Sleep(g.PauseDuration)
+				}
+			} else {
+				g.logf("ChatGPT API error: %v", err)
+				g.LastDecisions["chatgpt"] = "API error"
+				g.CurrentTurn = defender
+			}
+
+			g.AIThinking["chatgpt"] = false
+		}()
+
 	} else if g.CurrentTurn == "gemini" && !g.AIThinking["gemini"] && g.AIEnabled {
 		fmt.Println("\n=== Gemini's Turn ===")
 
