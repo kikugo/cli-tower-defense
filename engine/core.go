@@ -1042,6 +1042,10 @@ func (g *Game) generatePath() []Position {
 }
 
 func (g *Game) HandleAIDecisions() {
+	defender := g.Defender
+	attacker := g.Attacker
+	_ = defender
+	_ = attacker
 	if !g.AIEnabled {
 		return
 	}
