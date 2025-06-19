@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"strings"
 	"time"
@@ -26,6 +27,7 @@ type model struct {
 	height    int
 	paused    bool
 	logScroll int // how many lines from the bottom we offset when viewing logs
+	tickDur   time.Duration
 }
 
 func initialModel() model {
@@ -36,11 +38,11 @@ func initialModel() model {
 		log.Fatal("OPENAI_API_KEY and GOOGLE_API_KEY must be set")
 	}
 	g := eng.NewGame(openaiKey, googleKey)
-	return model{game: g}
+	return model{game: g, tickDur: 100 * time.Millisecond}
 }
 
 func (m model) Init() tea.Cmd {
-	return tickCmd(100 * time.Millisecond)
+	return tickCmd(m.tickDur)
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -50,7 +52,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.game.UpdateGameState()
 			m.game.HandleAIDecisions()
 		}
-		return m, tickCmd(100 * time.Millisecond)
+		return m, tickCmd(m.tickDur)
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 	case tea.KeyMsg:
@@ -59,6 +61,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		case "space":
 			m.paused = !m.paused
+		case "+":
+			if m.tickDur > 20*time.Millisecond {
+				m.tickDur = time.Duration(float64(m.tickDur) * 0.8)
+			}
+		case "-":
+			if m.tickDur < 500*time.Millisecond {
+				m.tickDur = time.Duration(float64(m.tickDur) * 1.25)
+			}
 		case "up", "k":
 			if m.logScroll < len(m.game.Logs)-1 {
 				m.logScroll++
@@ -212,8 +222,9 @@ func (m model) View() string {
 	// Combine map and sidebar horizontally using lipgloss
 	ui := lipgloss.JoinHorizontal(lipgloss.Top, mapView, sidebar)
 
-	// Footer
-	footer := "(space) pause/resume, q quit"
+	// Footer with speed
+	speed := math.Round((100.0/float64(m.tickDur/time.Millisecond))*10) / 10 // 1 decimal
+	footer := fmt.Sprintf("speed %.1fx | (space) pause/resume, +/- adjust, q quit", speed)
 	if m.paused {
 		footer = "PAUSED | " + footer
 	}
