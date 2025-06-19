@@ -49,7 +49,7 @@ func testOpenAI(apiKey string) {
 
 	// Create a simple request
 	reqBody := map[string]interface{}{
-		"model": "gpt-4o-mini-2024-07-18",
+		"model": "o3",
 		"messages": []map[string]interface{}{
 			{"role": "user", "content": "Say hello in one word"},
 		},
@@ -137,7 +137,7 @@ func testGemini(apiKey string) {
 	// Create and send the request
 	client := &http.Client{Timeout: 10 * time.Second}
 	req, err := http.NewRequest("POST",
-		fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=%s", apiKey),
+		fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=%s", apiKey),
 		bytes.NewBuffer(reqJSON))
 	if err != nil {
 		fmt.Println("❌ Error creating HTTP request:", err)
