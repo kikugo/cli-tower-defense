@@ -625,6 +625,9 @@ func (g *Game) HandleAIDecisions() {
 	if player == g.Attacker {
 		role = "attacker"
 	}
+	if !g.isDecisionIntervalElapsed(player, currentTime) {
+		return
+	}
 	g.handlePlayerTurn(player, role, gameState)
 }
 
@@ -648,44 +651,50 @@ func (g *Game) handlePlayerTurn(playerID, role string, gameState map[string]inte
 		var decision map[string]interface{}
 		var err error
 		if playerID == g.Player1 {
-			if role == "defender" {
-				if g.Resources[playerID] < 100 {
-					g.logf("%s (Def) saving resources (%d)", g.ModelNames[playerID], g.Resources[playerID])
-					g.switchTurn()
-					return
-				}
+				if role == "defender" {
+					if g.Resources[playerID] < 100 {
+						g.logf("%s (Def) saving resources (%d)", g.ModelNames[playerID], g.Resources[playerID])
+						g.LastAIDecision[playerID] = time.Now()
+						g.switchTurn()
+						return
+					}
 				decision, err = g.OpenAIHandler.GetTowerDecision(gameState)
-			} else {
-				if g.Resources[playerID] < 20 {
-					g.logf("%s (Att) saving resources (%d)", g.ModelNames[playerID], g.Resources[playerID])
-					g.switchTurn()
-					return
-				}
+				} else {
+					if g.Resources[playerID] < 20 {
+						g.logf("%s (Att) saving resources (%d)", g.ModelNames[playerID], g.Resources[playerID])
+						g.LastAIDecision[playerID] = time.Now()
+						g.switchTurn()
+						return
+					}
 				decision, err = g.OpenAIHandler.GetEnemyDecision(gameState)
 			}
 		} else {
-			if role == "defender" {
-				if g.Resources[playerID] < 100 {
-					g.logf("%s (Def) saving resources (%d)", g.ModelNames[playerID], g.Resources[playerID])
-					g.switchTurn()
-					return
-				}
+				if role == "defender" {
+					if g.Resources[playerID] < 100 {
+						g.logf("%s (Def) saving resources (%d)", g.ModelNames[playerID], g.Resources[playerID])
+						g.LastAIDecision[playerID] = time.Now()
+						g.switchTurn()
+						return
+					}
 				decision, err = g.GeminiHandler.GetTowerDecision(gameState)
-			} else {
-				if g.Resources[playerID] < 20 {
-					g.logf("%s (Att) saving resources (%d)", g.ModelNames[playerID], g.Resources[playerID])
-					g.switchTurn()
-					return
-				}
+				} else {
+					if g.Resources[playerID] < 20 {
+						g.logf("%s (Att) saving resources (%d)", g.ModelNames[playerID], g.Resources[playerID])
+						g.LastAIDecision[playerID] = time.Now()
+						g.switchTurn()
+						return
+					}
 				decision, err = g.GeminiHandler.GetEnemyDecision(gameState)
 			}
 		}
 		if err != nil {
 			g.logf("%s API error: %v", g.ModelNames[playerID], err)
+			g.LastAIDecision[playerID] = time.Now()
 			g.switchTurn()
 			return
 		}
 		g.applyDecision(playerID, role, decision)
+		g.LastAIDecision[playerID] = time.Now()
 		g.switchTurn()
 	}()
 }
@@ -775,6 +784,18 @@ func max(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func (g *Game) isDecisionIntervalElapsed(playerID string, now time.Time) bool {
+	intervalSecs := g.AIDecisionInterval[playerID]
+	if intervalSecs <= 0 {
+		return true
+	}
+	lastDecision, ok := g.LastAIDecision[playerID]
+	if !ok {
+		return true
+	}
+	return now.Sub(lastDecision) >= time.Duration(intervalSecs)*time.Second
 }
 
 func extractOpenAIChatContent(result map[string]interface{}) (string, bool) {
