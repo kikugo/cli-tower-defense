@@ -3,6 +3,7 @@ package engine
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"math/rand"
@@ -512,6 +513,14 @@ type Game struct {
 	ModelNames         map[string]string
 	Player1            string
 	Player2            string
+	pendingTurnResults chan turnResult
+}
+
+type turnResult struct {
+	playerID string
+	role     string
+	decision map[string]interface{}
+	err      error
 }
 
 func NewGame(openaiKey, googleKey string) *Game {
@@ -530,10 +539,11 @@ func NewGame(openaiKey, googleKey string) *Game {
 		Defender: p1, Attacker: p2, ModelNames: map[string]string{p1: "o3", p2: "gemini-2.5-pro"}, Player1: p1, Player2: p2,
 		OpenAIHandler: &OpenAIHandler{AIHandler: NewAIHandler(rng), APIKey: openaiKey},
 		GeminiHandler: &GeminiHandler{AIHandler: NewAIHandler(rng), APIKey: googleKey},
-		GameSpeed:     0.1, AIDecisionInterval: map[string]int{p1: 2, p2: 2},
-		LastAIDecision: map[string]time.Time{p1: time.Now(), p2: time.Now()},
-		CurrentTurn:    p1, LastActionTime: time.Now(), MaxResources: 800, MaxWaves: 30, TurnTimeout: 45 * time.Second,
-		PauseBetweenTurns: true, PauseDuration: 1 * time.Second, lastStatePrintTime: time.Now(), rng: rng, Logs: make([]string, 0),
+			GameSpeed:     0.1, AIDecisionInterval: map[string]int{p1: 2, p2: 2},
+			LastAIDecision: map[string]time.Time{p1: time.Now(), p2: time.Now()},
+			CurrentTurn:    p1, LastActionTime: time.Now(), MaxResources: 800, MaxWaves: 30, TurnTimeout: 45 * time.Second,
+			PauseBetweenTurns: true, PauseDuration: 1 * time.Second, lastStatePrintTime: time.Now(), rng: rng, Logs: make([]string, 0),
+			pendingTurnResults: make(chan turnResult, 8),
 	}
 	game.Paths = game.generatePaths()
 	game.generateObstacles()
@@ -601,6 +611,8 @@ func (g *Game) generateObstacles() {
 }
 
 func (g *Game) HandleAIDecisions() {
+	g.processPendingTurnResults()
+
 	if !g.AIEnabled || g.GameOver {
 		return
 	}
@@ -625,6 +637,18 @@ func (g *Game) HandleAIDecisions() {
 	if player == g.Attacker {
 		role = "attacker"
 	}
+	if role == "defender" && g.Resources[player] < 100 {
+		g.logf("%s (Def) saving resources (%d)", g.ModelNames[player], g.Resources[player])
+		g.LastAIDecision[player] = currentTime
+		g.switchTurn()
+		return
+	}
+	if role == "attacker" && g.Resources[player] < 20 {
+		g.logf("%s (Att) saving resources (%d)", g.ModelNames[player], g.Resources[player])
+		g.LastAIDecision[player] = currentTime
+		g.switchTurn()
+		return
+	}
 	if !g.isDecisionIntervalElapsed(player, currentTime) {
 		return
 	}
@@ -647,55 +671,31 @@ func (g *Game) handlePlayerTurn(playerID, role string, gameState map[string]inte
 	g.AIThinking[playerID] = true
 	g.LastActionTime = time.Now()
 	go func() {
-		defer func() { g.AIThinking[playerID] = false }()
+		result := turnResult{playerID: playerID, role: role}
+		defer func() {
+			if r := recover(); r != nil {
+				result.err = fmt.Errorf("%w: %v", errTurnWorkerPanic, r)
+			}
+			g.pendingTurnResults <- result
+		}()
+
 		var decision map[string]interface{}
 		var err error
 		if playerID == g.Player1 {
-				if role == "defender" {
-					if g.Resources[playerID] < 100 {
-						g.logf("%s (Def) saving resources (%d)", g.ModelNames[playerID], g.Resources[playerID])
-						g.LastAIDecision[playerID] = time.Now()
-						g.switchTurn()
-						return
-					}
+			if role == "defender" {
 				decision, err = g.OpenAIHandler.GetTowerDecision(gameState)
-				} else {
-					if g.Resources[playerID] < 20 {
-						g.logf("%s (Att) saving resources (%d)", g.ModelNames[playerID], g.Resources[playerID])
-						g.LastAIDecision[playerID] = time.Now()
-						g.switchTurn()
-						return
-					}
+			} else {
 				decision, err = g.OpenAIHandler.GetEnemyDecision(gameState)
 			}
 		} else {
-				if role == "defender" {
-					if g.Resources[playerID] < 100 {
-						g.logf("%s (Def) saving resources (%d)", g.ModelNames[playerID], g.Resources[playerID])
-						g.LastAIDecision[playerID] = time.Now()
-						g.switchTurn()
-						return
-					}
+			if role == "defender" {
 				decision, err = g.GeminiHandler.GetTowerDecision(gameState)
-				} else {
-					if g.Resources[playerID] < 20 {
-						g.logf("%s (Att) saving resources (%d)", g.ModelNames[playerID], g.Resources[playerID])
-						g.LastAIDecision[playerID] = time.Now()
-						g.switchTurn()
-						return
-					}
+			} else {
 				decision, err = g.GeminiHandler.GetEnemyDecision(gameState)
 			}
 		}
-		if err != nil {
-			g.logf("%s API error: %v", g.ModelNames[playerID], err)
-			g.LastAIDecision[playerID] = time.Now()
-			g.switchTurn()
-			return
-		}
-		g.applyDecision(playerID, role, decision)
-		g.LastAIDecision[playerID] = time.Now()
-		g.switchTurn()
+		result.decision = decision
+		result.err = err
 	}()
 }
 
@@ -797,6 +797,30 @@ func (g *Game) isDecisionIntervalElapsed(playerID string, now time.Time) bool {
 	}
 	return now.Sub(lastDecision) >= time.Duration(intervalSecs)*time.Second
 }
+
+func (g *Game) processPendingTurnResults() {
+	for {
+		select {
+		case result := <-g.pendingTurnResults:
+			g.AIThinking[result.playerID] = false
+			g.LastAIDecision[result.playerID] = time.Now()
+			if g.GameOver {
+				continue
+			}
+			if result.err != nil {
+				g.logf("%s API error: %v", g.ModelNames[result.playerID], result.err)
+				g.switchTurn()
+				continue
+			}
+			g.applyDecision(result.playerID, result.role, result.decision)
+			g.switchTurn()
+		default:
+			return
+		}
+	}
+}
+
+var errTurnWorkerPanic = errors.New("turn worker panic")
 
 func extractOpenAIChatContent(result map[string]interface{}) (string, bool) {
 	choicesRaw, ok := result["choices"]
