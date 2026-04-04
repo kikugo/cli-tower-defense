@@ -734,6 +734,7 @@ func (g *Game) handlePlayerTurn(playerID, role string, gameState map[string]inte
 }
 
 func (g *Game) applyDecision(playerID, role string, decision map[string]interface{}) {
+	decision = normalizeDecision(role, decision)
 	action, _ := decision["action"].(string)
 	reason, _ := decision["reason"].(string)
 	if reason == "" {
