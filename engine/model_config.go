@@ -142,6 +142,9 @@ func normalizePlayerConfig(config PlayerModelConfig) PlayerModelConfig {
 	if copyCfg.Provider == ProviderOpenAICompatible && copyCfg.BaseURL == "" {
 		copyCfg.BaseURL = "https://api.openai.com/v1/chat/completions"
 	}
+	if copyCfg.Provider == ProviderGeminiNative && copyCfg.BaseURL == "" {
+		copyCfg.BaseURL = fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent", copyCfg.Model)
+	}
 	if copyCfg.Headers == nil {
 		copyCfg.Headers = map[string]string{}
 	}
