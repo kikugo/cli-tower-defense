@@ -9,6 +9,7 @@ import (
 	"math/rand"
 	"net/http"
 	"regexp"
+	"strings"
 	"time"
 )
 
@@ -289,26 +290,31 @@ func (h *OpenAIHandler) GetTowerDecision(gameState map[string]interface{}) (map[
 func (h *OpenAIHandler) createTowerPrompt(gameState map[string]interface{}) string {
 	pathsCount := gameState["paths_count"].(int)
 	wave := gameState["wave"].(int)
+	stateSummary := summarizePromptState(gameState)
 	prompt := fmt.Sprintf(
 		"You are the Defender in a Tower Defense Battleground. Goal: Stop enemies from reaching the end.\n"+
 			"Current Resources: %v, Base Income: %v, Wave: %d, Paths: %d\n\n"+
+			"Your available tools this turn:\n"+
 			"Actions:\n"+
 			"1. {\"action\": \"place\", \"tower_type\": \"basic|sniper|splash|buffer\", \"position\": [y, x], \"reason\": \"...\", \"taunt\": \"...\"}\n"+
 			"   Costs: basic (100), splash (200), sniper (250), buffer (300)\n"+
+			"   Rules: Position must be inside map, not on path, not on obstacle, not on another tower.\n"+
 			"2. {\"action\": \"upgrade\", \"tower_id\": <int>, \"reason\": \"...\", \"taunt\": \"...\"}\n"+
 			"   Cost: 150 * (current_level + 1). Increases damage and range.\n"+
+			"   Rules: tower_id must exist.\n"+
 			"3. {\"action\": \"place_slow_zone\", \"position\": [y, x], \"reason\": \"...\", \"taunt\": \"...\"}\n"+
 			"   Cost: 150. Reduces enemy speed by 50%%. MUST be on a path.\n"+
 			"4. {\"action\": \"invest\", \"reason\": \"...\", \"taunt\": \"...\"}\n"+
 			"   Cost: 150. Permanently increases passive income.\n"+
 			"5. {\"action\": \"save\", \"reason\": \"...\", \"taunt\": \"...\"}\n\n"+
+			"State summary:\n%s\n\n"+
 			"Strategic Advice:\n"+
 			"- Buffer towers (B) increase damage of nearby towers by 50%%. Place them in clusters.\n"+
 			"- Watch out for Healer enemies (H) and Shielded enemies (S).\n"+
 			"- Invest early if you can afford to, but don't let your lives drop too low.\n"+
 			"- You can send a taunt message to your opponent!\n\n"+
-			"Respond with JSON only.",
-		gameState["resources"], gameState["income"], wave, pathsCount,
+			"Respond with exactly one JSON object only.",
+		gameState["resources"], gameState["income"], wave, pathsCount, stateSummary,
 	)
 	return prompt
 }
@@ -396,15 +402,17 @@ func (h *GeminiHandler) createEnemyPrompt(gameState map[string]interface{}) stri
 	if waveCost > 200 {
 		waveCost = 200
 	}
+	stateSummary := summarizePromptState(gameState)
 	prompt := fmt.Sprintf(
 		"You are the Attacker in a Tower Defense Battleground. Goal: Overwhelm the Defender.\n"+
 			"Current Resources: %v, Base Income: %v, Wave: %d, Paths: %d\n\n"+
+			"Your available tools this turn:\n"+
 			"Enemy Options (cost):\n"+
 			"- basic (20): Standard unit\n"+
 			"- fast (30): Quick and nimble\n"+
 			"- tank (50): High durability\n"+
 			"- shielded (40): Takes 50%% less damage from all towers\n"+
-			"- healer (30): Heals nearby enemies by 2 HP per tick\n"+
+			"- healer (30): Heals nearby enemies in an area\n"+
 			"- wave (%d): Massive multi-path assault\n\n"+
 			"Actions:\n"+
 			"1. {\"action\": \"spawn\", \"enemy_type\": \"basic|fast|tank|shielded|healer\", \"reason\": \"...\", \"taunt\": \"...\"}\n"+
@@ -412,14 +420,15 @@ func (h *GeminiHandler) createEnemyPrompt(gameState map[string]interface{}) stri
 			"3. {\"action\": \"invest\", \"reason\": \"...\", \"taunt\": \"...\"}\n"+
 			"   Cost: 150. Permanently increases passive income.\n"+
 			"4. {\"action\": \"save\", \"reason\": \"...\", \"taunt\": \"...\"}\n\n"+
+			"State summary:\n%s\n\n"+
 			"Strategic Advice:\n"+
 			"- Mix tank and healer units to create a slow but steady push.\n"+
 			"- Shielded enemies are best against sniper towers.\n"+
 			"- Sending a wave splits enemies across all %d paths.\n"+
 			"- Taunt your opponent to get inside their circuits!\n\n"+
-			"Respond with JSON only.",
+			"Respond with exactly one JSON object only.",
 		gameState["resources"], gameState["income"], wave, gameState["paths_count"],
-		waveCost, gameState["paths_count"],
+		waveCost, stateSummary, gameState["paths_count"],
 	)
 	return prompt
 }
@@ -991,6 +1000,23 @@ func parseDecisionPosition(raw interface{}, defaultY, defaultX int) (int, int) {
 		return defaultY, defaultX
 	}
 	return y, x
+}
+
+func summarizePromptState(gameState map[string]interface{}) string {
+	keys := []string{"active_enemies", "wave_queue", "paths_count", "resources", "income", "lives"}
+	lines := make([]string, 0, len(keys)+2)
+	for _, k := range keys {
+		if v, ok := gameState[k]; ok {
+			lines = append(lines, fmt.Sprintf("- %s: %v", k, v))
+		}
+	}
+	if towers, ok := gameState["towers"].([]interface{}); ok {
+		lines = append(lines, fmt.Sprintf("- towers_count: %d", len(towers)))
+	}
+	if enemies, ok := gameState["enemies"].([]interface{}); ok {
+		lines = append(lines, fmt.Sprintf("- enemies_count: %d", len(enemies)))
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (g *Game) TotalProviderErrorsForPlayer(playerID string) int {
