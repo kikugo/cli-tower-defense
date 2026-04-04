@@ -818,12 +818,14 @@ func (g *Game) applyDecision(playerID, role string, decision map[string]interfac
 			outcome = "applied_primary"
 		}
 	} else {
+		autoWaveLaunched := false
 		if (action == "spawn" || action == "save") && g.shouldAutoLaunchWave(playerID) {
 			if g.spawnWave() {
 				g.LastDecisions[playerID] = "Launched wave (auto)"
 				action = "wave"
 				applied = true
 				outcome = "applied_auto_wave"
+				autoWaveLaunched = true
 			}
 		}
 		if action == "spawn" {
@@ -836,7 +838,9 @@ func (g *Game) applyDecision(playerID, role string, decision map[string]interfac
 				outcome = "rejected:invalid_or_unaffordable_spawn"
 			}
 		} else if action == "wave" {
-			if g.spawnWave() {
+			if autoWaveLaunched {
+				// Auto-wave already consumed the wave action for this turn.
+			} else if g.spawnWave() {
 				g.LastDecisions[playerID] = "Launched wave"
 				applied = true
 				outcome = "applied_primary"

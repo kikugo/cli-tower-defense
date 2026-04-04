@@ -39,3 +39,16 @@ func TestAttackerAutoWaveWhenRich(t *testing.T) {
 	}
 }
 
+func TestAttackerAutoWaveOnlyLaunchesOncePerDecision(t *testing.T) {
+	g := NewGame("test", "test")
+	g.Resources[g.Player2] = 500
+	g.WaveQueue = nil
+
+	g.applyDecision(g.Player2, "attacker", map[string]interface{}{
+		"action": "save",
+	})
+
+	if g.Wave != 1 {
+		t.Fatalf("expected exactly one wave launch, got wave=%d", g.Wave)
+	}
+}
