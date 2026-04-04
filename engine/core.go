@@ -521,6 +521,7 @@ type Game struct {
 	ActionCounters     map[string]int
 	RejectedActions    map[string]int
 	ProviderErrors     map[string]int
+	LastActionStatus   map[string]string
 	Defender           string
 	Attacker           string
 	ModelNames         map[string]string
@@ -584,7 +585,7 @@ func NewGameFromResolvedConfig(resolved ResolvedMatchConfig) *Game {
 		GameSpeed:           0.1, AIDecisionInterval: map[string]int{p1: 2, p2: 2},
 		LastAIDecision:      map[string]time.Time{p1: time.Now(), p2: time.Now()},
 		CurrentTurn:         p1, LastActionTime: time.Now(), MaxResources: 800, MaxWaves: 30, TurnTimeout: 45 * time.Second,
-		PauseBetweenTurns:   true, PauseDuration: 1 * time.Second, lastStatePrintTime: time.Now(), rng: rng, Logs: make([]string, 0), MaxLogs: 250, MaxWaveQueue: 200, ActionCounters: map[string]int{}, RejectedActions: map[string]int{}, ProviderErrors: map[string]int{},
+		PauseBetweenTurns:   true, PauseDuration: 1 * time.Second, lastStatePrintTime: time.Now(), rng: rng, Logs: make([]string, 0), MaxLogs: 250, MaxWaveQueue: 200, ActionCounters: map[string]int{}, RejectedActions: map[string]int{}, ProviderErrors: map[string]int{}, LastActionStatus: map[string]string{p1: "none", p2: "none"},
 		pendingTurnResults:  make(chan turnResult, 8),
 	}
 	game.Paths = game.generatePaths()
@@ -763,6 +764,7 @@ func (g *Game) applyDecision(playerID, role string, decision map[string]interfac
 	modelName := g.ModelNames[playerID]
 	g.logf("%s (%s) decided to: %s", modelName, role, action)
 	applied := false
+	outcome := "rejected"
 	if role == "defender" {
 		if action == "place" {
 			towerType, _ := decision["tower_type"].(string)
@@ -770,6 +772,16 @@ func (g *Game) applyDecision(playerID, role string, decision map[string]interfac
 			if g.placeTower(y, x, towerType) {
 				g.LastDecisions[playerID] = fmt.Sprintf("Placed %s tower at [%d,%d]", towerType, y, x)
 				applied = true
+				outcome = "applied_primary"
+			} else if fy, fx, ok := g.findNearestTowerPlacement(y, x, 5); ok && g.placeTower(fy, fx, towerType) {
+				g.LastDecisions[playerID] = fmt.Sprintf("Placed %s tower at fallback [%d,%d]", towerType, fy, fx)
+				g.logf("%s fallback placed %s tower at [%d,%d] after invalid target [%d,%d]", modelName, towerType, fy, fx, y, x)
+				applied = true
+				outcome = "applied_fallback"
+			} else {
+				_, reason := g.canPlaceTowerAt(y, x)
+				g.logf("%s defender place rejected at [%d,%d]: %s", modelName, y, x, reason)
+				outcome = "rejected:" + reason
 			}
 		} else if action == "upgrade" {
 			towerID := -1
@@ -779,48 +791,77 @@ func (g *Game) applyDecision(playerID, role string, decision map[string]interfac
 			if g.upgradeTower(towerID) {
 				g.LastDecisions[playerID] = fmt.Sprintf("Upgraded tower #%d", towerID)
 				applied = true
+				outcome = "applied_primary"
+			} else {
+				outcome = "rejected:invalid_or_unaffordable_upgrade"
 			}
 		} else if action == "place_slow_zone" {
 			y, x := parseDecisionPosition(decision["position"], -1, -1)
 			if g.placeSlowZone(y, x) {
 				g.LastDecisions[playerID] = fmt.Sprintf("Placed slow zone at [%d,%d]", y, x)
 				applied = true
+				outcome = "applied_primary"
+			} else {
+				outcome = "rejected:invalid_or_unaffordable_slow_zone"
 			}
 		} else if action == "invest" {
 			if g.invest(playerID) {
 				g.LastDecisions[playerID] = "Invested in economy"
 				applied = true
+				outcome = "applied_primary"
+			} else {
+				outcome = "rejected:unaffordable_invest"
 			}
 		} else {
 			g.LastDecisions[playerID] = "Saving resources"
 			applied = true
+			outcome = "applied_primary"
 		}
 	} else {
+		if (action == "spawn" || action == "save") && g.shouldAutoLaunchWave(playerID) {
+			if g.spawnWave() {
+				g.LastDecisions[playerID] = "Launched wave (auto)"
+				action = "wave"
+				applied = true
+				outcome = "applied_auto_wave"
+			}
+		}
 		if action == "spawn" {
 			enemyType, _ := decision["enemy_type"].(string)
 			if g.spawnEnemy(enemyType, nil) {
 				g.LastDecisions[playerID] = fmt.Sprintf("Spawned %s enemy", enemyType)
 				applied = true
+				outcome = "applied_primary"
+			} else {
+				outcome = "rejected:invalid_or_unaffordable_spawn"
 			}
 		} else if action == "wave" {
 			if g.spawnWave() {
 				g.LastDecisions[playerID] = "Launched wave"
 				applied = true
+				outcome = "applied_primary"
+			} else {
+				outcome = "rejected:unaffordable_wave"
 			}
 		} else if action == "invest" {
 			if g.invest(playerID) {
 				g.LastDecisions[playerID] = "Invested in economy"
 				applied = true
+				outcome = "applied_primary"
+			} else {
+				outcome = "rejected:unaffordable_invest"
 			}
 		} else {
 			g.LastDecisions[playerID] = "Saving resources"
 			applied = true
+			outcome = "applied_primary"
 		}
 	}
 	g.ActionCounters[playerID+":"+action]++
 	if !applied {
 		g.RejectedActions[playerID+":"+action]++
 	}
+	g.LastActionStatus[playerID] = outcome
 }
 
 func (g *Game) logf(format string, a ...interface{}) {
@@ -1037,4 +1078,14 @@ func (g *Game) TotalRejectedActionsForPlayer(playerID string) int {
 		}
 	}
 	return total
+}
+
+func (g *Game) shouldAutoLaunchWave(playerID string) bool {
+	if g.Resources[playerID] < 260 {
+		return false
+	}
+	if len(g.WaveQueue) > 3 || g.Wave >= g.MaxWaves {
+		return false
+	}
+	return true
 }

@@ -89,31 +89,57 @@ func (g *Game) placeTower(y, x int, towerType string) bool {
 	if g.Resources[g.Defender] < cost {
 		return false
 	}
-	// simple bounds/path/obstacle check
-	if y < 0 || y >= g.MapHeight || x < 0 || x >= g.MapWidth {
+	if ok, _ := g.canPlaceTowerAt(y, x); !ok {
 		return false
-	}
-	for _, path := range g.Paths {
-		for _, pos := range path {
-			if pos.Y == y && pos.X == x {
-				return false
-			}
-		}
-	}
-	for _, obs := range g.Obstacles {
-		if obs.Y == y && obs.X == x {
-			return false
-		}
-	}
-	for _, t := range g.Towers {
-		if t.Pos.Y == y && t.Pos.X == x {
-			return false
-		}
 	}
 	tw := NewTower(y, x, towerType, nil)
 	g.Towers = append(g.Towers, &tw)
 	g.Resources[g.Defender] -= cost
 	return true
+}
+
+func (g *Game) canPlaceTowerAt(y, x int) (bool, string) {
+	// simple bounds/path/obstacle check
+	if y < 0 || y >= g.MapHeight || x < 0 || x >= g.MapWidth {
+		return false, "out_of_bounds"
+	}
+	for _, path := range g.Paths {
+		for _, pos := range path {
+			if pos.Y == y && pos.X == x {
+				return false, "on_path"
+			}
+		}
+	}
+	for _, obs := range g.Obstacles {
+		if obs.Y == y && obs.X == x {
+			return false, "on_obstacle"
+		}
+	}
+	for _, t := range g.Towers {
+		if t.Pos.Y == y && t.Pos.X == x {
+			return false, "occupied_by_tower"
+		}
+	}
+	return true, ""
+}
+
+func (g *Game) findNearestTowerPlacement(startY, startX int, maxRadius int) (int, int, bool) {
+	for r := 1; r <= maxRadius; r++ {
+		for dy := -r; dy <= r; dy++ {
+			for dx := -r; dx <= r; dx++ {
+				if abs(dy)+abs(dx) != r {
+					continue
+				}
+				y := startY + dy
+				x := startX + dx
+				ok, _ := g.canPlaceTowerAt(y, x)
+				if ok {
+					return y, x, true
+				}
+			}
+		}
+	}
+	return 0, 0, false
 }
 
 func (g *Game) upgradeTower(id int) bool {

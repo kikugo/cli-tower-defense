@@ -344,6 +344,8 @@ func (m model) View() string {
 		fmt.Sprintf("Resources (%s): %d (inc: %d)", attName, m.game.Resources[attID], m.game.Income[attID]),
 		fmt.Sprintf("Provider errors: %s=%d %s=%d", p1Name, m.game.TotalProviderErrorsForPlayer(p1ID), p2Name, m.game.TotalProviderErrorsForPlayer(p2ID)),
 		fmt.Sprintf("Rejected actions: %s=%d %s=%d", p1Name, m.game.TotalRejectedActionsForPlayer(p1ID), p2Name, m.game.TotalRejectedActionsForPlayer(p2ID)),
+		fmt.Sprintf("Last status: %s=%s", p1Name, m.game.LastActionStatus[p1ID]),
+		fmt.Sprintf("Last status: %s=%s", p2Name, m.game.LastActionStatus[p2ID]),
 		"",
 		"Strategy Reasoning:",
 		fmt.Sprintf("%s: %s", p1Name, p1Reason),
