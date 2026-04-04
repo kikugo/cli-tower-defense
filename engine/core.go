@@ -490,8 +490,7 @@ type Game struct {
 	Winner             string
 	AIEnabled          bool
 	AIThinking         map[string]bool
-	OpenAIHandler      *OpenAIHandler
-	GeminiHandler      *GeminiHandler
+	DecisionRouter     *DecisionRouter
 	GameSpeed          float64
 	AIDecisionInterval map[string]int
 	LastAIDecision     map[string]time.Time
@@ -524,11 +523,41 @@ type turnResult struct {
 }
 
 func NewGame(openaiKey, googleKey string) *Game {
+	defaultConfig := DefaultMatchConfig()
+	resolved := ResolvedMatchConfig{
+		Player1: ResolvedPlayerModelConfig{
+			PlayerModelConfig: normalizePlayerConfig(defaultConfig.Player1),
+			APIKey:            openaiKey,
+		},
+		Player2: ResolvedPlayerModelConfig{
+			PlayerModelConfig: normalizePlayerConfig(defaultConfig.Player2),
+			APIKey:            googleKey,
+		},
+	}
+	return NewGameFromResolvedConfig(resolved)
+}
+
+func NewGameFromEnv() (*Game, error) {
+	config, err := LoadMatchConfigFromEnv()
+	if err != nil {
+		return nil, err
+	}
+	resolved, err := ResolveMatchConfig(config)
+	if err != nil {
+		return nil, err
+	}
+	return NewGameFromResolvedConfig(resolved), nil
+}
+
+func NewGameFromResolvedConfig(resolved ResolvedMatchConfig) *Game {
 	width := 80
 	height := 24
 	mapHeight := height - 10
 	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 	p1, p2 := "p1", "p2"
+	router := NewDecisionRouter()
+	router.SetPlayerProvider(p1, providerFromResolvedConfig(resolved.Player1))
+	router.SetPlayerProvider(p2, providerFromResolvedConfig(resolved.Player2))
 	game := &Game{
 		Height: height, Width: width, MapHeight: mapHeight, MapWidth: width,
 		Towers: make([]*Tower, 0), Enemies: make([]*Enemy, 0), SlowZones: make([]*SlowZone, 0), Obstacles: make([]Position, 0), Particles: make([]*Particle, 0),
@@ -536,18 +565,26 @@ func NewGame(openaiKey, googleKey string) *Game {
 		Score: map[string]int{p1: 0, p2: 0}, LastDecisions: map[string]string{p1: "None", p2: "None"},
 		LastReasoning: map[string]string{p1: "Thinking...", p2: "Thinking..."}, LastTaunt: map[string]string{p1: "", p2: ""},
 		WaveQueue: make([]string, 0), GameOver: false, AIEnabled: true, AIThinking: map[string]bool{p1: false, p2: false},
-		Defender: p1, Attacker: p2, ModelNames: map[string]string{p1: "o3", p2: "gemini-2.5-pro"}, Player1: p1, Player2: p2,
-		OpenAIHandler: &OpenAIHandler{AIHandler: NewAIHandler(rng), APIKey: openaiKey},
-		GeminiHandler: &GeminiHandler{AIHandler: NewAIHandler(rng), APIKey: googleKey},
-			GameSpeed:     0.1, AIDecisionInterval: map[string]int{p1: 2, p2: 2},
-			LastAIDecision: map[string]time.Time{p1: time.Now(), p2: time.Now()},
-			CurrentTurn:    p1, LastActionTime: time.Now(), MaxResources: 800, MaxWaves: 30, TurnTimeout: 45 * time.Second,
-			PauseBetweenTurns: true, PauseDuration: 1 * time.Second, lastStatePrintTime: time.Now(), rng: rng, Logs: make([]string, 0),
-			pendingTurnResults: make(chan turnResult, 8),
+		Defender: p1, Attacker: p2, ModelNames: map[string]string{p1: resolved.Player1.Model, p2: resolved.Player2.Model}, Player1: p1, Player2: p2,
+		DecisionRouter:      router,
+		GameSpeed:           0.1, AIDecisionInterval: map[string]int{p1: 2, p2: 2},
+		LastAIDecision:      map[string]time.Time{p1: time.Now(), p2: time.Now()},
+		CurrentTurn:         p1, LastActionTime: time.Now(), MaxResources: 800, MaxWaves: 30, TurnTimeout: 45 * time.Second,
+		PauseBetweenTurns:   true, PauseDuration: 1 * time.Second, lastStatePrintTime: time.Now(), rng: rng, Logs: make([]string, 0),
+		pendingTurnResults:  make(chan turnResult, 8),
 	}
 	game.Paths = game.generatePaths()
 	game.generateObstacles()
 	return game
+}
+
+func providerFromResolvedConfig(config ResolvedPlayerModelConfig) DecisionProvider {
+	switch config.Provider {
+	case ProviderGeminiNative:
+		return NewGeminiNativeProvider(config)
+	default:
+		return NewOpenAICompatibleProvider(config)
+	}
 }
 
 func (g *Game) generatePaths() [][]Position {
@@ -679,20 +716,17 @@ func (g *Game) handlePlayerTurn(playerID, role string, gameState map[string]inte
 			g.pendingTurnResults <- result
 		}()
 
+		provider, err := g.DecisionRouter.ProviderForPlayer(playerID)
+		if err != nil {
+			result.err = err
+			return
+		}
+
 		var decision map[string]interface{}
-		var err error
-		if playerID == g.Player1 {
-			if role == "defender" {
-				decision, err = g.OpenAIHandler.GetTowerDecision(gameState)
-			} else {
-				decision, err = g.OpenAIHandler.GetEnemyDecision(gameState)
-			}
+		if role == "defender" {
+			decision, err = provider.GetTowerDecision(gameState)
 		} else {
-			if role == "defender" {
-				decision, err = g.GeminiHandler.GetTowerDecision(gameState)
-			} else {
-				decision, err = g.GeminiHandler.GetEnemyDecision(gameState)
-			}
+			decision, err = provider.GetEnemyDecision(gameState)
 		}
 		result.decision = decision
 		result.err = err
