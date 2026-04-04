@@ -71,15 +71,15 @@ func (p *GeminiNativeProvider) generateContent(prompt string) (string, error) {
 	}
 	reqJSON, err := json.Marshal(reqBody)
 	if err != nil {
-		return "", err
+		return "", wrapProviderError(p.Name(), "marshal request", err)
 	}
 
 	url := fmt.Sprintf("%s?key=%s", p.config.BaseURL, p.config.APIKey)
 	var lastErr error
-	for attempt := 0; attempt < 3; attempt++ {
+	for attempt := 0; attempt < providerRetryAttempts(p.config); attempt++ {
 		req, reqErr := http.NewRequest("POST", url, bytes.NewReader(reqJSON))
 		if reqErr != nil {
-			lastErr = reqErr
+			lastErr = wrapProviderError(p.Name(), "build request", reqErr)
 			continue
 		}
 		req.Header.Set("Content-Type", "application/json")
@@ -89,11 +89,11 @@ func (p *GeminiNativeProvider) generateContent(prompt string) (string, error) {
 
 		resp, callErr := p.client.Do(req)
 		if callErr != nil {
-			lastErr = callErr
+			lastErr = wrapProviderError(p.Name(), "http call", callErr)
 			continue
 		}
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			lastErr = fmt.Errorf("gemini provider returned status %d", resp.StatusCode)
+			lastErr = wrapProviderError(p.Name(), "http status", fmt.Errorf("status %d", resp.StatusCode))
 			resp.Body.Close()
 			continue
 		}
@@ -102,13 +102,13 @@ func (p *GeminiNativeProvider) generateContent(prompt string) (string, error) {
 		decodeErr := json.NewDecoder(resp.Body).Decode(&result)
 		resp.Body.Close()
 		if decodeErr != nil {
-			lastErr = decodeErr
+			lastErr = wrapProviderError(p.Name(), "decode", decodeErr)
 			continue
 		}
 
 		text, ok := extractGeminiContentText(result)
 		if !ok {
-			lastErr = fmt.Errorf("gemini provider returned empty text")
+			lastErr = wrapProviderError(p.Name(), "decode", fmt.Errorf("empty text"))
 			continue
 		}
 		return text, nil
@@ -116,4 +116,3 @@ func (p *GeminiNativeProvider) generateContent(prompt string) (string, error) {
 
 	return "", lastErr
 }
-

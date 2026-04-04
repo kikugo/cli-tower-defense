@@ -66,14 +66,14 @@ func (p *OpenAICompatibleProvider) getChatCompletion(prompt string) (string, err
 	}
 	reqJSON, err := json.Marshal(reqBody)
 	if err != nil {
-		return "", err
+		return "", wrapProviderError(p.Name(), "marshal request", err)
 	}
 
 	var lastErr error
-	for attempt := 0; attempt < 3; attempt++ {
+	for attempt := 0; attempt < providerRetryAttempts(p.config); attempt++ {
 		req, reqErr := http.NewRequest("POST", p.config.BaseURL, bytes.NewReader(reqJSON))
 		if reqErr != nil {
-			lastErr = reqErr
+			lastErr = wrapProviderError(p.Name(), "build request", reqErr)
 			continue
 		}
 		req.Header.Set("Authorization", "Bearer "+p.config.APIKey)
@@ -84,11 +84,11 @@ func (p *OpenAICompatibleProvider) getChatCompletion(prompt string) (string, err
 
 		resp, callErr := p.client.Do(req)
 		if callErr != nil {
-			lastErr = callErr
+			lastErr = wrapProviderError(p.Name(), "http call", callErr)
 			continue
 		}
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			lastErr = fmt.Errorf("openai compatible provider returned status %d", resp.StatusCode)
+			lastErr = wrapProviderError(p.Name(), "http status", fmt.Errorf("status %d", resp.StatusCode))
 			resp.Body.Close()
 			continue
 		}
@@ -97,12 +97,12 @@ func (p *OpenAICompatibleProvider) getChatCompletion(prompt string) (string, err
 		decodeErr := json.NewDecoder(resp.Body).Decode(&result)
 		resp.Body.Close()
 		if decodeErr != nil {
-			lastErr = decodeErr
+			lastErr = wrapProviderError(p.Name(), "decode", decodeErr)
 			continue
 		}
 		content, ok := extractOpenAIChatContent(result)
 		if !ok {
-			lastErr = fmt.Errorf("openai compatible provider returned empty content")
+			lastErr = wrapProviderError(p.Name(), "decode", fmt.Errorf("empty content"))
 			continue
 		}
 		return content, nil
@@ -110,4 +110,3 @@ func (p *OpenAICompatibleProvider) getChatCompletion(prompt string) (string, err
 
 	return "", lastErr
 }
-
