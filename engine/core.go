@@ -507,6 +507,8 @@ type Game struct {
 	stateChangeCounter int
 	rng                *rand.Rand
 	Logs               []string
+	MaxLogs            int
+	MaxWaveQueue       int
 	Defender           string
 	Attacker           string
 	ModelNames         map[string]string
@@ -570,7 +572,7 @@ func NewGameFromResolvedConfig(resolved ResolvedMatchConfig) *Game {
 		GameSpeed:           0.1, AIDecisionInterval: map[string]int{p1: 2, p2: 2},
 		LastAIDecision:      map[string]time.Time{p1: time.Now(), p2: time.Now()},
 		CurrentTurn:         p1, LastActionTime: time.Now(), MaxResources: 800, MaxWaves: 30, TurnTimeout: 45 * time.Second,
-		PauseBetweenTurns:   true, PauseDuration: 1 * time.Second, lastStatePrintTime: time.Now(), rng: rng, Logs: make([]string, 0),
+		PauseBetweenTurns:   true, PauseDuration: 1 * time.Second, lastStatePrintTime: time.Now(), rng: rng, Logs: make([]string, 0), MaxLogs: 250, MaxWaveQueue: 200,
 		pendingTurnResults:  make(chan turnResult, 8),
 	}
 	game.Paths = game.generatePaths()
@@ -798,6 +800,9 @@ func (g *Game) applyDecision(playerID, role string, decision map[string]interfac
 func (g *Game) logf(format string, a ...interface{}) {
 	msg := fmt.Sprintf(format, a...)
 	g.Logs = append(g.Logs, msg)
+	if g.MaxLogs > 0 && len(g.Logs) > g.MaxLogs {
+		g.Logs = g.Logs[len(g.Logs)-g.MaxLogs:]
+	}
 }
 
 func abs(x int) int {

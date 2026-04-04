@@ -141,3 +141,16 @@ func TestAttackerWinsWhenEnemyBreachesFinalLife(t *testing.T) {
 		t.Fatalf("expected attacker %q to win, got %q", g.Attacker, g.Winner)
 	}
 }
+
+func TestSpawnWaveRespectsQueueCap(t *testing.T) {
+	g := NewGame("test", "test")
+	g.MaxWaveQueue = 5
+	g.Resources[g.Attacker] = 1000
+
+	if !g.spawnWave() {
+		t.Fatalf("expected spawnWave success")
+	}
+	if len(g.WaveQueue) > g.MaxWaveQueue {
+		t.Fatalf("wave queue exceeded cap: %d > %d", len(g.WaveQueue), g.MaxWaveQueue)
+	}
+}

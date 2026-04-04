@@ -211,6 +211,9 @@ func (g *Game) spawnWave() bool {
 		num = 30
 	}
 	for i := 0; i < num; i++ {
+		if g.MaxWaveQueue > 0 && len(g.WaveQueue) >= g.MaxWaveQueue {
+			break
+		}
 		switch {
 		case g.Wave > 15:
 			g.WaveQueue = append(g.WaveQueue, []string{"tank", "fast", "shielded", "healer"}[i%4])
