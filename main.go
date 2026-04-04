@@ -29,17 +29,29 @@ type model struct {
 	logScroll int // how many lines from the bottom we offset when viewing logs
 	tickDur   time.Duration
 	showRange bool
+	headless  bool
+	maxTicks  int
 }
 
 func initialModel() model {
 	swap := flag.Bool("swap", false, "swap defender/attacker roles")
 	defInt := flag.Int("def-int", 2, "defender decision interval (seconds)")
 	attInt := flag.Int("att-int", 2, "attacker decision interval (seconds)")
+	headless := flag.Bool("headless", false, "run simulation without TUI")
+	maxTicks := flag.Int("max-ticks", 3000, "maximum ticks to run in headless mode")
+	seed := flag.Int64("seed", 0, "deterministic random seed (0 uses time-based seed)")
+	maxWaves := flag.Int("max-waves", 0, "override max waves (0 keeps default)")
 	flag.Parse()
 	_ = godotenv.Load()
 	g, err := eng.NewGameFromEnv()
 	if err != nil {
 		log.Fatal(err)
+	}
+	if *seed != 0 {
+		g.SetRandomSeed(*seed)
+	}
+	if *maxWaves > 0 {
+		g.MaxWaves = *maxWaves
 	}
 	if *swap {
 		g.Defender, g.Attacker = g.Player2, g.Player1
@@ -47,7 +59,7 @@ func initialModel() model {
 	}
 	g.AIDecisionInterval[g.Defender] = *defInt
 	g.AIDecisionInterval[g.Attacker] = *attInt
-	return model{game: g, tickDur: 100 * time.Millisecond}
+	return model{game: g, tickDur: 100 * time.Millisecond, headless: *headless, maxTicks: *maxTicks}
 }
 
 func (m model) Init() tea.Cmd {
@@ -374,8 +386,38 @@ func (m model) View() string {
 }
 
 func main() {
-	p := tea.NewProgram(initialModel(), tea.WithAltScreen())
+	m := initialModel()
+	if m.headless {
+		runHeadless(m)
+		return
+	}
+	p := tea.NewProgram(m, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func runHeadless(m model) {
+	if m.game == nil {
+		fmt.Println("headless run failed: game is nil")
+		return
+	}
+	limit := m.maxTicks
+	if limit <= 0 {
+		limit = 3000
+	}
+
+	ticks := 0
+	for ticks < limit && !m.game.GameOver {
+		m.game.UpdateGameState()
+		m.game.HandleAIDecisions()
+		ticks++
+	}
+
+	result := "incomplete"
+	if m.game.GameOver {
+		result = "completed"
+	}
+	fmt.Printf("headless run %s | ticks=%d | wave=%d | winner=%s | defender_lives=%d | logs=%d\n",
+		result, ticks, m.game.Wave, m.game.ModelNames[m.game.Winner], m.game.Lives[m.game.Defender], len(m.game.Logs))
 }

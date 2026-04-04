@@ -860,6 +860,13 @@ func (g *Game) processPendingTurnResults() {
 	}
 }
 
+func (g *Game) SetRandomSeed(seed int64) {
+	g.rng = rand.New(rand.NewSource(seed))
+	g.Paths = g.generatePaths()
+	g.Obstacles = make([]Position, 0)
+	g.generateObstacles()
+}
+
 var errTurnWorkerPanic = errors.New("turn worker panic")
 
 func extractOpenAIChatContent(result map[string]interface{}) (string, bool) {
