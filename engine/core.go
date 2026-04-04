@@ -509,6 +509,9 @@ type Game struct {
 	Logs               []string
 	MaxLogs            int
 	MaxWaveQueue       int
+	ActionCounters     map[string]int
+	RejectedActions    map[string]int
+	ProviderErrors     map[string]int
 	Defender           string
 	Attacker           string
 	ModelNames         map[string]string
@@ -572,7 +575,7 @@ func NewGameFromResolvedConfig(resolved ResolvedMatchConfig) *Game {
 		GameSpeed:           0.1, AIDecisionInterval: map[string]int{p1: 2, p2: 2},
 		LastAIDecision:      map[string]time.Time{p1: time.Now(), p2: time.Now()},
 		CurrentTurn:         p1, LastActionTime: time.Now(), MaxResources: 800, MaxWaves: 30, TurnTimeout: 45 * time.Second,
-		PauseBetweenTurns:   true, PauseDuration: 1 * time.Second, lastStatePrintTime: time.Now(), rng: rng, Logs: make([]string, 0), MaxLogs: 250, MaxWaveQueue: 200,
+		PauseBetweenTurns:   true, PauseDuration: 1 * time.Second, lastStatePrintTime: time.Now(), rng: rng, Logs: make([]string, 0), MaxLogs: 250, MaxWaveQueue: 200, ActionCounters: map[string]int{}, RejectedActions: map[string]int{}, ProviderErrors: map[string]int{},
 		pendingTurnResults:  make(chan turnResult, 8),
 	}
 	game.Paths = game.generatePaths()
@@ -750,12 +753,14 @@ func (g *Game) applyDecision(playerID, role string, decision map[string]interfac
 	}
 	modelName := g.ModelNames[playerID]
 	g.logf("%s (%s) decided to: %s", modelName, role, action)
+	applied := false
 	if role == "defender" {
 		if action == "place" {
 			towerType, _ := decision["tower_type"].(string)
 			y, x := parseDecisionPosition(decision["position"], 2, 2)
 			if g.placeTower(y, x, towerType) {
 				g.LastDecisions[playerID] = fmt.Sprintf("Placed %s tower at [%d,%d]", towerType, y, x)
+				applied = true
 			}
 		} else if action == "upgrade" {
 			towerID := -1
@@ -764,36 +769,48 @@ func (g *Game) applyDecision(playerID, role string, decision map[string]interfac
 			}
 			if g.upgradeTower(towerID) {
 				g.LastDecisions[playerID] = fmt.Sprintf("Upgraded tower #%d", towerID)
+				applied = true
 			}
 		} else if action == "place_slow_zone" {
 			y, x := parseDecisionPosition(decision["position"], -1, -1)
 			if g.placeSlowZone(y, x) {
 				g.LastDecisions[playerID] = fmt.Sprintf("Placed slow zone at [%d,%d]", y, x)
+				applied = true
 			}
 		} else if action == "invest" {
 			if g.invest(playerID) {
 				g.LastDecisions[playerID] = "Invested in economy"
+				applied = true
 			}
 		} else {
 			g.LastDecisions[playerID] = "Saving resources"
+			applied = true
 		}
 	} else {
 		if action == "spawn" {
 			enemyType, _ := decision["enemy_type"].(string)
 			if g.spawnEnemy(enemyType, nil) {
 				g.LastDecisions[playerID] = fmt.Sprintf("Spawned %s enemy", enemyType)
+				applied = true
 			}
 		} else if action == "wave" {
 			if g.spawnWave() {
 				g.LastDecisions[playerID] = "Launched wave"
+				applied = true
 			}
 		} else if action == "invest" {
 			if g.invest(playerID) {
 				g.LastDecisions[playerID] = "Invested in economy"
+				applied = true
 			}
 		} else {
 			g.LastDecisions[playerID] = "Saving resources"
+			applied = true
 		}
+	}
+	g.ActionCounters[playerID+":"+action]++
+	if !applied {
+		g.RejectedActions[playerID+":"+action]++
 	}
 }
 
@@ -848,6 +865,7 @@ func (g *Game) processPendingTurnResults() {
 				continue
 			}
 			if result.err != nil {
+				g.ProviderErrors[result.playerID+":"+providerErrorLabel(result.err)]++
 				g.logf("%s API error: %v", g.ModelNames[result.playerID], result.err)
 				g.switchTurn()
 				continue
@@ -973,4 +991,24 @@ func parseDecisionPosition(raw interface{}, defaultY, defaultX int) (int, int) {
 		return defaultY, defaultX
 	}
 	return y, x
+}
+
+func (g *Game) TotalProviderErrorsForPlayer(playerID string) int {
+	total := 0
+	for key, count := range g.ProviderErrors {
+		if len(key) >= len(playerID)+1 && key[:len(playerID)+1] == playerID+":" {
+			total += count
+		}
+	}
+	return total
+}
+
+func (g *Game) TotalRejectedActionsForPlayer(playerID string) int {
+	total := 0
+	for key, count := range g.RejectedActions {
+		if len(key) >= len(playerID)+1 && key[:len(playerID)+1] == playerID+":" {
+			total += count
+		}
+	}
+	return total
 }

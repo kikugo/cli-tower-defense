@@ -338,9 +338,12 @@ func (m model) View() string {
 	infoLines := []string{
 		turnStyle.Render(fmt.Sprintf("Turn: %s", curName)),
 		fmt.Sprintf("Wave: %d", m.game.Wave),
+		fmt.Sprintf("Queue: %d | Enemies: %d | Towers: %d", len(m.game.WaveQueue), len(m.game.Enemies), len(m.game.Towers)),
 		fmt.Sprintf("Lives (%s): %d", defName, m.game.Lives[defID]),
 		fmt.Sprintf("Resources (%s): %d (inc: %d)", defName, m.game.Resources[defID], m.game.Income[defID]),
 		fmt.Sprintf("Resources (%s): %d (inc: %d)", attName, m.game.Resources[attID], m.game.Income[attID]),
+		fmt.Sprintf("Provider errors: %s=%d %s=%d", p1Name, m.game.TotalProviderErrorsForPlayer(p1ID), p2Name, m.game.TotalProviderErrorsForPlayer(p2ID)),
+		fmt.Sprintf("Rejected actions: %s=%d %s=%d", p1Name, m.game.TotalRejectedActionsForPlayer(p1ID), p2Name, m.game.TotalRejectedActionsForPlayer(p2ID)),
 		"",
 		"Strategy Reasoning:",
 		fmt.Sprintf("%s: %s", p1Name, p1Reason),
