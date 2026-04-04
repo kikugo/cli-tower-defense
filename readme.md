@@ -1,13 +1,13 @@
-# ChatGPT vs Gemini Tower Defense
+# LLM vs LLM Tower Defense
 
-A terminal-based tower defense game written in Go where OpenAI's ChatGPT and Google's Gemini AI models compete against each other in real-time.
+A terminal-based tower defense game written in Go where any two configured LLMs can compete in real-time.
 
 ## Game Overview
 
-In this unique tower defense game, two AI models battle it out:
+In this tower defense game, two configured models battle it out:
 
-- **ChatGPT (Defender)**: Places towers to defend against incoming waves of enemies
-- **Gemini (Attacker)**: Spawns enemies and launches waves to break through the defenses
+- **Defender**: Places towers and slow zones, upgrades defenses, invests in economy
+- **Attacker**: Spawns enemies, launches waves, and invests in economy
 
 The game runs in your terminal with a text-based interface, while the AI models make strategic decisions through API calls.
 
@@ -59,8 +59,7 @@ Tower types: basic (^) sniper (⌖) splash (⊕) | Enemy types: basic (o) fast (
 ### Prerequisites
 
 - Go 1.21 or higher
-- OpenAI API key
-- Google API key (for Gemini)
+- API keys for the two providers/models you configure
 
 ### Steps
 
@@ -76,22 +75,41 @@ Tower types: basic (^) sniper (⌖) splash (⊕) | Enemy types: basic (o) fast (
    go mod tidy
    ```
 
-3. Set up API keys:
-   
-   Create a `.env` file in the project root:
-   ```
+3. Set up model matchup:
+
+   You can run with defaults (`OpenAI o3` vs `Gemini 2.5 Pro`) using:
+
+   ```env
    OPENAI_API_KEY=your_openai_api_key_here
    GOOGLE_API_KEY=your_google_api_key_here
    ```
-   
-   To get API keys:
-   - OpenAI API key: Sign up at [OpenAI Platform](https://platform.openai.com/) and generate an API key
-   - Google API key: Visit [Google AI Studio](https://makersuite.google.com/app/apikey) to get a Gemini API key
-   
-   **Important**: The `.env` file contains sensitive API keys. Add it to your `.gitignore` file to prevent accidentally pushing it to GitHub:
+
+   Or define a custom matchup using either:
+   - `MODEL_MATCH_CONFIG` (inline JSON)
+   - `MODEL_MATCH_CONFIG_PATH` (path to JSON file)
+
+   Example JSON:
    ```
-   # Add this to your .gitignore file
-   .env
+   {
+     "player1": {
+       "provider": "openai_compatible",
+       "model": "gpt-4.1-mini",
+       "api_key_env": "OPENAI_API_KEY",
+       "base_url": "https://api.openai.com/v1/chat/completions",
+       "timeout_seconds": 20
+     },
+     "player2": {
+       "provider": "openai_compatible",
+       "model": "qwen/qwen3-32b",
+       "api_key_env": "OPENROUTER_API_KEY",
+       "base_url": "https://openrouter.ai/api/v1/chat/completions",
+       "headers": {
+         "HTTP-Referer": "https://example.com",
+         "X-Title": "tower-defense"
+       },
+       "timeout_seconds": 20
+     }
+   }
    ```
 
 4. Run the game:
@@ -128,6 +146,14 @@ Tower types: basic (^) sniper (⌖) splash (⊕) | Enemy types: basic (o) fast (
 - `R`: Toggle tower range preview
 - `↑` / `↓` (or `K` / `J`): Scroll battle logs
 
+## Providers
+
+Provider types:
+- `openai_compatible`: OpenAI-style Chat Completions endpoints (OpenAI, OpenRouter, Groq-style integrations, etc.)
+- `gemini_native`: Gemini `generateContent` endpoint
+
+This lets you pitch any two configured models against each other without changing engine code.
+
 ## How It Works
 
 1. The game creates a zigzag path across the screen
@@ -150,10 +176,37 @@ You can adjust game parameters from CLI flags:
 - `-swap`: Swap defender/attacker roles
 - `-def-int`: Defender decision interval in seconds
 - `-att-int`: Attacker decision interval in seconds
+- `-headless`: Run non-interactive simulation
+- `-max-ticks`: Maximum ticks in headless mode
+- `-seed`: Deterministic seed for reproducible runs
+- `-max-waves`: Override max waves for short checks
 
 - `GameSpeed`: Controls how fast the game runs
 - `AIDecisionInterval`: How often each AI makes decisions
 - Tower and enemy attributes can be modified in their respective constructors
+
+## Gameplay Check Guide
+
+Automated smoke check:
+
+```bash
+go test ./...
+go test -race ./...
+go vet ./...
+go run main.go -headless -seed=42 -max-ticks=2500 -max-waves=10
+```
+
+Manual TUI check:
+
+```bash
+go run main.go -seed=42 -def-int=2 -att-int=2
+```
+
+During manual check, watch:
+- turn cadence and queue growth
+- provider error counters
+- rejected action counters
+- winner/wave progress
 
 ## Known Issues
 
