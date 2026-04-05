@@ -2,6 +2,7 @@ package engine
 
 import (
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -31,5 +32,24 @@ func TestProcessPendingTurnResultsTracksProviderErrors(t *testing.T) {
 
 	if g.TotalProviderErrorsForPlayer(g.Player1) == 0 {
 		t.Fatalf("expected provider error counter to increment")
+	}
+}
+
+func TestRejectedActionLogsReason(t *testing.T) {
+	g := NewGame("test", "test")
+	g.applyDecision(g.Player1, "defender", map[string]interface{}{
+		"action":   "upgrade",
+		"tower_id": float64(999),
+	})
+
+	found := false
+	for _, msg := range g.Logs {
+		if strings.Contains(msg, "action rejected") && strings.Contains(msg, "invalid_or_unaffordable_upgrade") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected rejected-action log with reason, logs=%v", g.Logs)
 	}
 }

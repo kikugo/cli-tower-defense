@@ -864,6 +864,7 @@ func (g *Game) applyDecision(playerID, role string, decision map[string]interfac
 	g.ActionCounters[playerID+":"+action]++
 	if !applied {
 		g.RejectedActions[playerID+":"+action]++
+		g.logf("%s (%s) action rejected: %s", modelName, action, outcome)
 	}
 	g.LastActionStatus[playerID] = outcome
 }
