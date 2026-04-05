@@ -59,6 +59,17 @@ func initialModel() model {
 	}
 	g.AIDecisionInterval[g.Defender] = *defInt
 	g.AIDecisionInterval[g.Attacker] = *attInt
+	if *headless {
+		g.PauseBetweenTurns = false
+		// In headless mode, default intervals can make progress appear stalled.
+		// If caller kept defaults, switch to immediate decisions.
+		if *defInt == 2 {
+			g.AIDecisionInterval[g.Defender] = 0
+		}
+		if *attInt == 2 {
+			g.AIDecisionInterval[g.Attacker] = 0
+		}
+	}
 	return model{game: g, tickDur: 100 * time.Millisecond, headless: *headless, maxTicks: *maxTicks}
 }
 
@@ -414,15 +425,38 @@ func runHeadless(m model) {
 
 	ticks := 0
 	for ticks < limit && !m.game.GameOver {
+		if m.game.AIThinking[m.game.Player1] || m.game.AIThinking[m.game.Player2] {
+			m.game.HandleAIDecisions()
+			time.Sleep(10 * time.Millisecond)
+			continue
+		}
 		m.game.UpdateGameState()
 		m.game.HandleAIDecisions()
 		ticks++
+	}
+
+	for i := 0; i < 200 && !m.game.GameOver; i++ {
+		if !m.game.AIThinking[m.game.Player1] && !m.game.AIThinking[m.game.Player2] {
+			break
+		}
+		m.game.HandleAIDecisions()
+		time.Sleep(10 * time.Millisecond)
 	}
 
 	result := "incomplete"
 	if m.game.GameOver {
 		result = "completed"
 	}
-	fmt.Printf("headless run %s | ticks=%d | wave=%d | winner=%s | defender_lives=%d | logs=%d\n",
-		result, ticks, m.game.Wave, m.game.ModelNames[m.game.Winner], m.game.Lives[m.game.Defender], len(m.game.Logs))
+	fmt.Printf("headless run %s | ticks=%d | wave=%d | winner=%s | defender_lives=%d | logs=%d | rejected_def=%d | rejected_att=%d | provider_err_def=%d | provider_err_att=%d\n",
+		result,
+		ticks,
+		m.game.Wave,
+		m.game.ModelNames[m.game.Winner],
+		m.game.Lives[m.game.Defender],
+		len(m.game.Logs),
+		m.game.TotalRejectedActionsForPlayer(m.game.Defender),
+		m.game.TotalRejectedActionsForPlayer(m.game.Attacker),
+		m.game.TotalProviderErrorsForPlayer(m.game.Defender),
+		m.game.TotalProviderErrorsForPlayer(m.game.Attacker),
+	)
 }
