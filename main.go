@@ -519,6 +519,7 @@ func runTournament(path string) error {
 			}
 		}
 	}
+	report.Standings = eng.BuildTournamentStandings(report.Results)
 
 	data, err := json.MarshalIndent(report, "", "  ")
 	if err != nil {

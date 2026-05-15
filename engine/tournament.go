@@ -23,8 +23,20 @@ type TournamentMatchResult struct {
 }
 
 type TournamentReport struct {
-	Name    string                  `json:"name"`
-	Results []TournamentMatchResult `json:"results"`
+	Name      string                  `json:"name"`
+	Results   []TournamentMatchResult `json:"results"`
+	Standings []TournamentStanding    `json:"standings"`
+}
+
+type TournamentStanding struct {
+	Model              string  `json:"model"`
+	Matches            int     `json:"matches"`
+	Wins               int     `json:"wins"`
+	WinRate            float64 `json:"win_rate"`
+	AverageScore       float64 `json:"average_score"`
+	AverageWaveReached float64 `json:"average_wave_reached"`
+	RejectedActions    int     `json:"rejected_actions"`
+	ProviderErrors     int     `json:"provider_errors"`
 }
 
 func (c TournamentConfig) normalizedSeeds() []int64 {
@@ -47,4 +59,53 @@ func (c TournamentConfig) NormalizedSeedsForMain() []int64 {
 
 func (c TournamentConfig) NormalizedMaxTicksForMain() int {
 	return c.normalizedMaxTicks()
+}
+
+func BuildTournamentStandings(results []TournamentMatchResult) []TournamentStanding {
+	type accum struct {
+		standing TournamentStanding
+		score    int
+		waves    int
+	}
+	byModel := map[string]*accum{}
+
+	for _, match := range results {
+		for playerID, model := range match.Result.Models {
+			a := byModel[model]
+			if a == nil {
+				a = &accum{standing: TournamentStanding{Model: model}}
+				byModel[model] = a
+			}
+			a.standing.Matches++
+			if match.Result.Winner == playerID {
+				a.standing.Wins++
+			}
+			a.score += match.Result.Score[playerID]
+			a.waves += match.Result.Waves
+			a.standing.RejectedActions += totalByPlayerPrefix(match.Result.RejectedActions, playerID)
+			a.standing.ProviderErrors += totalByPlayerPrefix(match.Result.ProviderErrors, playerID)
+		}
+	}
+
+	standings := make([]TournamentStanding, 0, len(byModel))
+	for _, a := range byModel {
+		if a.standing.Matches > 0 {
+			a.standing.WinRate = float64(a.standing.Wins) / float64(a.standing.Matches)
+			a.standing.AverageScore = float64(a.score) / float64(a.standing.Matches)
+			a.standing.AverageWaveReached = float64(a.waves) / float64(a.standing.Matches)
+		}
+		standings = append(standings, a.standing)
+	}
+	return standings
+}
+
+func totalByPlayerPrefix(values map[string]int, playerID string) int {
+	total := 0
+	prefix := playerID + ":"
+	for key, value := range values {
+		if len(key) >= len(prefix) && key[:len(prefix)] == prefix {
+			total += value
+		}
+	}
+	return total
 }
