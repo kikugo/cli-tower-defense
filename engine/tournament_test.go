@@ -35,3 +35,20 @@ func TestBuildTournamentStandings(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildTournamentScheduleIncludesRoleSwaps(t *testing.T) {
+	schedule := BuildTournamentSchedule(TournamentConfig{
+		Seeds:    []int64{7, 11},
+		RoleSwap: true,
+	})
+
+	if len(schedule) != 4 {
+		t.Fatalf("expected 4 scheduled runs, got %d", len(schedule))
+	}
+	if !schedule[1].Swapped || !schedule[3].Swapped {
+		t.Fatalf("expected every second run to be swapped, got %#v", schedule)
+	}
+	if schedule[0].Seed != schedule[1].Seed {
+		t.Fatalf("expected swapped run to use same seed as primary run")
+	}
+}

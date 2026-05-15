@@ -504,19 +504,12 @@ func runTournament(path string) error {
 
 	report := eng.TournamentReport{Name: config.Name}
 	for _, matchup := range config.Matchups {
-		for _, seed := range config.NormalizedSeedsForMain() {
-			result, err := runTournamentMatch(matchup, seed, config, false)
+		for _, scheduled := range eng.BuildTournamentSchedule(config) {
+			result, err := runTournamentMatch(matchup, scheduled.Seed, config, scheduled.Swapped)
 			if err != nil {
 				return err
 			}
 			report.Results = append(report.Results, result)
-			if config.RoleSwap {
-				swapped, err := runTournamentMatch(matchup, seed, config, true)
-				if err != nil {
-					return err
-				}
-				report.Results = append(report.Results, swapped)
-			}
 		}
 	}
 	report.Standings = eng.BuildTournamentStandings(report.Results)

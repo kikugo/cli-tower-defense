@@ -22,6 +22,11 @@ type TournamentMatchResult struct {
 	Result  MatchResult `json:"result"`
 }
 
+type TournamentScheduledRun struct {
+	Seed    int64 `json:"seed"`
+	Swapped bool  `json:"swapped"`
+}
+
 type TournamentReport struct {
 	Name      string                  `json:"name"`
 	Results   []TournamentMatchResult `json:"results"`
@@ -59,6 +64,17 @@ func (c TournamentConfig) NormalizedSeedsForMain() []int64 {
 
 func (c TournamentConfig) NormalizedMaxTicksForMain() int {
 	return c.normalizedMaxTicks()
+}
+
+func BuildTournamentSchedule(config TournamentConfig) []TournamentScheduledRun {
+	schedule := make([]TournamentScheduledRun, 0)
+	for _, seed := range config.normalizedSeeds() {
+		schedule = append(schedule, TournamentScheduledRun{Seed: seed})
+		if config.RoleSwap {
+			schedule = append(schedule, TournamentScheduledRun{Seed: seed, Swapped: true})
+		}
+	}
+	return schedule
 }
 
 func BuildTournamentStandings(results []TournamentMatchResult) []TournamentStanding {
