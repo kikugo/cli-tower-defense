@@ -540,6 +540,7 @@ type Game struct {
 	ProviderErrors     map[string]int
 	LastActionStatus   map[string]string
 	LastRejectedReason map[string]string
+	NoopStreak         map[string]int
 	Defender           string
 	Attacker           string
 	ModelNames         map[string]string
@@ -603,7 +604,7 @@ func NewGameFromResolvedConfig(resolved ResolvedMatchConfig) *Game {
 		GameSpeed:      0.1, AIDecisionInterval: map[string]int{p1: 2, p2: 2},
 		LastAIDecision: map[string]time.Time{p1: time.Now(), p2: time.Now()},
 		CurrentTurn:    p1, LastActionTime: time.Now(), StartedAt: time.Now(), MaxResources: 800, MaxWaves: 30, TurnTimeout: 45 * time.Second,
-		PauseBetweenTurns: true, PauseDuration: 1 * time.Second, lastStatePrintTime: time.Now(), rng: rng, Logs: make([]string, 0), MaxLogs: 250, MaxWaveQueue: 200, ReplayEvents: make([]ReplayEvent, 0), MaxReplayEvents: 10000, ActionCounters: map[string]int{}, RejectedActions: map[string]int{}, ProviderErrors: map[string]int{}, LastActionStatus: map[string]string{p1: "none", p2: "none"}, LastRejectedReason: map[string]string{p1: "", p2: ""},
+		PauseBetweenTurns: true, PauseDuration: 1 * time.Second, lastStatePrintTime: time.Now(), rng: rng, Logs: make([]string, 0), MaxLogs: 250, MaxWaveQueue: 200, ReplayEvents: make([]ReplayEvent, 0), MaxReplayEvents: 10000, ActionCounters: map[string]int{}, RejectedActions: map[string]int{}, ProviderErrors: map[string]int{}, LastActionStatus: map[string]string{p1: "none", p2: "none"}, LastRejectedReason: map[string]string{p1: "", p2: ""}, NoopStreak: map[string]int{p1: 0, p2: 0},
 		pendingTurnResults: make(chan turnResult, 8),
 	}
 	game.Paths = game.generatePaths()
@@ -769,6 +770,7 @@ func (g *Game) handlePlayerTurn(playerID, role string, gameState map[string]inte
 func (g *Game) applyDecision(playerID, role string, decision map[string]interface{}) {
 	decision = normalizeDecision(role, decision)
 	action, _ := decision["action"].(string)
+	originalAction := action
 	reason, _ := decision["reason"].(string)
 	if reason == "" {
 		reason = "No reasoning provided."
@@ -839,9 +841,19 @@ func (g *Game) applyDecision(playerID, role string, decision map[string]interfac
 				outcome = "rejected:unaffordable_invest"
 			}
 		} else {
-			g.LastDecisions[playerID] = "Saving resources"
-			applied = true
-			outcome = "applied_primary"
+			if g.shouldAutoDefendAfterSave(playerID) {
+				if y, x, ok := g.findNearestTowerPlacement(g.MapHeight/2, g.MapWidth/3, 10); ok && g.placeTower(y, x, "basic") {
+					g.LastDecisions[playerID] = fmt.Sprintf("Placed basic tower after repeated saves at [%d,%d]", y, x)
+					action = "place"
+					applied = true
+					outcome = "applied_auto_defense"
+				}
+			}
+			if !applied {
+				g.LastDecisions[playerID] = "Saving resources"
+				applied = true
+				outcome = "applied_primary"
+			}
 		}
 	} else {
 		autoWaveLaunched := false
@@ -899,6 +911,11 @@ func (g *Game) applyDecision(playerID, role string, decision map[string]interfac
 			Action:   action,
 			Reason:   outcome,
 		})
+	}
+	if applied && originalAction == "save" && outcome == "applied_primary" {
+		g.NoopStreak[playerID]++
+	} else if applied {
+		g.NoopStreak[playerID] = 0
 	}
 	g.LastActionStatus[playerID] = outcome
 }
@@ -1136,11 +1153,19 @@ func (g *Game) TotalRejectedActionsForPlayer(playerID string) int {
 }
 
 func (g *Game) shouldAutoLaunchWave(playerID string) bool {
-	if g.Resources[playerID] < 260 {
+	minResources := 260
+	if g.NoopStreak[playerID] >= 2 {
+		minResources = 160
+	}
+	if g.Resources[playerID] < minResources {
 		return false
 	}
 	if len(g.WaveQueue) > 3 || g.Wave >= g.MaxWaves {
 		return false
 	}
 	return true
+}
+
+func (g *Game) shouldAutoDefendAfterSave(playerID string) bool {
+	return g.NoopStreak[playerID] >= 2 && g.Resources[playerID] >= 100 && len(g.Towers) < 5
 }
