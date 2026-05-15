@@ -43,9 +43,22 @@ type Tower struct {
 
 func (t *Tower) Upgrade() {
 	t.Level++
-	t.Damage = int(float64(t.Damage) * 1.5)
-	t.Range = int(float64(t.Range) * 1.2)
-	t.MaxCD = int(float64(t.MaxCD) * 0.9)
+	switch t.TowerType {
+	case "sniper":
+		t.Damage = int(float64(t.Damage) * 1.65)
+		t.Range = int(float64(t.Range) * 1.15)
+		t.MaxCD = int(float64(t.MaxCD) * 0.92)
+	case "splash":
+		t.Damage = int(float64(t.Damage) * 1.25)
+		t.Range = int(float64(t.Range) * 1.1)
+		t.MaxCD = int(float64(t.MaxCD) * 0.9)
+	case "buffer":
+		t.Range++
+	default:
+		t.Damage = int(float64(t.Damage) * 1.45)
+		t.Range = int(float64(t.Range) * 1.2)
+		t.MaxCD = int(float64(t.MaxCD) * 0.9)
+	}
 	if t.MaxCD < 1 {
 		t.MaxCD = 1
 	}
