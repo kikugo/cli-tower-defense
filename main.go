@@ -1,10 +1,12 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
 	"math"
+	"os"
 	"strings"
 	"time"
 
@@ -31,6 +33,8 @@ type model struct {
 	showRange bool
 	headless  bool
 	maxTicks  int
+	resultJSON string
+	replayJSON string
 }
 
 func initialModel() model {
@@ -41,6 +45,8 @@ func initialModel() model {
 	maxTicks := flag.Int("max-ticks", 3000, "maximum ticks to run in headless mode")
 	seed := flag.Int64("seed", 0, "deterministic random seed (0 uses time-based seed)")
 	maxWaves := flag.Int("max-waves", 0, "override max waves (0 keeps default)")
+	resultJSON := flag.String("result-json", "", "write headless match summary JSON to this path")
+	replayJSON := flag.String("replay-json", "", "write headless replay event JSON to this path")
 	flag.Parse()
 	_ = godotenv.Load()
 	g, err := eng.NewGameFromEnv()
@@ -70,7 +76,7 @@ func initialModel() model {
 			g.AIDecisionInterval[g.Attacker] = 0
 		}
 	}
-	return model{game: g, tickDur: 100 * time.Millisecond, headless: *headless, maxTicks: *maxTicks}
+	return model{game: g, tickDur: 100 * time.Millisecond, headless: *headless, maxTicks: *maxTicks, resultJSON: *resultJSON, replayJSON: *replayJSON}
 }
 
 func (m model) Init() tea.Cmd {
@@ -459,4 +465,23 @@ func runHeadless(m model) {
 		m.game.TotalProviderErrorsForPlayer(m.game.Defender),
 		m.game.TotalProviderErrorsForPlayer(m.game.Attacker),
 	)
+
+	if m.resultJSON != "" {
+		if err := writeJSONFile(m.resultJSON, m.game.BuildMatchResult()); err != nil {
+			log.Printf("write result json: %v", err)
+		}
+	}
+	if m.replayJSON != "" {
+		if err := writeJSONFile(m.replayJSON, m.game.ReplayEvents); err != nil {
+			log.Printf("write replay json: %v", err)
+		}
+	}
+}
+
+func writeJSONFile(path string, v interface{}) error {
+	data, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0600)
 }
