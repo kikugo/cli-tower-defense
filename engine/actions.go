@@ -95,6 +95,14 @@ func (g *Game) placeTower(y, x int, towerType string) bool {
 	tw := NewTower(y, x, towerType, nil)
 	g.Towers = append(g.Towers, &tw)
 	g.Resources[g.Defender] -= cost
+	g.recordReplayEvent(ReplayEvent{
+		Type:     ReplayPlacement,
+		PlayerID: g.Defender,
+		Role:     "defender",
+		Action:   "place",
+		Position: &Position{Y: y, X: x},
+		Details:  map[string]interface{}{"tower_type": towerType, "cost": cost},
+	})
 	return true
 }
 
@@ -220,6 +228,14 @@ func (g *Game) spawnEnemy(enemyType string, _ map[string]interface{}) bool {
 	en.PathID = pathIdx
 	g.Enemies = append(g.Enemies, &en)
 	g.Resources[g.Attacker] -= cost
+	g.recordReplayEvent(ReplayEvent{
+		Type:     ReplaySpawn,
+		PlayerID: g.Attacker,
+		Role:     "attacker",
+		Action:   "spawn",
+		Position: &Position{Y: start.Y, X: start.X},
+		Details:  map[string]interface{}{"enemy_type": enemyType, "cost": cost, "path_id": pathIdx},
+	})
 	return true
 }
 
@@ -251,6 +267,14 @@ func (g *Game) spawnWave() bool {
 	}
 	g.Resources[g.Attacker] -= waveCost
 	g.Wave++
+	g.recordReplayEvent(ReplayEvent{
+		Type:     ReplayWave,
+		PlayerID: g.Attacker,
+		Role:     "attacker",
+		Action:   "wave",
+		Amount:   num,
+		Details:  map[string]interface{}{"cost": waveCost, "wave": g.Wave, "queue": len(g.WaveQueue)},
+	})
 	return true
 }
 
@@ -259,6 +283,16 @@ func (g *Game) UpdateGameState() {
 	if g == nil || g.GameOver {
 		return
 	}
+	g.TickCount++
+	g.recordReplayEvent(ReplayEvent{
+		Type: ReplayTick,
+		Details: map[string]interface{}{
+			"wave":    g.Wave,
+			"enemies": len(g.Enemies),
+			"towers":  len(g.Towers),
+			"queue":   len(g.WaveQueue),
+		},
+	})
 
 	// Passive income
 	g.stateChangeCounter++
@@ -352,6 +386,14 @@ func (g *Game) UpdateGameState() {
 			killed := t.Attack(g.Enemies)
 			for _, e := range killed {
 				g.Particles = append(g.Particles, &Particle{Pos: e.Pos, Char: '*', Lifetime: 2, Color: "red"})
+				g.recordReplayEvent(ReplayEvent{
+					Type:     ReplayDamage,
+					PlayerID: g.Defender,
+					Role:     "defender",
+					Action:   "attack",
+					Position: &Position{Y: e.Pos.Y, X: e.Pos.X},
+					Details:  map[string]interface{}{"tower_type": t.TowerType, "enemy_type": e.EnemyType, "enemy_health": e.Health},
+				})
 				if e.Health <= 0 {
 					g.Score[g.Defender] += e.Reward
 					g.Resources[g.Defender] += e.Reward
@@ -394,10 +436,24 @@ func (g *Game) UpdateGameState() {
 			g.Lives[g.Defender]--
 			g.Resources[g.Attacker] += 30
 			g.Score[g.Attacker] += 50
+			g.recordReplayEvent(ReplayEvent{
+				Type:     ReplayBreach,
+				PlayerID: g.Attacker,
+				Role:     "attacker",
+				Action:   "breach",
+				Position: &Position{Y: e.Pos.Y, X: e.Pos.X},
+				Details:  map[string]interface{}{"enemy_type": e.EnemyType, "defender_lives": g.Lives[g.Defender]},
+			})
 
 			if g.Lives[g.Defender] <= 0 {
 				g.GameOver = true
 				g.Winner = g.Attacker
+				g.recordReplayEvent(ReplayEvent{
+					Type:     ReplayGameEnd,
+					PlayerID: g.Attacker,
+					Reason:   "defender_lives_depleted",
+					Details:  map[string]interface{}{"winner": g.Winner, "wave": g.Wave},
+				})
 			}
 			continue
 		}
@@ -410,5 +466,11 @@ func (g *Game) UpdateGameState() {
 	if g.Lives[g.Defender] > 0 && len(g.Enemies) == 0 && len(g.WaveQueue) == 0 && g.Wave >= g.MaxWaves {
 		g.GameOver = true
 		g.Winner = g.Defender
+		g.recordReplayEvent(ReplayEvent{
+			Type:     ReplayGameEnd,
+			PlayerID: g.Defender,
+			Reason:   "max_waves_cleared",
+			Details:  map[string]interface{}{"winner": g.Winner, "wave": g.Wave},
+		})
 	}
 }

@@ -766,6 +766,14 @@ func (g *Game) applyDecision(playerID, role string, decision map[string]interfac
 	}
 	modelName := g.ModelNames[playerID]
 	g.logf("%s (%s) decided to: %s", modelName, role, action)
+	g.recordReplayEvent(ReplayEvent{
+		Type:     ReplayDecision,
+		PlayerID: playerID,
+		Role:     role,
+		Action:   action,
+		Reason:   reason,
+		Details:  map[string]interface{}{"decision": decision},
+	})
 	applied := false
 	outcome := "rejected"
 	if role == "defender" {
@@ -868,6 +876,13 @@ func (g *Game) applyDecision(playerID, role string, decision map[string]interfac
 	if !applied {
 		g.RejectedActions[playerID+":"+action]++
 		g.logf("%s (%s) action rejected: %s", modelName, action, outcome)
+		g.recordReplayEvent(ReplayEvent{
+			Type:     ReplayRejected,
+			PlayerID: playerID,
+			Role:     role,
+			Action:   action,
+			Reason:   outcome,
+		})
 	}
 	g.LastActionStatus[playerID] = outcome
 }
@@ -924,6 +939,13 @@ func (g *Game) processPendingTurnResults() {
 			}
 			if result.err != nil {
 				g.ProviderErrors[result.playerID+":"+providerErrorLabel(result.err)]++
+				g.recordReplayEvent(ReplayEvent{
+					Type:     ReplayProviderErr,
+					PlayerID: result.playerID,
+					Role:     result.role,
+					Reason:   providerErrorLabel(result.err),
+					Details:  map[string]interface{}{"error": result.err.Error()},
+				})
 				g.logf("%s API error: %v", g.ModelNames[result.playerID], result.err)
 				g.switchTurn()
 				continue
