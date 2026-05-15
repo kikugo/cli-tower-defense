@@ -519,6 +519,7 @@ type Game struct {
 	MaxLogs            int
 	MaxWaveQueue       int
 	TickCount          int64
+	StartedAt          time.Time
 	ReplayEvents      []ReplayEvent
 	MaxReplayEvents   int
 	ActionCounters     map[string]int
@@ -587,7 +588,7 @@ func NewGameFromResolvedConfig(resolved ResolvedMatchConfig) *Game {
 		DecisionRouter:      router,
 		GameSpeed:           0.1, AIDecisionInterval: map[string]int{p1: 2, p2: 2},
 		LastAIDecision:      map[string]time.Time{p1: time.Now(), p2: time.Now()},
-		CurrentTurn:         p1, LastActionTime: time.Now(), MaxResources: 800, MaxWaves: 30, TurnTimeout: 45 * time.Second,
+		CurrentTurn:         p1, LastActionTime: time.Now(), StartedAt: time.Now(), MaxResources: 800, MaxWaves: 30, TurnTimeout: 45 * time.Second,
 		PauseBetweenTurns:   true, PauseDuration: 1 * time.Second, lastStatePrintTime: time.Now(), rng: rng, Logs: make([]string, 0), MaxLogs: 250, MaxWaveQueue: 200, ReplayEvents: make([]ReplayEvent, 0), MaxReplayEvents: 10000, ActionCounters: map[string]int{}, RejectedActions: map[string]int{}, ProviderErrors: map[string]int{}, LastActionStatus: map[string]string{p1: "none", p2: "none"},
 		pendingTurnResults:  make(chan turnResult, 8),
 	}
