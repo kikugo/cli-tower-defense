@@ -526,6 +526,7 @@ type Game struct {
 	RejectedActions    map[string]int
 	ProviderErrors     map[string]int
 	LastActionStatus   map[string]string
+	LastRejectedReason map[string]string
 	Defender           string
 	Attacker           string
 	ModelNames         map[string]string
@@ -589,7 +590,7 @@ func NewGameFromResolvedConfig(resolved ResolvedMatchConfig) *Game {
 		GameSpeed:      0.1, AIDecisionInterval: map[string]int{p1: 2, p2: 2},
 		LastAIDecision: map[string]time.Time{p1: time.Now(), p2: time.Now()},
 		CurrentTurn:    p1, LastActionTime: time.Now(), StartedAt: time.Now(), MaxResources: 800, MaxWaves: 30, TurnTimeout: 45 * time.Second,
-		PauseBetweenTurns: true, PauseDuration: 1 * time.Second, lastStatePrintTime: time.Now(), rng: rng, Logs: make([]string, 0), MaxLogs: 250, MaxWaveQueue: 200, ReplayEvents: make([]ReplayEvent, 0), MaxReplayEvents: 10000, ActionCounters: map[string]int{}, RejectedActions: map[string]int{}, ProviderErrors: map[string]int{}, LastActionStatus: map[string]string{p1: "none", p2: "none"},
+		PauseBetweenTurns: true, PauseDuration: 1 * time.Second, lastStatePrintTime: time.Now(), rng: rng, Logs: make([]string, 0), MaxLogs: 250, MaxWaveQueue: 200, ReplayEvents: make([]ReplayEvent, 0), MaxReplayEvents: 10000, ActionCounters: map[string]int{}, RejectedActions: map[string]int{}, ProviderErrors: map[string]int{}, LastActionStatus: map[string]string{p1: "none", p2: "none"}, LastRejectedReason: map[string]string{p1: "", p2: ""},
 		pendingTurnResults: make(chan turnResult, 8),
 	}
 	game.Paths = game.generatePaths()
@@ -876,6 +877,7 @@ func (g *Game) applyDecision(playerID, role string, decision map[string]interfac
 	g.ActionCounters[playerID+":"+action]++
 	if !applied {
 		g.RejectedActions[playerID+":"+action]++
+		g.LastRejectedReason[playerID] = outcome
 		g.logf("%s (%s) action rejected: %s", modelName, action, outcome)
 		g.recordReplayEvent(ReplayEvent{
 			Type:     ReplayRejected,
@@ -1093,6 +1095,9 @@ func summarizePromptState(gameState map[string]interface{}) string {
 	}
 	if pressure, ok := gameState["pressure"]; ok {
 		lines = append(lines, fmt.Sprintf("- pressure: %v", pressure))
+	}
+	if rejected, ok := gameState["last_rejected_reason"]; ok {
+		lines = append(lines, fmt.Sprintf("- last_rejected_reason: %v", rejected))
 	}
 	return strings.Join(lines, "\n")
 }

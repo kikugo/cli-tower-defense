@@ -69,6 +69,8 @@ func (g *Game) getGameState() map[string]interface{} {
 		"obstacles":              obstacles,
 		"valid_tower_candidates": g.validTowerCandidates(12),
 		"pressure":               g.attackPressureSummary(),
+		"last_action_status":     copyStringMap(g.LastActionStatus),
+		"last_rejected_reason":   copyStringMap(g.LastRejectedReason),
 		"resources":              resourcesIface,
 		"income":                 incomeIface,
 		"lives":                  livesIface,
