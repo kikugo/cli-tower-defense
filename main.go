@@ -24,17 +24,18 @@ func tickCmd(d time.Duration) tea.Cmd {
 }
 
 type model struct {
-	game      *eng.Game
-	width     int
-	height    int
-	paused    bool
-	logScroll int // how many lines from the bottom we offset when viewing logs
-	tickDur   time.Duration
-	showRange bool
-	headless  bool
-	maxTicks  int
+	game       *eng.Game
+	width      int
+	height     int
+	paused     bool
+	logScroll  int // how many lines from the bottom we offset when viewing logs
+	tickDur    time.Duration
+	showRange  bool
+	headless   bool
+	maxTicks   int
 	resultJSON string
 	replayJSON string
+	tournament string
 }
 
 func initialModel() model {
@@ -47,6 +48,7 @@ func initialModel() model {
 	maxWaves := flag.Int("max-waves", 0, "override max waves (0 keeps default)")
 	resultJSON := flag.String("result-json", "", "write headless match summary JSON to this path")
 	replayJSON := flag.String("replay-json", "", "write headless replay event JSON to this path")
+	tournament := flag.String("tournament", "", "run tournament config JSON instead of a single TUI match")
 	flag.Parse()
 	_ = godotenv.Load()
 	g, err := eng.NewGameFromEnv()
@@ -76,7 +78,7 @@ func initialModel() model {
 			g.AIDecisionInterval[g.Attacker] = 0
 		}
 	}
-	return model{game: g, tickDur: 100 * time.Millisecond, headless: *headless, maxTicks: *maxTicks, resultJSON: *resultJSON, replayJSON: *replayJSON}
+	return model{game: g, tickDur: 100 * time.Millisecond, headless: *headless, maxTicks: *maxTicks, resultJSON: *resultJSON, replayJSON: *replayJSON, tournament: *tournament}
 }
 
 func (m model) Init() tea.Cmd {
@@ -409,6 +411,12 @@ func (m model) View() string {
 
 func main() {
 	m := initialModel()
+	if m.tournament != "" {
+		if err := runTournament(m.tournament); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
 	if m.headless {
 		runHeadless(m)
 		return
@@ -430,24 +438,7 @@ func runHeadless(m model) {
 	}
 
 	ticks := 0
-	for ticks < limit && !m.game.GameOver {
-		if m.game.AIThinking[m.game.Player1] || m.game.AIThinking[m.game.Player2] {
-			m.game.HandleAIDecisions()
-			time.Sleep(10 * time.Millisecond)
-			continue
-		}
-		m.game.UpdateGameState()
-		m.game.HandleAIDecisions()
-		ticks++
-	}
-
-	for i := 0; i < 200 && !m.game.GameOver; i++ {
-		if !m.game.AIThinking[m.game.Player1] && !m.game.AIThinking[m.game.Player2] {
-			break
-		}
-		m.game.HandleAIDecisions()
-		time.Sleep(10 * time.Millisecond)
-	}
+	ticks = runHeadlessSimulation(m.game, limit)
 
 	result := "incomplete"
 	if m.game.GameOver {
@@ -476,6 +467,94 @@ func runHeadless(m model) {
 			log.Printf("write replay json: %v", err)
 		}
 	}
+}
+
+func runHeadlessSimulation(g *eng.Game, limit int) int {
+	ticks := 0
+	for ticks < limit && !g.GameOver {
+		if g.AIThinking[g.Player1] || g.AIThinking[g.Player2] {
+			g.HandleAIDecisions()
+			time.Sleep(10 * time.Millisecond)
+			continue
+		}
+		g.UpdateGameState()
+		g.HandleAIDecisions()
+		ticks++
+	}
+
+	for i := 0; i < 200 && !g.GameOver; i++ {
+		if !g.AIThinking[g.Player1] && !g.AIThinking[g.Player2] {
+			break
+		}
+		g.HandleAIDecisions()
+		time.Sleep(10 * time.Millisecond)
+	}
+	return ticks
+}
+
+func runTournament(path string) error {
+	var config eng.TournamentConfig
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	if err := json.Unmarshal(raw, &config); err != nil {
+		return err
+	}
+
+	report := eng.TournamentReport{Name: config.Name}
+	for _, matchup := range config.Matchups {
+		for _, seed := range config.NormalizedSeedsForMain() {
+			result, err := runTournamentMatch(matchup, seed, config, false)
+			if err != nil {
+				return err
+			}
+			report.Results = append(report.Results, result)
+			if config.RoleSwap {
+				swapped, err := runTournamentMatch(matchup, seed, config, true)
+				if err != nil {
+					return err
+				}
+				report.Results = append(report.Results, swapped)
+			}
+		}
+	}
+
+	data, err := json.MarshalIndent(report, "", "  ")
+	if err != nil {
+		return err
+	}
+	fmt.Println(string(data))
+	return nil
+}
+
+func runTournamentMatch(matchup eng.TournamentMatchup, seed int64, config eng.TournamentConfig, swapped bool) (eng.TournamentMatchResult, error) {
+	matchConfig := eng.MatchConfig{Player1: matchup.Player1, Player2: matchup.Player2}
+	resolved, err := eng.ResolveMatchConfig(matchConfig)
+	if err != nil {
+		return eng.TournamentMatchResult{}, err
+	}
+	g := eng.NewGameFromResolvedConfig(resolved)
+	g.PauseBetweenTurns = false
+	g.AIDecisionInterval[g.Defender] = 0
+	g.AIDecisionInterval[g.Attacker] = 0
+	if config.MaxWaves > 0 {
+		g.MaxWaves = config.MaxWaves
+	}
+	if seed != 0 {
+		g.SetRandomSeed(seed)
+	}
+	if swapped {
+		g.Defender, g.Attacker = g.Player2, g.Player1
+		g.CurrentTurn = g.Defender
+	}
+	runHeadlessSimulation(g, config.NormalizedMaxTicksForMain())
+	return eng.TournamentMatchResult{
+		Matchup: matchup.Name,
+		Seed:    seed,
+		Swapped: swapped,
+		Result:  g.BuildMatchResult(),
+	}, nil
 }
 
 func writeJSONFile(path string, v interface{}) error {
