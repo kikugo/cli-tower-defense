@@ -520,8 +520,8 @@ type Game struct {
 	MaxWaveQueue       int
 	TickCount          int64
 	StartedAt          time.Time
-	ReplayEvents      []ReplayEvent
-	MaxReplayEvents   int
+	ReplayEvents       []ReplayEvent
+	MaxReplayEvents    int
 	ActionCounters     map[string]int
 	RejectedActions    map[string]int
 	ProviderErrors     map[string]int
@@ -585,12 +585,12 @@ func NewGameFromResolvedConfig(resolved ResolvedMatchConfig) *Game {
 		LastReasoning: map[string]string{p1: "Thinking...", p2: "Thinking..."}, LastTaunt: map[string]string{p1: "", p2: ""},
 		WaveQueue: make([]string, 0), GameOver: false, AIEnabled: true, AIThinking: map[string]bool{p1: false, p2: false},
 		Defender: p1, Attacker: p2, ModelNames: map[string]string{p1: resolved.Player1.Model, p2: resolved.Player2.Model}, Player1: p1, Player2: p2,
-		DecisionRouter:      router,
-		GameSpeed:           0.1, AIDecisionInterval: map[string]int{p1: 2, p2: 2},
-		LastAIDecision:      map[string]time.Time{p1: time.Now(), p2: time.Now()},
-		CurrentTurn:         p1, LastActionTime: time.Now(), StartedAt: time.Now(), MaxResources: 800, MaxWaves: 30, TurnTimeout: 45 * time.Second,
-		PauseBetweenTurns:   true, PauseDuration: 1 * time.Second, lastStatePrintTime: time.Now(), rng: rng, Logs: make([]string, 0), MaxLogs: 250, MaxWaveQueue: 200, ReplayEvents: make([]ReplayEvent, 0), MaxReplayEvents: 10000, ActionCounters: map[string]int{}, RejectedActions: map[string]int{}, ProviderErrors: map[string]int{}, LastActionStatus: map[string]string{p1: "none", p2: "none"},
-		pendingTurnResults:  make(chan turnResult, 8),
+		DecisionRouter: router,
+		GameSpeed:      0.1, AIDecisionInterval: map[string]int{p1: 2, p2: 2},
+		LastAIDecision: map[string]time.Time{p1: time.Now(), p2: time.Now()},
+		CurrentTurn:    p1, LastActionTime: time.Now(), StartedAt: time.Now(), MaxResources: 800, MaxWaves: 30, TurnTimeout: 45 * time.Second,
+		PauseBetweenTurns: true, PauseDuration: 1 * time.Second, lastStatePrintTime: time.Now(), rng: rng, Logs: make([]string, 0), MaxLogs: 250, MaxWaveQueue: 200, ReplayEvents: make([]ReplayEvent, 0), MaxReplayEvents: 10000, ActionCounters: map[string]int{}, RejectedActions: map[string]int{}, ProviderErrors: map[string]int{}, LastActionStatus: map[string]string{p1: "none", p2: "none"},
+		pendingTurnResults: make(chan turnResult, 8),
 	}
 	game.Paths = game.generatePaths()
 	game.generateObstacles()
@@ -1087,6 +1087,12 @@ func summarizePromptState(gameState map[string]interface{}) string {
 	}
 	if enemies, ok := gameState["enemies"].([]interface{}); ok {
 		lines = append(lines, fmt.Sprintf("- enemies_count: %d", len(enemies)))
+	}
+	if candidates, ok := gameState["valid_tower_candidates"]; ok {
+		lines = append(lines, fmt.Sprintf("- valid_tower_candidates: %v", candidates))
+	}
+	if pressure, ok := gameState["pressure"]; ok {
+		lines = append(lines, fmt.Sprintf("- pressure: %v", pressure))
 	}
 	return strings.Join(lines, "\n")
 }

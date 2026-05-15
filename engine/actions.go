@@ -63,18 +63,49 @@ func (g *Game) getGameState() map[string]interface{} {
 	}
 
 	return map[string]interface{}{
-		"towers":         towers,
-		"enemies":        enemies,
-		"slow_zones":     slowZones,
-		"obstacles":      obstacles,
-		"resources":      resourcesIface,
-		"income":         incomeIface,
-		"lives":          livesIface,
-		"wave":           g.Wave,
-		"score":          g.Score,
-		"paths_count":    len(g.Paths),
-		"wave_queue":     len(g.WaveQueue),
-		"active_enemies": len(g.Enemies),
+		"towers":                 towers,
+		"enemies":                enemies,
+		"slow_zones":             slowZones,
+		"obstacles":              obstacles,
+		"valid_tower_candidates": g.validTowerCandidates(12),
+		"pressure":               g.attackPressureSummary(),
+		"resources":              resourcesIface,
+		"income":                 incomeIface,
+		"lives":                  livesIface,
+		"wave":                   g.Wave,
+		"score":                  g.Score,
+		"paths_count":            len(g.Paths),
+		"wave_queue":             len(g.WaveQueue),
+		"active_enemies":         len(g.Enemies),
+	}
+}
+
+func (g *Game) validTowerCandidates(limit int) [][]int {
+	candidates := make([][]int, 0, limit)
+	for _, path := range g.Paths {
+		for _, pos := range path {
+			for _, offset := range []Position{{Y: -1, X: 0}, {Y: 1, X: 0}, {Y: 0, X: -1}, {Y: 0, X: 1}} {
+				y := pos.Y + offset.Y
+				x := pos.X + offset.X
+				if ok, _ := g.canPlaceTowerAt(y, x); ok {
+					candidates = append(candidates, []int{y, x})
+					if len(candidates) >= limit {
+						return candidates
+					}
+				}
+			}
+		}
+	}
+	return candidates
+}
+
+func (g *Game) attackPressureSummary() map[string]interface{} {
+	return map[string]interface{}{
+		"active_enemies":     len(g.Enemies),
+		"queued_enemies":     len(g.WaveQueue),
+		"defender_lives":     g.Lives[g.Defender],
+		"defender_towers":    len(g.Towers),
+		"attacker_resources": g.Resources[g.Attacker],
 	}
 }
 
