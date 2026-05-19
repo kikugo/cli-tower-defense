@@ -627,6 +627,8 @@ func providerFromResolvedConfig(config ResolvedPlayerModelConfig) DecisionProvid
 	switch config.Provider {
 	case ProviderGeminiNative:
 		return NewGeminiNativeProvider(config)
+	case ProviderScripted:
+		return NewScriptedProvider(config)
 	default:
 		return NewOpenAICompatibleProvider(config)
 	}

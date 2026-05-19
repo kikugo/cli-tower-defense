@@ -11,6 +11,7 @@ type ProviderType string
 const (
 	ProviderOpenAICompatible ProviderType = "openai_compatible"
 	ProviderGeminiNative     ProviderType = "gemini_native"
+	ProviderScripted         ProviderType = "scripted"
 )
 
 type PlayerModelConfig struct {
@@ -81,10 +82,10 @@ func ResolveMatchConfig(config MatchConfig) (ResolvedMatchConfig, error) {
 
 	p1Key := os.Getenv(config.Player1.APIKeyEnv)
 	p2Key := os.Getenv(config.Player2.APIKeyEnv)
-	if p1Key == "" {
+	if config.Player1.Provider != ProviderScripted && p1Key == "" {
 		return ResolvedMatchConfig{}, fmt.Errorf("missing API key in env %q for player1", config.Player1.APIKeyEnv)
 	}
-	if p2Key == "" {
+	if config.Player2.Provider != ProviderScripted && p2Key == "" {
 		return ResolvedMatchConfig{}, fmt.Errorf("missing API key in env %q for player2", config.Player2.APIKeyEnv)
 	}
 
@@ -122,8 +123,8 @@ func parseMatchConfigJSON(raw string) (MatchConfig, error) {
 }
 
 func validatePlayerConfig(player string, config PlayerModelConfig) error {
-	if config.Provider != ProviderOpenAICompatible && config.Provider != ProviderGeminiNative {
-		return fmt.Errorf("%s provider must be %q or %q", player, ProviderOpenAICompatible, ProviderGeminiNative)
+	if config.Provider != ProviderOpenAICompatible && config.Provider != ProviderGeminiNative && config.Provider != ProviderScripted {
+		return fmt.Errorf("%s provider must be %q, %q, or %q", player, ProviderOpenAICompatible, ProviderGeminiNative, ProviderScripted)
 	}
 	if config.Model == "" {
 		return fmt.Errorf("%s model is required", player)
