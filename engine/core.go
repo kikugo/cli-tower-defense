@@ -493,11 +493,14 @@ type Game struct {
 	Width              int
 	MapHeight          int
 	MapWidth           int
+	MapType            string
 	Paths              [][]Position
+	PathTileSet        map[string]struct{}
 	Towers             []*Tower
 	Enemies            []*Enemy
 	SlowZones          []*SlowZone
 	Obstacles          []Position
+	ObstacleTileSet    map[string]struct{}
 	Particles          []*Particle
 	Resources          map[string]int
 	Income             map[string]int
@@ -605,9 +608,10 @@ func NewGameFromResolvedConfig(resolved ResolvedMatchConfig) *Game {
 		LastAIDecision: map[string]time.Time{p1: time.Now(), p2: time.Now()},
 		CurrentTurn:    p1, LastActionTime: time.Now(), StartedAt: time.Now(), MaxResources: 800, MaxWaves: 30, TurnTimeout: 45 * time.Second,
 		PauseBetweenTurns: true, PauseDuration: 1 * time.Second, lastStatePrintTime: time.Now(), rng: rng, Logs: make([]string, 0), MaxLogs: 250, MaxWaveQueue: 200, ReplayEvents: make([]ReplayEvent, 0), MaxReplayEvents: 10000, ActionCounters: map[string]int{}, RejectedActions: map[string]int{}, ProviderErrors: map[string]int{}, LastActionStatus: map[string]string{p1: "none", p2: "none"}, LastRejectedReason: map[string]string{p1: "", p2: ""}, NoopStreak: map[string]int{p1: 0, p2: 0},
-		pendingTurnResults: make(chan turnResult, 8),
+		PathTileSet: make(map[string]struct{}), ObstacleTileSet: make(map[string]struct{}), pendingTurnResults: make(chan turnResult, 8),
 	}
 	game.Paths = game.generatePaths()
+	game.rebuildPathTileSet()
 	game.generateObstacles()
 	return game
 }
@@ -622,6 +626,18 @@ func providerFromResolvedConfig(config ResolvedPlayerModelConfig) DecisionProvid
 }
 
 func (g *Game) generatePaths() [][]Position {
+	switch g.MapType {
+	case "straight":
+		return [][]Position{g.generateStraightPath(g.MapHeight / 2)}
+	case "forked":
+		return [][]Position{g.generateStraightPath(g.MapHeight / 3), g.generateStraightPath(2 * g.MapHeight / 3)}
+	case "choke":
+		return [][]Position{g.generateChokePath()}
+	case "open-field":
+		return [][]Position{g.generateStraightPath(g.MapHeight / 3), g.generateStraightPath(g.MapHeight / 2), g.generateStraightPath(2 * g.MapHeight / 3)}
+	case "zigzag":
+		return [][]Position{g.generateSinglePath(0, 1)}
+	}
 	numPaths := 1
 	if g.rng.Float64() > 0.6 {
 		numPaths = 2
@@ -631,6 +647,36 @@ func (g *Game) generatePaths() [][]Position {
 		paths[i] = g.generateSinglePath(i, numPaths)
 	}
 	return paths
+}
+
+func (g *Game) generateStraightPath(y int) []Position {
+	path := make([]Position, 0, g.MapWidth)
+	for x := 0; x < g.MapWidth; x++ {
+		path = append(path, Position{Y: y, X: x})
+	}
+	return path
+}
+
+func (g *Game) generateChokePath() []Position {
+	path := make([]Position, 0, g.MapWidth)
+	y := g.MapHeight / 3
+	chokeY := g.MapHeight / 2
+	for x := 0; x < g.MapWidth; x++ {
+		if x > g.MapWidth/3 && x < 2*g.MapWidth/3 {
+			y = chokeY
+		}
+		path = append(path, Position{Y: y, X: x})
+	}
+	return path
+}
+
+func (g *Game) SetMapType(mapType string) {
+	g.MapType = mapType
+	g.Paths = g.generatePaths()
+	g.rebuildPathTileSet()
+	g.Obstacles = make([]Position, 0)
+	g.ObstacleTileSet = make(map[string]struct{})
+	g.generateObstacles()
 }
 
 func (g *Game) generateSinglePath(index, total int) []Position {
@@ -666,19 +712,25 @@ func (g *Game) generateObstacles() {
 	numObstacles := 5 + g.rng.Intn(10)
 	for i := 0; i < numObstacles; i++ {
 		obs := Position{Y: 1 + g.rng.Intn(g.MapHeight-2), X: 1 + g.rng.Intn(g.MapWidth-2)}
-		onPath := false
-		for _, path := range g.Paths {
-			for _, p := range path {
-				if p.Y == obs.Y && p.X == obs.X {
-					onPath = true
-					break
-				}
-			}
-		}
+		_, onPath := g.PathTileSet[tileKey(obs.Y, obs.X)]
 		if !onPath {
 			g.Obstacles = append(g.Obstacles, obs)
+			g.ObstacleTileSet[tileKey(obs.Y, obs.X)] = struct{}{}
 		}
 	}
+}
+
+func (g *Game) rebuildPathTileSet() {
+	g.PathTileSet = make(map[string]struct{})
+	for _, path := range g.Paths {
+		for _, p := range path {
+			g.PathTileSet[tileKey(p.Y, p.X)] = struct{}{}
+		}
+	}
+}
+
+func tileKey(y, x int) string {
+	return fmt.Sprintf("%d,%d", y, x)
 }
 
 func (g *Game) HandleAIDecisions() {
@@ -994,7 +1046,9 @@ func (g *Game) processPendingTurnResults() {
 func (g *Game) SetRandomSeed(seed int64) {
 	g.rng = rand.New(rand.NewSource(seed))
 	g.Paths = g.generatePaths()
+	g.rebuildPathTileSet()
 	g.Obstacles = make([]Position, 0)
+	g.ObstacleTileSet = make(map[string]struct{})
 	g.generateObstacles()
 }
 

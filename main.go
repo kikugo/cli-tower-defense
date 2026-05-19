@@ -36,6 +36,10 @@ type model struct {
 	resultJSON string
 	replayJSON string
 	tournament string
+	replayIn   string
+	replayMode bool
+	replay     []eng.ReplayEvent
+	replayIdx  int
 }
 
 func initialModel() model {
@@ -46,8 +50,10 @@ func initialModel() model {
 	maxTicks := flag.Int("max-ticks", 3000, "maximum ticks to run in headless mode")
 	seed := flag.Int64("seed", 0, "deterministic random seed (0 uses time-based seed)")
 	maxWaves := flag.Int("max-waves", 0, "override max waves (0 keeps default)")
+	mapType := flag.String("map-type", "", "map archetype: straight, forked, choke, zigzag, open-field")
 	resultJSON := flag.String("result-json", "", "write headless match summary JSON to this path")
 	replayJSON := flag.String("replay-json", "", "write headless replay event JSON to this path")
+	replayIn := flag.String("replay-input", "", "load replay JSON and view in replay mode")
 	tournament := flag.String("tournament", "", "run tournament config JSON instead of a single TUI match")
 	flag.Parse()
 	_ = godotenv.Load()
@@ -57,6 +63,9 @@ func initialModel() model {
 	}
 	if *seed != 0 {
 		g.SetRandomSeed(*seed)
+	}
+	if *mapType != "" {
+		g.SetMapType(*mapType)
 	}
 	if *maxWaves > 0 {
 		g.MaxWaves = *maxWaves
@@ -78,7 +87,20 @@ func initialModel() model {
 			g.AIDecisionInterval[g.Attacker] = 0
 		}
 	}
-	return model{game: g, tickDur: 100 * time.Millisecond, headless: *headless, maxTicks: *maxTicks, resultJSON: *resultJSON, replayJSON: *replayJSON, tournament: *tournament}
+	m := model{game: g, tickDur: 100 * time.Millisecond, headless: *headless, maxTicks: *maxTicks, resultJSON: *resultJSON, replayJSON: *replayJSON, tournament: *tournament, replayIn: *replayIn}
+	if *replayIn != "" {
+		var events []eng.ReplayEvent
+		raw, err := os.ReadFile(*replayIn)
+		if err != nil {
+			log.Fatalf("read replay input: %v", err)
+		}
+		if err := json.Unmarshal(raw, &events); err != nil {
+			log.Fatalf("parse replay input: %v", err)
+		}
+		m.replayMode = true
+		m.replay = events
+	}
+	return m
 }
 
 func (m model) Init() tea.Cmd {
@@ -88,6 +110,12 @@ func (m model) Init() tea.Cmd {
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tickMsg:
+		if m.replayMode {
+			if !m.paused && m.replayIdx < len(m.replay)-1 {
+				m.replayIdx++
+			}
+			return m, tickCmd(m.tickDur)
+		}
 		if !m.paused && m.game != nil && !m.game.GameOver {
 			m.game.UpdateGameState()
 			m.game.HandleAIDecisions()
@@ -123,6 +151,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "r":
 			m.showRange = !m.showRange
+		case "n", "right", "l":
+			if m.replayMode && m.replayIdx < len(m.replay)-1 {
+				m.replayIdx++
+			}
+		case "b", "left", "h":
+			if m.replayMode && m.replayIdx > 0 {
+				m.replayIdx--
+			}
 		}
 	}
 	return m, nil
@@ -167,6 +203,9 @@ func wrapText(text string, width int) string {
 }
 
 func (m model) View() string {
+	if m.replayMode {
+		return m.replayView()
+	}
 	if m.game == nil {
 		return "loading..."
 	}
@@ -357,14 +396,19 @@ func (m model) View() string {
 	infoLines := []string{
 		turnStyle.Render(fmt.Sprintf("Turn: %s", curName)),
 		fmt.Sprintf("Wave: %d", m.game.Wave),
+		fmt.Sprintf("Tick: %d", m.game.TickCount),
 		fmt.Sprintf("Queue: %d | Enemies: %d | Towers: %d", len(m.game.WaveQueue), len(m.game.Enemies), len(m.game.Towers)),
 		fmt.Sprintf("Lives (%s): %d", defName, m.game.Lives[defID]),
 		fmt.Sprintf("Resources (%s): %d (inc: %d)", defName, m.game.Resources[defID], m.game.Income[defID]),
 		fmt.Sprintf("Resources (%s): %d (inc: %d)", attName, m.game.Resources[attID], m.game.Income[attID]),
+		fmt.Sprintf("Pressure: active=%d queued=%d", len(m.game.Enemies), len(m.game.WaveQueue)),
 		fmt.Sprintf("Provider errors: %s=%d %s=%d", p1Name, m.game.TotalProviderErrorsForPlayer(p1ID), p2Name, m.game.TotalProviderErrorsForPlayer(p2ID)),
 		fmt.Sprintf("Rejected actions: %s=%d %s=%d", p1Name, m.game.TotalRejectedActionsForPlayer(p1ID), p2Name, m.game.TotalRejectedActionsForPlayer(p2ID)),
+		fmt.Sprintf("Noop streak: %s=%d %s=%d", p1Name, m.game.NoopStreak[p1ID], p2Name, m.game.NoopStreak[p2ID]),
 		fmt.Sprintf("Last status: %s=%s", p1Name, m.game.LastActionStatus[p1ID]),
 		fmt.Sprintf("Last status: %s=%s", p2Name, m.game.LastActionStatus[p2ID]),
+		fmt.Sprintf("Last reject: %s=%s", p1Name, wrapText(m.game.LastRejectedReason[p1ID], 20)),
+		fmt.Sprintf("Last reject: %s=%s", p2Name, wrapText(m.game.LastRejectedReason[p2ID], 20)),
 		"",
 		"Strategy Reasoning:",
 		fmt.Sprintf("%s: %s", p1Name, p1Reason),
@@ -407,6 +451,59 @@ func (m model) View() string {
 		footer = "PAUSED | " + footer
 	}
 	return lipgloss.JoinVertical(lipgloss.Left, ui, footer)
+}
+
+func (m model) replayView() string {
+	total := len(m.replay)
+	if total == 0 {
+		return "Replay mode: no events loaded\nPress q to quit."
+	}
+	if m.replayIdx < 0 {
+		m.replayIdx = 0
+	}
+	if m.replayIdx >= total {
+		m.replayIdx = total - 1
+	}
+
+	ev := m.replay[m.replayIdx]
+	left := uiBorder.Render(strings.Join([]string{
+		"Replay Timeline",
+		fmt.Sprintf("Event %d/%d", m.replayIdx+1, total),
+		fmt.Sprintf("Type: %s", ev.Type),
+		fmt.Sprintf("Player: %s", ev.PlayerID),
+		fmt.Sprintf("Role: %s", ev.Role),
+		fmt.Sprintf("Action: %s", ev.Action),
+		fmt.Sprintf("Reason: %s", wrapText(ev.Reason, 58)),
+		"",
+		"Controls:",
+		"space pause/resume",
+		"n/right next event",
+		"b/left previous event",
+		"q quit",
+	}, "\n"))
+
+	details := "{}"
+	if len(ev.Details) > 0 {
+		if data, err := json.MarshalIndent(ev.Details, "", "  "); err == nil {
+			details = string(data)
+		}
+	}
+	right := sidebarStyle.Render(strings.Join([]string{
+		"Arena Metrics",
+		fmt.Sprintf("replay events: %d", total),
+		fmt.Sprintf("at index: %d", m.replayIdx),
+		fmt.Sprintf("timestamp: %s", ev.Time.Format(time.RFC3339)),
+		"",
+		"Event Details:",
+		details,
+	}, "\n"))
+
+	ui := lipgloss.JoinHorizontal(lipgloss.Top, left, right)
+	status := "running"
+	if m.paused {
+		status = "paused"
+	}
+	return lipgloss.JoinVertical(lipgloss.Left, ui, fmt.Sprintf("replay %s | +/- speed | q quit", status))
 }
 
 func main() {

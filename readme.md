@@ -180,6 +180,11 @@ You can adjust game parameters from CLI flags:
 - `-max-ticks`: Maximum ticks in headless mode
 - `-seed`: Deterministic seed for reproducible runs
 - `-max-waves`: Override max waves for short checks
+- `-map-type`: Map archetype (`straight`, `forked`, `choke`, `zigzag`, `open-field`)
+- `-result-json`: Write headless match summary JSON
+- `-replay-json`: Write replay event stream JSON
+- `-replay-input`: Load replay JSON and open replay viewer mode
+- `-tournament`: Run tournament config JSON (headless batch)
 
 - `GameSpeed`: Controls how fast the game runs
 - `AIDecisionInterval`: How often each AI makes decisions
@@ -194,6 +199,19 @@ go test ./...
 go test -race ./...
 go vet ./...
 go run main.go -headless -seed=42 -max-ticks=2500 -max-waves=10
+```
+
+Replay + result export:
+
+```bash
+go run main.go -headless -seed=42 -max-ticks=1200 -result-json=match.json -replay-json=replay.json
+go run main.go -replay-input=replay.json
+```
+
+Tournament run:
+
+```bash
+go run main.go -tournament=tournament.json
 ```
 
 Manual TUI check:

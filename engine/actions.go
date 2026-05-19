@@ -84,12 +84,18 @@ func (g *Game) getGameState() map[string]interface{} {
 
 func (g *Game) validTowerCandidates(limit int) [][]int {
 	candidates := make([][]int, 0, limit)
+	seen := make(map[string]struct{}, limit)
 	for _, path := range g.Paths {
 		for _, pos := range path {
 			for _, offset := range []Position{{Y: -1, X: 0}, {Y: 1, X: 0}, {Y: 0, X: -1}, {Y: 0, X: 1}} {
 				y := pos.Y + offset.Y
 				x := pos.X + offset.X
+				key := tileKey(y, x)
+				if _, ok := seen[key]; ok {
+					continue
+				}
 				if ok, _ := g.canPlaceTowerAt(y, x); ok {
+					seen[key] = struct{}{}
 					candidates = append(candidates, []int{y, x})
 					if len(candidates) >= limit {
 						return candidates
@@ -144,17 +150,11 @@ func (g *Game) canPlaceTowerAt(y, x int) (bool, string) {
 	if y < 0 || y >= g.MapHeight || x < 0 || x >= g.MapWidth {
 		return false, "out_of_bounds"
 	}
-	for _, path := range g.Paths {
-		for _, pos := range path {
-			if pos.Y == y && pos.X == x {
-				return false, "on_path"
-			}
-		}
+	if _, ok := g.PathTileSet[tileKey(y, x)]; ok {
+		return false, "on_path"
 	}
-	for _, obs := range g.Obstacles {
-		if obs.Y == y && obs.X == x {
-			return false, "on_obstacle"
-		}
+	if _, ok := g.ObstacleTileSet[tileKey(y, x)]; ok {
+		return false, "on_obstacle"
 	}
 	for _, t := range g.Towers {
 		if t.Pos.Y == y && t.Pos.X == x {
@@ -202,20 +202,7 @@ func (g *Game) placeSlowZone(y, x int) bool {
 	if g.Resources[g.Defender] < cost {
 		return false
 	}
-	// Check if on path
-	isOnPath := false
-	for _, path := range g.Paths {
-		for _, pos := range path {
-			if pos.Y == y && pos.X == x {
-				isOnPath = true
-				break
-			}
-		}
-		if isOnPath {
-			break
-		}
-	}
-	if !isOnPath {
+	if _, ok := g.PathTileSet[tileKey(y, x)]; !ok {
 		return false
 	}
 	// Check if already has slow zone

@@ -24,3 +24,25 @@ func TestSetRandomSeedProducesDeterministicPaths(t *testing.T) {
 	}
 }
 
+func TestSetMapTypeStraightCreatesSingleStraightLane(t *testing.T) {
+	g := NewGame("test", "test")
+	g.SetMapType("straight")
+
+	if len(g.Paths) != 1 {
+		t.Fatalf("expected one path, got %d", len(g.Paths))
+	}
+	for _, pos := range g.Paths[0] {
+		if pos.Y != g.MapHeight/2 {
+			t.Fatalf("expected straight path y=%d, got %d", g.MapHeight/2, pos.Y)
+		}
+	}
+}
+
+func TestSetMapTypeForkedCreatesTwoLanes(t *testing.T) {
+	g := NewGame("test", "test")
+	g.SetMapType("forked")
+
+	if len(g.Paths) != 2 {
+		t.Fatalf("expected two paths, got %d", len(g.Paths))
+	}
+}
