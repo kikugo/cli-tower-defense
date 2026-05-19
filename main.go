@@ -53,15 +53,39 @@ func initialModel() model {
 	mapType := flag.String("map-type", "", "map archetype: straight, forked, choke, zigzag, open-field")
 	rulesetPreset := flag.String("ruleset-preset", "", "arena ruleset preset: default, fast, marathon")
 	rulesetPath := flag.String("ruleset", "", "path to arena ruleset JSON")
+	profilesPath := flag.String("profiles", "", "path to model profile catalog JSON")
+	player1Profile := flag.String("player1-profile", "", "profile name for player1")
+	player2Profile := flag.String("player2-profile", "", "profile name for player2")
 	resultJSON := flag.String("result-json", "", "write headless match summary JSON to this path")
 	replayJSON := flag.String("replay-json", "", "write headless replay event JSON to this path")
 	replayIn := flag.String("replay-input", "", "load replay JSON and view in replay mode")
 	tournament := flag.String("tournament", "", "run tournament config JSON instead of a single TUI match")
 	flag.Parse()
 	_ = godotenv.Load()
-	g, err := eng.NewGameFromEnv()
-	if err != nil {
-		log.Fatal(err)
+	var g *eng.Game
+	if *profilesPath != "" || *player1Profile != "" || *player2Profile != "" {
+		if *profilesPath == "" || *player1Profile == "" || *player2Profile == "" {
+			log.Fatal("profiles mode requires -profiles, -player1-profile, and -player2-profile")
+		}
+		catalog, err := eng.LoadModelProfileCatalog(*profilesPath)
+		if err != nil {
+			log.Fatal(err)
+		}
+		matchCfg, err := eng.BuildMatchConfigFromProfiles(catalog, *player1Profile, *player2Profile)
+		if err != nil {
+			log.Fatal(err)
+		}
+		resolved, err := eng.ResolveMatchConfig(matchCfg)
+		if err != nil {
+			log.Fatal(err)
+		}
+		g = eng.NewGameFromResolvedConfig(resolved)
+	} else {
+		ng, err := eng.NewGameFromEnv()
+		if err != nil {
+			log.Fatal(err)
+		}
+		g = ng
 	}
 	if *seed != 0 {
 		g.SetRandomSeed(*seed)
