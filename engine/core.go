@@ -307,6 +307,8 @@ func (h *OpenAIHandler) createTowerPrompt(gameState map[string]interface{}) stri
 	prompt := fmt.Sprintf(
 		"You are the Defender in a Tower Defense Battleground. Goal: Stop enemies from reaching the end.\n"+
 			"Current Resources: %v, Base Income: %v, Wave: %d, Paths: %d\n\n"+
+			"Current objective: maximize survival and defend lives while keeping future economy viable.\n"+
+			"Legal action schema: exactly one JSON object with keys action, reason, taunt and action-specific fields.\n"+
 			"Your available tools this turn:\n"+
 			"Actions:\n"+
 			"1. {\"action\": \"place\", \"tower_type\": \"basic|sniper|splash|buffer\", \"position\": [y, x], \"reason\": \"...\", \"taunt\": \"...\"}\n"+
@@ -325,6 +327,7 @@ func (h *OpenAIHandler) createTowerPrompt(gameState map[string]interface{}) stri
 			"- Buffer towers (B) increase damage of nearby towers by 50%%. Place them in clusters.\n"+
 			"- Watch out for Healer enemies (H) and Shielded enemies (S).\n"+
 			"- Invest early if you can afford to, but don't let your lives drop too low.\n"+
+			"- If last_rejected_reason is non-empty, avoid repeating the same invalid action pattern.\n"+
 			"- You can send a taunt message to your opponent!\n\n"+
 			"Respond with exactly one JSON object only.",
 		gameState["resources"], gameState["income"], wave, pathsCount, stateSummary,
@@ -419,6 +422,8 @@ func (h *GeminiHandler) createEnemyPrompt(gameState map[string]interface{}) stri
 	prompt := fmt.Sprintf(
 		"You are the Attacker in a Tower Defense Battleground. Goal: Overwhelm the Defender.\n"+
 			"Current Resources: %v, Base Income: %v, Wave: %d, Paths: %d\n\n"+
+			"Current objective: convert resources into breaches quickly while maintaining wave pressure.\n"+
+			"Legal action schema: exactly one JSON object with keys action, reason, taunt and action-specific fields.\n"+
 			"Your available tools this turn:\n"+
 			"Enemy Options (cost):\n"+
 			"- basic (20): Standard unit\n"+
@@ -438,6 +443,7 @@ func (h *GeminiHandler) createEnemyPrompt(gameState map[string]interface{}) stri
 			"- Mix tank and healer units to create a slow but steady push.\n"+
 			"- Shielded enemies are best against sniper towers.\n"+
 			"- Sending a wave splits enemies across all %d paths.\n"+
+			"- If last_rejected_reason is non-empty, choose a different legal action next turn.\n"+
 			"- Taunt your opponent to get inside their circuits!\n\n"+
 			"Respond with exactly one JSON object only.",
 		gameState["resources"], gameState["income"], wave, gameState["paths_count"],

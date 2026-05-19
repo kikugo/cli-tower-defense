@@ -27,6 +27,8 @@ func TestTowerPromptIncludesAllDefenderTools(t *testing.T) {
 		`"action": "invest"`,
 		`"action": "save"`,
 		"Your available tools this turn:",
+		"Current objective:",
+		"Legal action schema:",
 	}
 	for _, needle := range required {
 		if !strings.Contains(prompt, needle) {
@@ -56,6 +58,8 @@ func TestEnemyPromptIncludesAllAttackerTools(t *testing.T) {
 		`"action": "invest"`,
 		`"action": "save"`,
 		"Your available tools this turn:",
+		"Current objective:",
+		"Legal action schema:",
 	}
 	for _, needle := range required {
 		if !strings.Contains(prompt, needle) {
@@ -63,4 +67,3 @@ func TestEnemyPromptIncludesAllAttackerTools(t *testing.T) {
 		}
 	}
 }
-
