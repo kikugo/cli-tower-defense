@@ -10,19 +10,38 @@ func (g *Game) BuildMatchResult() MatchResult {
 	if g.StartedAt.IsZero() {
 		duration = 0
 	}
+	baseForScoring := MatchResult{
+		Winner:          g.Winner,
+		MaxWaves:        g.MaxWaves,
+		Waves:           g.Wave,
+		Score:           g.Score,
+		Lives:           g.Lives,
+		RejectedActions: g.RejectedActions,
+		ProviderErrors:  g.ProviderErrors,
+	}
+	p1Breakdown := BuildScoreBreakdown(baseForScoring, g.Player1)
+	p2Breakdown := BuildScoreBreakdown(baseForScoring, g.Player2)
 
 	return MatchResult{
-		Winner:          g.Winner,
-		WinnerModel:     g.ModelNames[g.Winner],
-		WinReason:       g.inferWinReason(),
-		Ticks:           g.TickCount,
-		Waves:           g.Wave,
-		MaxWaves:        g.MaxWaves,
-		Defender:        g.Defender,
-		Attacker:        g.Attacker,
-		Models:          copyStringMap(g.ModelNames),
-		Lives:           copyIntMap(g.Lives),
-		Score:           copyIntMap(g.Score),
+		Winner:      g.Winner,
+		WinnerModel: g.ModelNames[g.Winner],
+		WinReason:   g.inferWinReason(),
+		Ticks:       g.TickCount,
+		Waves:       g.Wave,
+		MaxWaves:    g.MaxWaves,
+		Defender:    g.Defender,
+		Attacker:    g.Attacker,
+		Models:      copyStringMap(g.ModelNames),
+		Lives:       copyIntMap(g.Lives),
+		Score:       copyIntMap(g.Score),
+		NormalizedScore: map[string]float64{
+			g.Player1: p1Breakdown.Normalized,
+			g.Player2: p2Breakdown.Normalized,
+		},
+		ScoreBreakdown: map[string]ScoreBreakdown{
+			g.Player1: p1Breakdown,
+			g.Player2: p2Breakdown,
+		},
 		ActionCounters:  copyIntMap(g.ActionCounters),
 		RejectedActions: copyIntMap(g.RejectedActions),
 		ProviderErrors:  copyIntMap(g.ProviderErrors),
@@ -59,4 +78,3 @@ func copyStringMap(src map[string]string) map[string]string {
 	}
 	return dst
 }
-

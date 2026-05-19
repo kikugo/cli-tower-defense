@@ -21,5 +21,10 @@ func TestBuildMatchResultIncludesCoreMetrics(t *testing.T) {
 	if result.ActionCounters[g.Player1+":place"] != 2 {
 		t.Fatalf("expected action counters to be copied")
 	}
+	if _, ok := result.NormalizedScore[g.Player1]; !ok {
+		t.Fatalf("expected normalized score for player1")
+	}
+	if _, ok := result.ScoreBreakdown[g.Player2]; !ok {
+		t.Fatalf("expected score breakdown for player2")
+	}
 }
-

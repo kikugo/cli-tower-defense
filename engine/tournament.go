@@ -41,6 +41,7 @@ type TournamentStanding struct {
 	Wins               int     `json:"wins"`
 	WinRate            float64 `json:"win_rate"`
 	AverageScore       float64 `json:"average_score"`
+	AverageNormalized  float64 `json:"average_normalized_score"`
 	AverageWaveReached float64 `json:"average_wave_reached"`
 	RejectedActions    int     `json:"rejected_actions"`
 	ProviderErrors     int     `json:"provider_errors"`
@@ -81,9 +82,10 @@ func BuildTournamentSchedule(config TournamentConfig) []TournamentScheduledRun {
 
 func BuildTournamentStandings(results []TournamentMatchResult) []TournamentStanding {
 	type accum struct {
-		standing TournamentStanding
-		score    int
-		waves    int
+		standing   TournamentStanding
+		score      int
+		normalized float64
+		waves      int
 	}
 	byModel := map[string]*accum{}
 
@@ -99,6 +101,7 @@ func BuildTournamentStandings(results []TournamentMatchResult) []TournamentStand
 				a.standing.Wins++
 			}
 			a.score += match.Result.Score[playerID]
+			a.normalized += match.Result.NormalizedScore[playerID]
 			a.waves += match.Result.Waves
 			a.standing.RejectedActions += totalByPlayerPrefix(match.Result.RejectedActions, playerID)
 			a.standing.ProviderErrors += totalByPlayerPrefix(match.Result.ProviderErrors, playerID)
@@ -110,6 +113,7 @@ func BuildTournamentStandings(results []TournamentMatchResult) []TournamentStand
 		if a.standing.Matches > 0 {
 			a.standing.WinRate = float64(a.standing.Wins) / float64(a.standing.Matches)
 			a.standing.AverageScore = float64(a.score) / float64(a.standing.Matches)
+			a.standing.AverageNormalized = a.normalized / float64(a.standing.Matches)
 			a.standing.AverageWaveReached = float64(a.waves) / float64(a.standing.Matches)
 		}
 		standings = append(standings, a.standing)
