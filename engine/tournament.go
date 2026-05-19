@@ -5,6 +5,7 @@ type TournamentConfig struct {
 	Seeds    []int64             `json:"seeds"`
 	MaxTicks int                 `json:"max_ticks"`
 	MaxWaves int                 `json:"max_waves"`
+	Ruleset  *ArenaRuleset       `json:"ruleset,omitempty"`
 	RoleSwap bool                `json:"role_swap"`
 	Matchups []TournamentMatchup `json:"matchups"`
 }

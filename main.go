@@ -51,6 +51,8 @@ func initialModel() model {
 	seed := flag.Int64("seed", 0, "deterministic random seed (0 uses time-based seed)")
 	maxWaves := flag.Int("max-waves", 0, "override max waves (0 keeps default)")
 	mapType := flag.String("map-type", "", "map archetype: straight, forked, choke, zigzag, open-field")
+	rulesetPreset := flag.String("ruleset-preset", "", "arena ruleset preset: default, fast, marathon")
+	rulesetPath := flag.String("ruleset", "", "path to arena ruleset JSON")
 	resultJSON := flag.String("result-json", "", "write headless match summary JSON to this path")
 	replayJSON := flag.String("replay-json", "", "write headless replay event JSON to this path")
 	replayIn := flag.String("replay-input", "", "load replay JSON and view in replay mode")
@@ -69,6 +71,24 @@ func initialModel() model {
 	}
 	if *maxWaves > 0 {
 		g.MaxWaves = *maxWaves
+	}
+	if *rulesetPreset != "" {
+		ruleset, err := eng.PresetArenaRuleset(*rulesetPreset)
+		if err != nil {
+			log.Fatal(err)
+		}
+		g.ApplyRuleset(ruleset)
+	}
+	if *rulesetPath != "" {
+		var ruleset eng.ArenaRuleset
+		raw, err := os.ReadFile(*rulesetPath)
+		if err != nil {
+			log.Fatalf("read ruleset: %v", err)
+		}
+		if err := json.Unmarshal(raw, &ruleset); err != nil {
+			log.Fatalf("parse ruleset: %v", err)
+		}
+		g.ApplyRuleset(ruleset)
 	}
 	if *swap {
 		g.Defender, g.Attacker = g.Player2, g.Player1
@@ -631,6 +651,9 @@ func runTournamentMatch(matchup eng.TournamentMatchup, seed int64, config eng.To
 	g.AIDecisionInterval[g.Attacker] = 0
 	if config.MaxWaves > 0 {
 		g.MaxWaves = config.MaxWaves
+	}
+	if config.Ruleset != nil {
+		g.ApplyRuleset(*config.Ruleset)
 	}
 	if seed != 0 {
 		g.SetRandomSeed(seed)
