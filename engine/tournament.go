@@ -32,6 +32,7 @@ type TournamentReport struct {
 	Name      string                  `json:"name"`
 	Results   []TournamentMatchResult `json:"results"`
 	Standings []TournamentStanding    `json:"standings"`
+	Manifests []ArenaRunManifest      `json:"manifests,omitempty"`
 }
 
 type TournamentStanding struct {

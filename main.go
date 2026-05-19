@@ -24,22 +24,25 @@ func tickCmd(d time.Duration) tea.Cmd {
 }
 
 type model struct {
-	game       *eng.Game
-	width      int
-	height     int
-	paused     bool
-	logScroll  int // how many lines from the bottom we offset when viewing logs
-	tickDur    time.Duration
-	showRange  bool
-	headless   bool
-	maxTicks   int
-	resultJSON string
-	replayJSON string
-	tournament string
-	replayIn   string
-	replayMode bool
-	replay     []eng.ReplayEvent
-	replayIdx  int
+	game         *eng.Game
+	width        int
+	height       int
+	paused       bool
+	logScroll    int // how many lines from the bottom we offset when viewing logs
+	tickDur      time.Duration
+	showRange    bool
+	headless     bool
+	maxTicks     int
+	resultJSON   string
+	replayJSON   string
+	manifestJSON string
+	tournament   string
+	replayIn     string
+	replayMode   bool
+	replay       []eng.ReplayEvent
+	replayIdx    int
+	seed         int64
+	ruleset      eng.ArenaRuleset
 }
 
 func initialModel() model {
@@ -58,6 +61,7 @@ func initialModel() model {
 	player2Profile := flag.String("player2-profile", "", "profile name for player2")
 	resultJSON := flag.String("result-json", "", "write headless match summary JSON to this path")
 	replayJSON := flag.String("replay-json", "", "write headless replay event JSON to this path")
+	manifestJSON := flag.String("manifest-json", "", "write run manifest JSON to this path")
 	replayIn := flag.String("replay-input", "", "load replay JSON and view in replay mode")
 	tournament := flag.String("tournament", "", "run tournament config JSON instead of a single TUI match")
 	flag.Parse()
@@ -90,11 +94,14 @@ func initialModel() model {
 	if *seed != 0 {
 		g.SetRandomSeed(*seed)
 	}
+	appliedRuleset := eng.DefaultArenaRuleset()
 	if *mapType != "" {
 		g.SetMapType(*mapType)
+		appliedRuleset.MapType = *mapType
 	}
 	if *maxWaves > 0 {
 		g.MaxWaves = *maxWaves
+		appliedRuleset.MaxWaves = *maxWaves
 	}
 	if *rulesetPreset != "" {
 		ruleset, err := eng.PresetArenaRuleset(*rulesetPreset)
@@ -102,6 +109,7 @@ func initialModel() model {
 			log.Fatal(err)
 		}
 		g.ApplyRuleset(ruleset)
+		appliedRuleset = ruleset
 	}
 	if *rulesetPath != "" {
 		var ruleset eng.ArenaRuleset
@@ -113,6 +121,7 @@ func initialModel() model {
 			log.Fatalf("parse ruleset: %v", err)
 		}
 		g.ApplyRuleset(ruleset)
+		appliedRuleset = ruleset
 	}
 	if *swap {
 		g.Defender, g.Attacker = g.Player2, g.Player1
@@ -131,7 +140,7 @@ func initialModel() model {
 			g.AIDecisionInterval[g.Attacker] = 0
 		}
 	}
-	m := model{game: g, tickDur: 100 * time.Millisecond, headless: *headless, maxTicks: *maxTicks, resultJSON: *resultJSON, replayJSON: *replayJSON, tournament: *tournament, replayIn: *replayIn}
+	m := model{game: g, tickDur: 100 * time.Millisecond, headless: *headless, maxTicks: *maxTicks, resultJSON: *resultJSON, replayJSON: *replayJSON, manifestJSON: *manifestJSON, tournament: *tournament, replayIn: *replayIn, seed: *seed, ruleset: appliedRuleset}
 	if *replayIn != "" {
 		var events []eng.ReplayEvent
 		raw, err := os.ReadFile(*replayIn)
@@ -608,6 +617,12 @@ func runHeadless(m model) {
 			log.Printf("write replay json: %v", err)
 		}
 	}
+	if m.manifestJSON != "" {
+		manifest := eng.BuildRunManifest("headless", m.game, m.seed, false, limit, m.ruleset, os.Getenv("GIT_COMMIT"))
+		if err := writeJSONFile(m.manifestJSON, manifest); err != nil {
+			log.Printf("write manifest json: %v", err)
+		}
+	}
 }
 
 func runHeadlessSimulation(g *eng.Game, limit int) int {
@@ -646,11 +661,12 @@ func runTournament(path string) error {
 	report := eng.TournamentReport{Name: config.Name}
 	for _, matchup := range config.Matchups {
 		for _, scheduled := range eng.BuildTournamentSchedule(config) {
-			result, err := runTournamentMatch(matchup, scheduled.Seed, config, scheduled.Swapped)
+			result, manifest, err := runTournamentMatch(matchup, scheduled.Seed, config, scheduled.Swapped)
 			if err != nil {
 				return err
 			}
 			report.Results = append(report.Results, result)
+			report.Manifests = append(report.Manifests, manifest)
 		}
 	}
 	report.Standings = eng.BuildTournamentStandings(report.Results)
@@ -663,21 +679,24 @@ func runTournament(path string) error {
 	return nil
 }
 
-func runTournamentMatch(matchup eng.TournamentMatchup, seed int64, config eng.TournamentConfig, swapped bool) (eng.TournamentMatchResult, error) {
+func runTournamentMatch(matchup eng.TournamentMatchup, seed int64, config eng.TournamentConfig, swapped bool) (eng.TournamentMatchResult, eng.ArenaRunManifest, error) {
 	matchConfig := eng.MatchConfig{Player1: matchup.Player1, Player2: matchup.Player2}
 	resolved, err := eng.ResolveMatchConfig(matchConfig)
 	if err != nil {
-		return eng.TournamentMatchResult{}, err
+		return eng.TournamentMatchResult{}, eng.ArenaRunManifest{}, err
 	}
 	g := eng.NewGameFromResolvedConfig(resolved)
+	appliedRuleset := eng.DefaultArenaRuleset()
 	g.PauseBetweenTurns = false
 	g.AIDecisionInterval[g.Defender] = 0
 	g.AIDecisionInterval[g.Attacker] = 0
 	if config.MaxWaves > 0 {
 		g.MaxWaves = config.MaxWaves
+		appliedRuleset.MaxWaves = config.MaxWaves
 	}
 	if config.Ruleset != nil {
 		g.ApplyRuleset(*config.Ruleset)
+		appliedRuleset = *config.Ruleset
 	}
 	if seed != 0 {
 		g.SetRandomSeed(seed)
@@ -686,13 +705,16 @@ func runTournamentMatch(matchup eng.TournamentMatchup, seed int64, config eng.To
 		g.Defender, g.Attacker = g.Player2, g.Player1
 		g.CurrentTurn = g.Defender
 	}
-	runHeadlessSimulation(g, config.NormalizedMaxTicksForMain())
-	return eng.TournamentMatchResult{
+	maxTicks := config.NormalizedMaxTicksForMain()
+	runHeadlessSimulation(g, maxTicks)
+	result := eng.TournamentMatchResult{
 		Matchup: matchup.Name,
 		Seed:    seed,
 		Swapped: swapped,
 		Result:  g.BuildMatchResult(),
-	}, nil
+	}
+	manifest := eng.BuildRunManifest("tournament", g, seed, swapped, maxTicks, appliedRuleset, os.Getenv("GIT_COMMIT"))
+	return result, manifest, nil
 }
 
 func writeJSONFile(path string, v interface{}) error {
