@@ -981,12 +981,37 @@ func (g *Game) applyDecision(playerID, role string, decision map[string]interfac
 			Reason:   outcome,
 		})
 	}
+	g.recordReplayEvent(ReplayEvent{
+		Type:     ReplayOutcome,
+		PlayerID: playerID,
+		Role:     role,
+		Action:   action,
+		Reason:   outcome,
+		Details: map[string]interface{}{
+			"quality": classifyActionOutcome(outcome),
+		},
+	})
 	if applied && originalAction == "save" && outcome == "applied_primary" {
 		g.NoopStreak[playerID]++
 	} else if applied {
 		g.NoopStreak[playerID] = 0
 	}
 	g.LastActionStatus[playerID] = outcome
+}
+
+func classifyActionOutcome(outcome string) string {
+	switch {
+	case strings.HasPrefix(outcome, "applied_primary"):
+		return "primary"
+	case strings.HasPrefix(outcome, "applied_fallback"):
+		return "fallback"
+	case strings.HasPrefix(outcome, "applied_auto_"):
+		return "auto_corrected"
+	case strings.HasPrefix(outcome, "rejected"):
+		return "rejected"
+	default:
+		return "unknown"
+	}
 }
 
 func (g *Game) logf(format string, a ...interface{}) {

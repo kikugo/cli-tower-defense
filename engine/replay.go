@@ -7,6 +7,7 @@ type ReplayEventType string
 const (
 	ReplayTick        ReplayEventType = "tick"
 	ReplayDecision    ReplayEventType = "decision"
+	ReplayOutcome     ReplayEventType = "outcome"
 	ReplaySpawn       ReplayEventType = "spawn"
 	ReplayWave        ReplayEventType = "wave"
 	ReplayPlacement   ReplayEventType = "placement"
