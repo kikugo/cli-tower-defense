@@ -49,6 +49,10 @@ type MatchResult struct {
 	ActionCounters  map[string]int            `json:"action_counters"`
 	RejectedActions map[string]int            `json:"rejected_actions"`
 	ProviderErrors  map[string]int            `json:"provider_errors"`
+	ProviderCalls   map[string]int            `json:"provider_calls"`
+	ProviderLatency map[string]float64        `json:"provider_latency_ms_avg"`
+	TokenUsage      map[string]int            `json:"token_usage"`
+	CostMicros      map[string]int64          `json:"cost_micros"`
 	DurationMillis  int64                     `json:"duration_millis"`
 	ReplayEvents    int                       `json:"replay_events"`
 }

@@ -9,6 +9,10 @@ func TestBuildMatchResultIncludesCoreMetrics(t *testing.T) {
 	g.GameOver = true
 	g.Winner = g.Defender
 	g.ActionCounters[g.Player1+":place"] = 2
+	g.ProviderCalls[g.Player1] = 2
+	g.ProviderLatencyMS[g.Player1] = 30
+	g.ProviderTokenUsage[g.Player1] = 123
+	g.ProviderCostMicros[g.Player1] = 456
 
 	result := g.BuildMatchResult()
 
@@ -26,5 +30,11 @@ func TestBuildMatchResultIncludesCoreMetrics(t *testing.T) {
 	}
 	if _, ok := result.ScoreBreakdown[g.Player2]; !ok {
 		t.Fatalf("expected score breakdown for player2")
+	}
+	if result.ProviderLatency[g.Player1] != 15 {
+		t.Fatalf("expected average latency 15ms, got %f", result.ProviderLatency[g.Player1])
+	}
+	if result.TokenUsage[g.Player1] != 123 || result.CostMicros[g.Player1] != 456 {
+		t.Fatalf("expected token/cost telemetry to be copied")
 	}
 }

@@ -59,6 +59,10 @@ func (g *Game) BuildMatchResult() MatchResult {
 		ActionCounters:  copyIntMap(g.ActionCounters),
 		RejectedActions: copyIntMap(g.RejectedActions),
 		ProviderErrors:  copyIntMap(g.ProviderErrors),
+		ProviderCalls:   copyIntMap(g.ProviderCalls),
+		ProviderLatency: averageLatencyByPlayer(g.ProviderLatencyMS, g.ProviderCalls),
+		TokenUsage:      copyIntMap(g.ProviderTokenUsage),
+		CostMicros:      copyInt64Map(g.ProviderCostMicros),
 		DurationMillis:  duration.Milliseconds(),
 		ReplayEvents:    len(g.ReplayEvents),
 	}
@@ -89,6 +93,27 @@ func copyStringMap(src map[string]string) map[string]string {
 	dst := make(map[string]string, len(src))
 	for k, v := range src {
 		dst[k] = v
+	}
+	return dst
+}
+
+func copyInt64Map(src map[string]int64) map[string]int64 {
+	dst := make(map[string]int64, len(src))
+	for k, v := range src {
+		dst[k] = v
+	}
+	return dst
+}
+
+func averageLatencyByPlayer(totalMS map[string]int64, calls map[string]int) map[string]float64 {
+	dst := make(map[string]float64, len(totalMS))
+	for playerID, total := range totalMS {
+		n := calls[playerID]
+		if n <= 0 {
+			dst[playerID] = 0
+			continue
+		}
+		dst[playerID] = float64(total) / float64(n)
 	}
 	return dst
 }

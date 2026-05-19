@@ -541,6 +541,10 @@ type Game struct {
 	ActionCounters      map[string]int
 	RejectedActions     map[string]int
 	ProviderErrors      map[string]int
+	ProviderCalls       map[string]int
+	ProviderLatencyMS   map[string]int64
+	ProviderTokenUsage  map[string]int
+	ProviderCostMicros  map[string]int64
 	LastActionStatus    map[string]string
 	LastRejectedReason  map[string]string
 	NoopStreak          map[string]int
@@ -559,6 +563,7 @@ type turnResult struct {
 	role     string
 	decision map[string]interface{}
 	err      error
+	latency  time.Duration
 }
 
 func NewGame(openaiKey, googleKey string) *Game {
@@ -609,7 +614,7 @@ func NewGameFromResolvedConfig(resolved ResolvedMatchConfig) *Game {
 		GameSpeed:      0.1, AIDecisionInterval: map[string]int{p1: 2, p2: 2},
 		LastAIDecision: map[string]time.Time{p1: time.Now(), p2: time.Now()},
 		CurrentTurn:    p1, LastActionTime: time.Now(), StartedAt: time.Now(), MaxResources: 800, MaxWaves: 30, TurnTimeout: 45 * time.Second,
-		PauseBetweenTurns: true, PauseDuration: 1 * time.Second, lastStatePrintTime: time.Now(), rng: rng, Logs: make([]string, 0), MaxLogs: 250, MaxWaveQueue: 200, ReplayEvents: make([]ReplayEvent, 0), MaxReplayEvents: 10000, ActionCounters: map[string]int{}, RejectedActions: map[string]int{}, ProviderErrors: map[string]int{}, LastActionStatus: map[string]string{p1: "none", p2: "none"}, LastRejectedReason: map[string]string{p1: "", p2: ""}, NoopStreak: map[string]int{p1: 0, p2: 0}, AutoWaveMinResource: 260, AutoDefendMinStreak: 2,
+		PauseBetweenTurns: true, PauseDuration: 1 * time.Second, lastStatePrintTime: time.Now(), rng: rng, Logs: make([]string, 0), MaxLogs: 250, MaxWaveQueue: 200, ReplayEvents: make([]ReplayEvent, 0), MaxReplayEvents: 10000, ActionCounters: map[string]int{}, RejectedActions: map[string]int{}, ProviderErrors: map[string]int{}, ProviderCalls: map[string]int{}, ProviderLatencyMS: map[string]int64{}, ProviderTokenUsage: map[string]int{}, ProviderCostMicros: map[string]int64{}, LastActionStatus: map[string]string{p1: "none", p2: "none"}, LastRejectedReason: map[string]string{p1: "", p2: ""}, NoopStreak: map[string]int{p1: 0, p2: 0}, AutoWaveMinResource: 260, AutoDefendMinStreak: 2,
 		PathTileSet: make(map[string]struct{}), ObstacleTileSet: make(map[string]struct{}), pendingTurnResults: make(chan turnResult, 8),
 	}
 	game.Paths = game.generatePaths()
@@ -797,10 +802,12 @@ func (g *Game) handlePlayerTurn(playerID, role string, gameState map[string]inte
 	g.LastActionTime = time.Now()
 	go func() {
 		result := turnResult{playerID: playerID, role: role}
+		started := time.Now()
 		defer func() {
 			if r := recover(); r != nil {
 				result.err = fmt.Errorf("%w: %v", errTurnWorkerPanic, r)
 			}
+			result.latency = time.Since(started)
 			g.pendingTurnResults <- result
 		}()
 
@@ -1021,6 +1028,8 @@ func (g *Game) processPendingTurnResults() {
 		case result := <-g.pendingTurnResults:
 			g.AIThinking[result.playerID] = false
 			g.LastAIDecision[result.playerID] = time.Now()
+			g.ProviderCalls[result.playerID]++
+			g.ProviderLatencyMS[result.playerID] += result.latency.Milliseconds()
 			if g.GameOver {
 				continue
 			}
