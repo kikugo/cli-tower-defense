@@ -37,6 +37,7 @@ type model struct {
 	replayJSON   string
 	manifestJSON string
 	tournament   string
+	ratingsJSON  string
 	replayIn     string
 	replayMode   bool
 	replay       []eng.ReplayEvent
@@ -64,6 +65,7 @@ func initialModel() model {
 	manifestJSON := flag.String("manifest-json", "", "write run manifest JSON to this path")
 	replayIn := flag.String("replay-input", "", "load replay JSON and view in replay mode")
 	tournament := flag.String("tournament", "", "run tournament config JSON instead of a single TUI match")
+	ratingsJSON := flag.String("ratings-json", "", "path to read/write persistent model ratings for tournaments")
 	flag.Parse()
 	_ = godotenv.Load()
 	var g *eng.Game
@@ -140,7 +142,7 @@ func initialModel() model {
 			g.AIDecisionInterval[g.Attacker] = 0
 		}
 	}
-	m := model{game: g, tickDur: 100 * time.Millisecond, headless: *headless, maxTicks: *maxTicks, resultJSON: *resultJSON, replayJSON: *replayJSON, manifestJSON: *manifestJSON, tournament: *tournament, replayIn: *replayIn, seed: *seed, ruleset: appliedRuleset}
+	m := model{game: g, tickDur: 100 * time.Millisecond, headless: *headless, maxTicks: *maxTicks, resultJSON: *resultJSON, replayJSON: *replayJSON, manifestJSON: *manifestJSON, tournament: *tournament, ratingsJSON: *ratingsJSON, replayIn: *replayIn, seed: *seed, ruleset: appliedRuleset}
 	if *replayIn != "" {
 		var events []eng.ReplayEvent
 		raw, err := os.ReadFile(*replayIn)
@@ -562,7 +564,7 @@ func (m model) replayView() string {
 func main() {
 	m := initialModel()
 	if m.tournament != "" {
-		if err := runTournament(m.tournament); err != nil {
+		if err := runTournament(m.tournament, m.ratingsJSON); err != nil {
 			log.Fatal(err)
 		}
 		return
@@ -648,7 +650,7 @@ func runHeadlessSimulation(g *eng.Game, limit int) int {
 	return ticks
 }
 
-func runTournament(path string) error {
+func runTournament(path, ratingsPath string) error {
 	var config eng.TournamentConfig
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -670,6 +672,19 @@ func runTournament(path string) error {
 		}
 	}
 	report.Standings = eng.BuildTournamentStandings(report.Results)
+	ratings := eng.DefaultModelRatings()
+	if ratingsPath != "" {
+		if raw, err := os.ReadFile(ratingsPath); err == nil {
+			_ = json.Unmarshal(raw, &ratings)
+		}
+	}
+	ratings.ApplyTournamentResults(report.Results)
+	report.Ratings = ratings.Ratings
+	if ratingsPath != "" {
+		if err := writeJSONFile(ratingsPath, ratings); err != nil {
+			return err
+		}
+	}
 
 	data, err := json.MarshalIndent(report, "", "  ")
 	if err != nil {

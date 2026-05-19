@@ -2,6 +2,20 @@ package engine
 
 import "time"
 
+func (r MatchResult) Player1() string {
+	if _, ok := r.Models["p1"]; ok {
+		return "p1"
+	}
+	return r.Defender
+}
+
+func (r MatchResult) Player2() string {
+	if _, ok := r.Models["p2"]; ok {
+		return "p2"
+	}
+	return r.Attacker
+}
+
 func (g *Game) BuildMatchResult() MatchResult {
 	if g == nil {
 		return MatchResult{}
