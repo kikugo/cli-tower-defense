@@ -30,23 +30,27 @@ func (p *OpenAICompatibleProvider) Name() string {
 
 func (p *OpenAICompatibleProvider) GetTowerDecision(gameState map[string]interface{}) (map[string]interface{}, error) {
 	prompt := (&OpenAIHandler{}).createTowerPrompt(gameState)
-	content, err := p.getChatCompletion(prompt)
+	content, usage, err := p.getChatCompletion(prompt)
 	if err != nil {
 		return map[string]interface{}{"action": "none", "reason": "provider request failed"}, nil
 	}
-	return (&OpenAIHandler{}).parseTowerResponse(content)
+	decision, decErr := (&OpenAIHandler{}).parseTowerResponse(content)
+	attachTokenUsage(decision, usage)
+	return decision, decErr
 }
 
 func (p *OpenAICompatibleProvider) GetEnemyDecision(gameState map[string]interface{}) (map[string]interface{}, error) {
 	prompt := (&GeminiHandler{}).createEnemyPrompt(gameState)
-	content, err := p.getChatCompletion(prompt)
+	content, usage, err := p.getChatCompletion(prompt)
 	if err != nil {
 		return getFallbackEnemyDecision(100), nil
 	}
-	return (&GeminiHandler{}).parseEnemyResponse(content)
+	decision, decErr := (&GeminiHandler{}).parseEnemyResponse(content)
+	attachTokenUsage(decision, usage)
+	return decision, decErr
 }
 
-func (p *OpenAICompatibleProvider) getChatCompletion(prompt string) (string, error) {
+func (p *OpenAICompatibleProvider) getChatCompletion(prompt string) (string, tokenUsage, error) {
 	temperature := 0.7
 	maxTokens := 150.0
 	if v, ok := p.config.Params["temperature"]; ok {
@@ -66,7 +70,7 @@ func (p *OpenAICompatibleProvider) getChatCompletion(prompt string) (string, err
 	}
 	reqJSON, err := json.Marshal(reqBody)
 	if err != nil {
-		return "", wrapProviderError(p.Name(), "marshal request", err)
+		return "", tokenUsage{}, wrapProviderError(p.Name(), "marshal request", err)
 	}
 
 	var lastErr error
@@ -105,8 +109,9 @@ func (p *OpenAICompatibleProvider) getChatCompletion(prompt string) (string, err
 			lastErr = wrapProviderError(p.Name(), "decode", fmt.Errorf("empty content"))
 			continue
 		}
-		return content, nil
+		usage, _ := extractOpenAIUsage(result)
+		return content, usage, nil
 	}
 
-	return "", lastErr
+	return "", tokenUsage{}, lastErr
 }

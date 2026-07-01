@@ -30,23 +30,27 @@ func (p *GeminiNativeProvider) Name() string {
 
 func (p *GeminiNativeProvider) GetTowerDecision(gameState map[string]interface{}) (map[string]interface{}, error) {
 	prompt := (&OpenAIHandler{}).createTowerPrompt(gameState)
-	text, err := p.generateContent(prompt)
+	text, usage, err := p.generateContent(prompt)
 	if err != nil {
 		return map[string]interface{}{"action": "save"}, nil
 	}
-	return (&OpenAIHandler{}).parseTowerResponse(text)
+	decision, decErr := (&OpenAIHandler{}).parseTowerResponse(text)
+	attachTokenUsage(decision, usage)
+	return decision, decErr
 }
 
 func (p *GeminiNativeProvider) GetEnemyDecision(gameState map[string]interface{}) (map[string]interface{}, error) {
 	prompt := (&GeminiHandler{}).createEnemyPrompt(gameState)
-	text, err := p.generateContent(prompt)
+	text, usage, err := p.generateContent(prompt)
 	if err != nil {
 		return getFallbackEnemyDecision(100), nil
 	}
-	return (&GeminiHandler{}).parseEnemyResponse(text)
+	decision, decErr := (&GeminiHandler{}).parseEnemyResponse(text)
+	attachTokenUsage(decision, usage)
+	return decision, decErr
 }
 
-func (p *GeminiNativeProvider) generateContent(prompt string) (string, error) {
+func (p *GeminiNativeProvider) generateContent(prompt string) (string, tokenUsage, error) {
 	temperature := 0.7
 	maxTokens := 150.0
 	if v, ok := p.config.Params["temperature"]; ok {
@@ -71,7 +75,7 @@ func (p *GeminiNativeProvider) generateContent(prompt string) (string, error) {
 	}
 	reqJSON, err := json.Marshal(reqBody)
 	if err != nil {
-		return "", wrapProviderError(p.Name(), "marshal request", err)
+		return "", tokenUsage{}, wrapProviderError(p.Name(), "marshal request", err)
 	}
 
 	url := fmt.Sprintf("%s?key=%s", p.config.BaseURL, p.config.APIKey)
@@ -111,8 +115,9 @@ func (p *GeminiNativeProvider) generateContent(prompt string) (string, error) {
 			lastErr = wrapProviderError(p.Name(), "decode", fmt.Errorf("empty text"))
 			continue
 		}
-		return text, nil
+		usage, _ := extractGeminiUsage(result)
+		return text, usage, nil
 	}
 
-	return "", lastErr
+	return "", tokenUsage{}, lastErr
 }

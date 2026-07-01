@@ -22,6 +22,10 @@ type PlayerModelConfig struct {
 	TimeoutSeconds int                `json:"timeout_seconds,omitempty"`
 	Headers        map[string]string  `json:"headers,omitempty"`
 	Params         map[string]float64 `json:"params,omitempty"`
+	// Optional USD pricing per one million tokens. When set, headless match
+	// results carry an estimated cost derived from parsed token usage.
+	PriceInputPerMillion  float64 `json:"price_input_per_million,omitempty"`
+	PriceOutputPerMillion float64 `json:"price_output_per_million,omitempty"`
 }
 
 type MatchConfig struct {

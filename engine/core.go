@@ -564,6 +564,7 @@ type Game struct {
 	ProviderLatencyMS   map[string]int64
 	ProviderTokenUsage  map[string]int
 	ProviderCostMicros  map[string]int64
+	TokenPricing        map[string]tokenPricing
 	LastActionStatus    map[string]string
 	LastRejectedReason  map[string]string
 	NoopStreak          map[string]int
@@ -640,7 +641,7 @@ func NewGameFromResolvedConfig(resolved ResolvedMatchConfig) *Game {
 		GameSpeed:      0.1, AIDecisionInterval: map[string]int{p1: 2, p2: 2},
 		LastAIDecision: map[string]time.Time{p1: time.Now(), p2: time.Now()},
 		CurrentTurn:    p1, LastActionTime: time.Now(), StartedAt: time.Now(), MaxResources: 800, MaxWaves: 30, TurnTimeout: 45 * time.Second,
-		PauseBetweenTurns: true, PauseDuration: 1 * time.Second, lastStatePrintTime: time.Now(), rng: rng, Logs: make([]string, 0), MaxLogs: 250, MaxWaveQueue: 200, ReplayEvents: make([]ReplayEvent, 0), MaxReplayEvents: 10000, ActionCounters: map[string]int{}, RejectedActions: map[string]int{}, ProviderErrors: map[string]int{}, ProviderCalls: map[string]int{}, ProviderLatencyMS: map[string]int64{}, ProviderTokenUsage: map[string]int{}, ProviderCostMicros: map[string]int64{}, LastActionStatus: map[string]string{p1: "none", p2: "none"}, LastRejectedReason: map[string]string{p1: "", p2: ""}, NoopStreak: map[string]int{p1: 0, p2: 0}, AutoWaveMinResource: 260, AutoDefendMinStreak: 2, FogOfWar: true, DefenderVisionRange: 8, BaseVisionRange: 6, ResearchLevels: map[string]int{"economy": 0, "range": 0, "control": 0}, AbilityCooldowns: map[string]int{"surge": 0, "shield_burst": 0, "reinforce_wave": 0},
+		PauseBetweenTurns: true, PauseDuration: 1 * time.Second, lastStatePrintTime: time.Now(), rng: rng, Logs: make([]string, 0), MaxLogs: 250, MaxWaveQueue: 200, ReplayEvents: make([]ReplayEvent, 0), MaxReplayEvents: 10000, ActionCounters: map[string]int{}, RejectedActions: map[string]int{}, ProviderErrors: map[string]int{}, ProviderCalls: map[string]int{}, ProviderLatencyMS: map[string]int64{}, ProviderTokenUsage: map[string]int{}, ProviderCostMicros: map[string]int64{}, TokenPricing: map[string]tokenPricing{p1: pricingFromConfig(resolved.Player1), p2: pricingFromConfig(resolved.Player2)}, LastActionStatus: map[string]string{p1: "none", p2: "none"}, LastRejectedReason: map[string]string{p1: "", p2: ""}, NoopStreak: map[string]int{p1: 0, p2: 0}, AutoWaveMinResource: 260, AutoDefendMinStreak: 2, FogOfWar: true, DefenderVisionRange: 8, BaseVisionRange: 6, ResearchLevels: map[string]int{"economy": 0, "range": 0, "control": 0}, AbilityCooldowns: map[string]int{"surge": 0, "shield_burst": 0, "reinforce_wave": 0},
 		PathTileSet: make(map[string]struct{}), EnemyTileIndex: make(map[string][]*Enemy), ObstacleTileSet: make(map[string]struct{}), pendingTurnResults: make(chan turnResult, 8),
 	}
 	game.Paths = game.generatePaths()
@@ -1143,6 +1144,12 @@ func (g *Game) processPendingTurnResults() {
 			g.LastAIDecision[result.playerID] = time.Now()
 			g.ProviderCalls[result.playerID]++
 			g.ProviderLatencyMS[result.playerID] += result.latency.Milliseconds()
+			if usage, ok := takeTokenUsage(result.decision); ok {
+				g.ProviderTokenUsage[result.playerID] += usage.Total
+				if micros := g.tokenCostMicros(result.playerID, usage); micros > 0 {
+					g.ProviderCostMicros[result.playerID] += micros
+				}
+			}
 			if g.GameOver {
 				continue
 			}
@@ -1269,6 +1276,115 @@ func toIntFromAny(v interface{}) (int, bool) {
 	default:
 		return 0, false
 	}
+}
+
+// tokenUsage captures per-call token accounting returned by a provider.
+type tokenUsage struct {
+	Prompt     int
+	Completion int
+	Total      int
+}
+
+// tokenUsageKey is a reserved decision-map key used to carry provider token
+// usage from the async turn worker back to the game loop without changing the
+// DecisionProvider interface. It is stripped before a decision is applied.
+const tokenUsageKey = "_token_usage"
+
+func (u tokenUsage) normalized() tokenUsage {
+	if u.Total == 0 {
+		u.Total = u.Prompt + u.Completion
+	}
+	return u
+}
+
+func (u tokenUsage) empty() bool {
+	return u.Prompt == 0 && u.Completion == 0 && u.Total == 0
+}
+
+// attachTokenUsage stashes usage on the decision map so the game loop can
+// record it. Empty usage is not attached.
+func attachTokenUsage(decision map[string]interface{}, u tokenUsage) {
+	if decision == nil {
+		return
+	}
+	u = u.normalized()
+	if u.empty() {
+		return
+	}
+	decision[tokenUsageKey] = u
+}
+
+// takeTokenUsage removes and returns any usage stashed on a decision map.
+func takeTokenUsage(decision map[string]interface{}) (tokenUsage, bool) {
+	if decision == nil {
+		return tokenUsage{}, false
+	}
+	raw, ok := decision[tokenUsageKey]
+	if !ok {
+		return tokenUsage{}, false
+	}
+	delete(decision, tokenUsageKey)
+	u, ok := raw.(tokenUsage)
+	return u, ok
+}
+
+// extractOpenAIUsage reads the `usage` object from an OpenAI-compatible
+// chat completion response.
+func extractOpenAIUsage(result map[string]interface{}) (tokenUsage, bool) {
+	usageRaw, ok := result["usage"].(map[string]interface{})
+	if !ok {
+		return tokenUsage{}, false
+	}
+	prompt, _ := toIntFromAny(usageRaw["prompt_tokens"])
+	completion, _ := toIntFromAny(usageRaw["completion_tokens"])
+	total, _ := toIntFromAny(usageRaw["total_tokens"])
+	u := tokenUsage{Prompt: prompt, Completion: completion, Total: total}.normalized()
+	return u, !u.empty()
+}
+
+// tokenPricing holds USD pricing per one million tokens for a player.
+type tokenPricing struct {
+	InputPerMillion  float64
+	OutputPerMillion float64
+}
+
+func pricingFromConfig(cfg ResolvedPlayerModelConfig) tokenPricing {
+	return tokenPricing{
+		InputPerMillion:  cfg.PriceInputPerMillion,
+		OutputPerMillion: cfg.PriceOutputPerMillion,
+	}
+}
+
+// tokenCostMicros estimates the cost of a call in USD millionths (micros)
+// using the player's configured pricing. Returns 0 when no pricing is set.
+func (g *Game) tokenCostMicros(playerID string, u tokenUsage) int64 {
+	p, ok := g.TokenPricing[playerID]
+	if !ok || (p.InputPerMillion == 0 && p.OutputPerMillion == 0) {
+		return 0
+	}
+	prompt, completion := u.Prompt, u.Completion
+	if prompt == 0 && completion == 0 {
+		completion = u.Total
+	}
+	micros := float64(prompt)*p.InputPerMillion + float64(completion)*p.OutputPerMillion
+	if micros <= 0 {
+		return 0
+	}
+	return int64(micros + 0.5)
+}
+
+// extractGeminiUsage reads the `usageMetadata` object from a Gemini
+// generateContent response.
+func extractGeminiUsage(result map[string]interface{}) (tokenUsage, bool) {
+	usageRaw, ok := result["usageMetadata"].(map[string]interface{})
+	if !ok {
+		return tokenUsage{}, false
+	}
+	prompt, _ := toIntFromAny(usageRaw["promptTokenCount"])
+	completion, _ := toIntFromAny(usageRaw["candidatesTokenCount"])
+	total, _ := toIntFromAny(usageRaw["totalTokenCount"])
+	u := tokenUsage{Prompt: prompt, Completion: completion, Total: total}.normalized()
+	return u, !u.empty()
 }
 
 func parseDecisionPosition(raw interface{}, defaultY, defaultX int) (int, int) {
