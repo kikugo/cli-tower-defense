@@ -36,6 +36,7 @@ type model struct {
 	resultJSON   string
 	replayJSON   string
 	manifestJSON string
+	reportMD     string
 	tournament   string
 	ratingsJSON  string
 	replayIn     string
@@ -63,6 +64,7 @@ func initialModel() model {
 	resultJSON := flag.String("result-json", "", "write headless match summary JSON to this path")
 	replayJSON := flag.String("replay-json", "", "write headless replay event JSON to this path")
 	manifestJSON := flag.String("manifest-json", "", "write run manifest JSON to this path")
+	reportMD := flag.String("report-md", "", "write headless match report as markdown to this path")
 	replayIn := flag.String("replay-input", "", "load replay JSON and view in replay mode")
 	tournament := flag.String("tournament", "", "run tournament config JSON instead of a single TUI match")
 	ratingsJSON := flag.String("ratings-json", "", "path to read/write persistent model ratings for tournaments")
@@ -142,7 +144,7 @@ func initialModel() model {
 			g.AIDecisionInterval[g.Attacker] = 0
 		}
 	}
-	m := model{game: g, tickDur: 100 * time.Millisecond, headless: *headless, maxTicks: *maxTicks, resultJSON: *resultJSON, replayJSON: *replayJSON, manifestJSON: *manifestJSON, tournament: *tournament, ratingsJSON: *ratingsJSON, replayIn: *replayIn, seed: *seed, ruleset: appliedRuleset}
+	m := model{game: g, tickDur: 100 * time.Millisecond, headless: *headless, maxTicks: *maxTicks, resultJSON: *resultJSON, replayJSON: *replayJSON, manifestJSON: *manifestJSON, reportMD: *reportMD, tournament: *tournament, ratingsJSON: *ratingsJSON, replayIn: *replayIn, seed: *seed, ruleset: appliedRuleset}
 	if *replayIn != "" {
 		var events []eng.ReplayEvent
 		raw, err := os.ReadFile(*replayIn)
@@ -623,6 +625,11 @@ func runHeadless(m model) {
 		manifest := eng.BuildRunManifest("headless", m.game, m.seed, false, limit, m.ruleset, os.Getenv("GIT_COMMIT"))
 		if err := writeJSONFile(m.manifestJSON, manifest); err != nil {
 			log.Printf("write manifest json: %v", err)
+		}
+	}
+	if m.reportMD != "" {
+		if err := os.WriteFile(m.reportMD, []byte(m.game.BuildMatchResult().MarkdownReport()), 0600); err != nil {
+			log.Printf("write report markdown: %v", err)
 		}
 	}
 }
