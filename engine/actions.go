@@ -191,6 +191,39 @@ func (g *Game) attackerAbilitySummary() []interface{} {
 	return summary
 }
 
+func (g *Game) rebuildEnemySpatialIndex() {
+	g.EnemyTileIndex = make(map[string][]*Enemy, len(g.Enemies))
+	for _, enemy := range g.Enemies {
+		if enemy == nil || enemy.Health <= 0 {
+			continue
+		}
+		key := tileKey(enemy.Pos.Y, enemy.Pos.X)
+		g.EnemyTileIndex[key] = append(g.EnemyTileIndex[key], enemy)
+	}
+}
+
+func (g *Game) enemiesNear(pos Position, radius int) []*Enemy {
+	if radius < 0 {
+		return nil
+	}
+	seen := map[*Enemy]struct{}{}
+	nearby := make([]*Enemy, 0)
+	for y := pos.Y - radius; y <= pos.Y+radius; y++ {
+		for x := pos.X - radius; x <= pos.X+radius; x++ {
+			for _, enemy := range g.EnemyTileIndex[tileKey(y, x)] {
+				if _, ok := seen[enemy]; ok {
+					continue
+				}
+				if distance(pos, enemy.Pos) <= float64(radius) {
+					seen[enemy] = struct{}{}
+					nearby = append(nearby, enemy)
+				}
+			}
+		}
+	}
+	return nearby
+}
+
 func (g *Game) directorSummary() map[string]interface{} {
 	return map[string]interface{}{
 		"pressure_level":    g.PressureLevel,
@@ -558,54 +591,17 @@ func (g *Game) UpdateGameState() {
 	g.Particles = remainingParticles
 
 	// 2. Towers act (cooldown & attack).
-	boosts := make(map[*Tower]float64)
-	for _, t := range g.Towers {
-		if t.TowerType == "buffer" {
-			for _, target := range g.Towers {
-				if target == t {
-					continue
-				}
-				dist := math.Sqrt(math.Pow(float64(t.Pos.Y-target.Pos.Y), 2) + math.Pow(float64(t.Pos.X-target.Pos.X), 2))
-				if dist <= float64(t.Range) {
-					boosts[target] += 0.5
-				}
-			}
+	g.rebuildEnemySpatialIndex()
+	g.runTowerPhase()
+	rebuildAfterTowerDamage := false
+	for _, enemy := range g.Enemies {
+		if enemy.Health <= 0 {
+			rebuildAfterTowerDamage = true
+			break
 		}
 	}
-
-	for _, t := range g.Towers {
-		if t.TowerType == "buffer" {
-			continue
-		}
-		if t.Cooldown > 0 {
-			t.Cooldown--
-		}
-		if t.CanAttack() {
-			originalDamage := t.Damage
-			boost := boosts[t]
-			if boost > 1.0 {
-				boost = 1.0
-			} // Cap boost at 100%
-			t.Damage = int(float64(t.Damage) * (1.0 + boost))
-
-			killed := t.Attack(g.Enemies)
-			for _, e := range killed {
-				g.Particles = append(g.Particles, &Particle{Pos: e.Pos, Char: '*', Lifetime: 2, Color: "red"})
-				g.recordReplayEvent(ReplayEvent{
-					Type:     ReplayDamage,
-					PlayerID: g.Defender,
-					Role:     "defender",
-					Action:   "attack",
-					Position: &Position{Y: e.Pos.Y, X: e.Pos.X},
-					Details:  map[string]interface{}{"tower_type": t.TowerType, "enemy_type": e.EnemyType, "enemy_health": e.Health},
-				})
-				if e.Health <= 0 {
-					g.Score[g.Defender] += e.Reward
-					g.Resources[g.Defender] += e.Reward
-				}
-			}
-			t.Damage = originalDamage
-		}
+	if rebuildAfterTowerDamage {
+		g.rebuildEnemySpatialIndex()
 	}
 
 	// 3. Move enemies & collect survivors.
@@ -625,6 +621,9 @@ func (g *Game) UpdateGameState() {
 		for _, sz := range g.SlowZones {
 			if sz.Pos.Y == e.Pos.Y && sz.Pos.X == e.Pos.X {
 				actualSpeed *= 0.5
+				if g.ResearchLevels["control"] > 0 {
+					actualSpeed *= 0.85
+				}
 				break
 			}
 		}
@@ -666,6 +665,7 @@ func (g *Game) UpdateGameState() {
 		remaining = append(remaining, e)
 	}
 	g.Enemies = remaining
+	g.rebuildEnemySpatialIndex()
 
 	// 4. Victory condition
 	if g.Lives[g.Defender] > 0 && len(g.Enemies) == 0 && len(g.WaveQueue) == 0 && g.Wave >= g.MaxWaves {
@@ -677,6 +677,59 @@ func (g *Game) UpdateGameState() {
 			Reason:   "max_waves_cleared",
 			Details:  map[string]interface{}{"winner": g.Winner, "wave": g.Wave},
 		})
+	}
+}
+
+func (g *Game) runTowerPhase() {
+	boosts := make(map[*Tower]float64)
+	for _, t := range g.Towers {
+		if t.TowerType == "buffer" {
+			for _, target := range g.Towers {
+				if target == t {
+					continue
+				}
+				dist := math.Sqrt(math.Pow(float64(t.Pos.Y-target.Pos.Y), 2) + math.Pow(float64(t.Pos.X-target.Pos.X), 2))
+				if dist <= float64(t.Range) {
+					boosts[target] += 0.5
+				}
+			}
+		}
+	}
+
+	for _, t := range g.Towers {
+		if t.TowerType == "buffer" {
+			continue
+		}
+		if t.Cooldown > 0 {
+			t.Cooldown--
+		}
+		if t.CanAttack() {
+			originalDamage := t.Damage
+			boost := boosts[t]
+			if boost > 1.0 {
+				boost = 1.0
+			} // Cap boost at 100%
+			t.Damage = int(float64(t.Damage) * (1.0 + boost))
+
+			candidates := g.enemiesNear(t.Pos, t.Range)
+			killed := t.Attack(candidates)
+			for _, e := range killed {
+				g.Particles = append(g.Particles, &Particle{Pos: e.Pos, Char: '*', Lifetime: 2, Color: "red"})
+				g.recordReplayEvent(ReplayEvent{
+					Type:     ReplayDamage,
+					PlayerID: g.Defender,
+					Role:     "defender",
+					Action:   "attack",
+					Position: &Position{Y: e.Pos.Y, X: e.Pos.X},
+					Details:  map[string]interface{}{"tower_type": t.TowerType, "enemy_type": e.EnemyType, "enemy_health": e.Health},
+				})
+				if e.Health <= 0 {
+					g.Score[g.Defender] += e.Reward
+					g.Resources[g.Defender] += e.Reward
+				}
+			}
+			t.Damage = originalDamage
+		}
 	}
 }
 

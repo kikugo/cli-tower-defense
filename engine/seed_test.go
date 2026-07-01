@@ -46,3 +46,47 @@ func TestSetMapTypeForkedCreatesTwoLanes(t *testing.T) {
 		t.Fatalf("expected two paths, got %d", len(g.Paths))
 	}
 }
+
+func TestSetMapTypeSwitchbackCreatesVerticalTurns(t *testing.T) {
+	g := NewGame("test", "test")
+	g.SetMapType("switchback")
+
+	if len(g.Paths) != 1 {
+		t.Fatalf("expected one switchback path, got %d", len(g.Paths))
+	}
+	minY := g.Paths[0][0].Y
+	maxY := g.Paths[0][0].Y
+	for _, pos := range g.Paths[0] {
+		if pos.Y < minY {
+			minY = pos.Y
+		}
+		if pos.Y > maxY {
+			maxY = pos.Y
+		}
+	}
+	if maxY-minY < 4 {
+		t.Fatalf("expected switchback path to cover multiple rows, got span %d", maxY-minY)
+	}
+}
+
+func TestSetMapTypePerimeterStaysOnBounds(t *testing.T) {
+	g := NewGame("test", "test")
+	g.SetMapType("perimeter")
+
+	if len(g.Paths) != 1 {
+		t.Fatalf("expected one perimeter path, got %d", len(g.Paths))
+	}
+	path := g.Paths[0]
+	if len(path) == 0 {
+		t.Fatalf("expected perimeter path points")
+	}
+	for _, pos := range path {
+		if pos.Y < 0 || pos.Y >= g.MapHeight || pos.X < 0 || pos.X >= g.MapWidth {
+			t.Fatalf("path point out of bounds: %+v", pos)
+		}
+	}
+	last := path[len(path)-1]
+	if last.X != g.MapWidth-1 {
+		t.Fatalf("expected perimeter path to end at right edge, got x=%d", last.X)
+	}
+}

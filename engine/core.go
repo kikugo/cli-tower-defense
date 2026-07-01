@@ -514,6 +514,7 @@ type Game struct {
 	MapType             string
 	Paths               [][]Position
 	PathTileSet         map[string]struct{}
+	EnemyTileIndex      map[string][]*Enemy
 	Towers              []*Tower
 	Enemies             []*Enemy
 	SlowZones           []*SlowZone
@@ -640,7 +641,7 @@ func NewGameFromResolvedConfig(resolved ResolvedMatchConfig) *Game {
 		LastAIDecision: map[string]time.Time{p1: time.Now(), p2: time.Now()},
 		CurrentTurn:    p1, LastActionTime: time.Now(), StartedAt: time.Now(), MaxResources: 800, MaxWaves: 30, TurnTimeout: 45 * time.Second,
 		PauseBetweenTurns: true, PauseDuration: 1 * time.Second, lastStatePrintTime: time.Now(), rng: rng, Logs: make([]string, 0), MaxLogs: 250, MaxWaveQueue: 200, ReplayEvents: make([]ReplayEvent, 0), MaxReplayEvents: 10000, ActionCounters: map[string]int{}, RejectedActions: map[string]int{}, ProviderErrors: map[string]int{}, ProviderCalls: map[string]int{}, ProviderLatencyMS: map[string]int64{}, ProviderTokenUsage: map[string]int{}, ProviderCostMicros: map[string]int64{}, LastActionStatus: map[string]string{p1: "none", p2: "none"}, LastRejectedReason: map[string]string{p1: "", p2: ""}, NoopStreak: map[string]int{p1: 0, p2: 0}, AutoWaveMinResource: 260, AutoDefendMinStreak: 2, FogOfWar: true, DefenderVisionRange: 8, BaseVisionRange: 6, ResearchLevels: map[string]int{"economy": 0, "range": 0, "control": 0}, AbilityCooldowns: map[string]int{"surge": 0, "shield_burst": 0, "reinforce_wave": 0},
-		PathTileSet: make(map[string]struct{}), ObstacleTileSet: make(map[string]struct{}), pendingTurnResults: make(chan turnResult, 8),
+		PathTileSet: make(map[string]struct{}), EnemyTileIndex: make(map[string][]*Enemy), ObstacleTileSet: make(map[string]struct{}), pendingTurnResults: make(chan turnResult, 8),
 	}
 	game.Paths = game.generatePaths()
 	game.rebuildPathTileSet()
@@ -671,6 +672,10 @@ func (g *Game) generatePaths() [][]Position {
 		return [][]Position{g.generateStraightPath(g.MapHeight / 3), g.generateStraightPath(g.MapHeight / 2), g.generateStraightPath(2 * g.MapHeight / 3)}
 	case "zigzag":
 		return [][]Position{g.generateSinglePath(0, 1)}
+	case "switchback":
+		return [][]Position{g.generateSwitchbackPath()}
+	case "perimeter":
+		return [][]Position{g.generatePerimeterPath()}
 	}
 	numPaths := 1
 	if g.rng.Float64() > 0.6 {
@@ -698,6 +703,44 @@ func (g *Game) generateChokePath() []Position {
 	for x := 0; x < g.MapWidth; x++ {
 		if x > g.MapWidth/3 && x < 2*g.MapWidth/3 {
 			y = chokeY
+		}
+		path = append(path, Position{Y: y, X: x})
+	}
+	return path
+}
+
+func (g *Game) generateSwitchbackPath() []Position {
+	path := make([]Position, 0, g.MapWidth)
+	y := max(2, g.MapHeight/4)
+	direction := 1
+	for x := 0; x < g.MapWidth; x++ {
+		if x > 0 && x%8 == 0 {
+			y += direction * 2
+			if y >= g.MapHeight-2 {
+				y = g.MapHeight - 3
+				direction = -1
+			}
+			if y <= 1 {
+				y = 2
+				direction = 1
+			}
+		}
+		path = append(path, Position{Y: y, X: x})
+	}
+	return path
+}
+
+func (g *Game) generatePerimeterPath() []Position {
+	path := make([]Position, 0, g.MapWidth)
+	top := 1
+	bottom := g.MapHeight - 2
+	for x := 0; x < g.MapWidth; x++ {
+		y := top
+		if x > g.MapWidth/3 && x <= (2*g.MapWidth)/3 {
+			y = bottom
+		}
+		if x > (2*g.MapWidth)/3 {
+			y = g.MapHeight / 2
 		}
 		path = append(path, Position{Y: y, X: x})
 	}
