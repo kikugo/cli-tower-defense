@@ -24,27 +24,28 @@ func tickCmd(d time.Duration) tea.Cmd {
 }
 
 type model struct {
-	game         *eng.Game
-	width        int
-	height       int
-	paused       bool
-	logScroll    int // how many lines from the bottom we offset when viewing logs
-	tickDur      time.Duration
-	showRange    bool
-	headless     bool
-	maxTicks     int
-	resultJSON   string
-	replayJSON   string
-	manifestJSON string
-	reportMD     string
-	tournament   string
-	ratingsJSON  string
-	replayIn     string
-	replayMode   bool
-	replay       []eng.ReplayEvent
-	replayIdx    int
-	seed         int64
-	ruleset      eng.ArenaRuleset
+	game          *eng.Game
+	width         int
+	height        int
+	paused        bool
+	logScroll     int // how many lines from the bottom we offset when viewing logs
+	tickDur       time.Duration
+	showRange     bool
+	headless      bool
+	maxTicks      int
+	resultJSON    string
+	replayJSON    string
+	manifestJSON  string
+	reportMD      string
+	tournament    string
+	tournamentCSV string
+	ratingsJSON   string
+	replayIn      string
+	replayMode    bool
+	replay        []eng.ReplayEvent
+	replayIdx     int
+	seed          int64
+	ruleset       eng.ArenaRuleset
 }
 
 func initialModel() model {
@@ -67,6 +68,7 @@ func initialModel() model {
 	reportMD := flag.String("report-md", "", "write headless match report as markdown to this path")
 	replayIn := flag.String("replay-input", "", "load replay JSON and view in replay mode")
 	tournament := flag.String("tournament", "", "run tournament config JSON instead of a single TUI match")
+	tournamentCSV := flag.String("tournament-csv", "", "write tournament standings CSV to this path")
 	ratingsJSON := flag.String("ratings-json", "", "path to read/write persistent model ratings for tournaments")
 	flag.Parse()
 	_ = godotenv.Load()
@@ -144,7 +146,7 @@ func initialModel() model {
 			g.AIDecisionInterval[g.Attacker] = 0
 		}
 	}
-	m := model{game: g, tickDur: 100 * time.Millisecond, headless: *headless, maxTicks: *maxTicks, resultJSON: *resultJSON, replayJSON: *replayJSON, manifestJSON: *manifestJSON, reportMD: *reportMD, tournament: *tournament, ratingsJSON: *ratingsJSON, replayIn: *replayIn, seed: *seed, ruleset: appliedRuleset}
+	m := model{game: g, tickDur: 100 * time.Millisecond, headless: *headless, maxTicks: *maxTicks, resultJSON: *resultJSON, replayJSON: *replayJSON, manifestJSON: *manifestJSON, reportMD: *reportMD, tournament: *tournament, tournamentCSV: *tournamentCSV, ratingsJSON: *ratingsJSON, replayIn: *replayIn, seed: *seed, ruleset: appliedRuleset}
 	if *replayIn != "" {
 		var events []eng.ReplayEvent
 		raw, err := os.ReadFile(*replayIn)
@@ -566,7 +568,7 @@ func (m model) replayView() string {
 func main() {
 	m := initialModel()
 	if m.tournament != "" {
-		if err := runTournament(m.tournament, m.ratingsJSON); err != nil {
+		if err := runTournament(m.tournament, m.ratingsJSON, m.tournamentCSV); err != nil {
 			log.Fatal(err)
 		}
 		return
@@ -657,7 +659,7 @@ func runHeadlessSimulation(g *eng.Game, limit int) int {
 	return ticks
 }
 
-func runTournament(path, ratingsPath string) error {
+func runTournament(path, ratingsPath, csvPath string) error {
 	var config eng.TournamentConfig
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -678,7 +680,7 @@ func runTournament(path, ratingsPath string) error {
 			report.Manifests = append(report.Manifests, manifest)
 		}
 	}
-	report.Standings = eng.BuildTournamentStandings(report.Results)
+	report.Standings = eng.SortStandings(eng.BuildTournamentStandings(report.Results))
 	ratings := eng.DefaultModelRatings()
 	if ratingsPath != "" {
 		if raw, err := os.ReadFile(ratingsPath); err == nil {
@@ -689,6 +691,12 @@ func runTournament(path, ratingsPath string) error {
 	report.Ratings = ratings.Ratings
 	if ratingsPath != "" {
 		if err := writeJSONFile(ratingsPath, ratings); err != nil {
+			return err
+		}
+	}
+
+	if csvPath != "" {
+		if err := os.WriteFile(csvPath, []byte(eng.StandingsCSV(report.Standings)), 0600); err != nil {
 			return err
 		}
 	}
