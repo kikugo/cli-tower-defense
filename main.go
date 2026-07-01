@@ -39,6 +39,7 @@ type model struct {
 	reportMD      string
 	tournament    string
 	tournamentCSV string
+	tournamentMD  string
 	ratingsJSON   string
 	replayIn      string
 	replayMode    bool
@@ -69,6 +70,7 @@ func initialModel() model {
 	replayIn := flag.String("replay-input", "", "load replay JSON and view in replay mode")
 	tournament := flag.String("tournament", "", "run tournament config JSON instead of a single TUI match")
 	tournamentCSV := flag.String("tournament-csv", "", "write tournament standings CSV to this path")
+	tournamentMD := flag.String("tournament-md", "", "write tournament markdown report to this path")
 	ratingsJSON := flag.String("ratings-json", "", "path to read/write persistent model ratings for tournaments")
 	flag.Parse()
 	_ = godotenv.Load()
@@ -146,7 +148,7 @@ func initialModel() model {
 			g.AIDecisionInterval[g.Attacker] = 0
 		}
 	}
-	m := model{game: g, tickDur: 100 * time.Millisecond, headless: *headless, maxTicks: *maxTicks, resultJSON: *resultJSON, replayJSON: *replayJSON, manifestJSON: *manifestJSON, reportMD: *reportMD, tournament: *tournament, tournamentCSV: *tournamentCSV, ratingsJSON: *ratingsJSON, replayIn: *replayIn, seed: *seed, ruleset: appliedRuleset}
+	m := model{game: g, tickDur: 100 * time.Millisecond, headless: *headless, maxTicks: *maxTicks, resultJSON: *resultJSON, replayJSON: *replayJSON, manifestJSON: *manifestJSON, reportMD: *reportMD, tournament: *tournament, tournamentCSV: *tournamentCSV, tournamentMD: *tournamentMD, ratingsJSON: *ratingsJSON, replayIn: *replayIn, seed: *seed, ruleset: appliedRuleset}
 	if *replayIn != "" {
 		var events []eng.ReplayEvent
 		raw, err := os.ReadFile(*replayIn)
@@ -643,7 +645,7 @@ func (m model) replayView() string {
 func main() {
 	m := initialModel()
 	if m.tournament != "" {
-		if err := runTournament(m.tournament, m.ratingsJSON, m.tournamentCSV); err != nil {
+		if err := runTournament(m.tournament, m.ratingsJSON, m.tournamentCSV, m.tournamentMD); err != nil {
 			log.Fatal(err)
 		}
 		return
@@ -734,7 +736,7 @@ func runHeadlessSimulation(g *eng.Game, limit int) int {
 	return ticks
 }
 
-func runTournament(path, ratingsPath, csvPath string) error {
+func runTournament(path, ratingsPath, csvPath, mdPath string) error {
 	var config eng.TournamentConfig
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -772,6 +774,11 @@ func runTournament(path, ratingsPath, csvPath string) error {
 
 	if csvPath != "" {
 		if err := os.WriteFile(csvPath, []byte(eng.StandingsCSV(report.Standings)), 0600); err != nil {
+			return err
+		}
+	}
+	if mdPath != "" {
+		if err := os.WriteFile(mdPath, []byte(report.MarkdownReport()), 0600); err != nil {
 			return err
 		}
 	}

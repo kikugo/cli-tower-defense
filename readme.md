@@ -210,6 +210,7 @@ You can adjust game parameters from CLI flags:
 - `-profiles`, `-player1-profile`, `-player2-profile`: Reusable model profile catalog + matchup selection
 - `-tournament`: Run tournament config JSON (headless batch)
 - `-tournament-csv`: Write ranked tournament standings as CSV
+- `-tournament-md`: Write a tournament markdown report (standings + per-match results)
 - `-ratings-json`: Read/write persistent Elo-like model ratings across tournament runs
 
 - `GameSpeed`: Controls how fast the game runs
@@ -241,12 +242,13 @@ estimated cost, rejected actions, and errors.
 Tournament run:
 
 ```bash
-go run main.go -tournament=tournament.json -ratings-json=ratings.json -tournament-csv=standings.csv
+go run main.go -tournament=tournament.json -ratings-json=ratings.json -tournament-csv=standings.csv -tournament-md=tournament.md
 ```
 
 `standings.csv` holds the standings ranked best-first (win rate, then average
-normalized score), one row per model. The JSON report on stdout carries the full
-per-run results, manifests, and ratings.
+normalized score), one row per model. `tournament.md` is a markdown report with
+the same ranked standings plus a per-match results table. The JSON report on
+stdout carries the full per-run results, manifests, and ratings.
 
 ## Arena Workflow
 
