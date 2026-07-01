@@ -12,6 +12,9 @@ type ArenaRuleset struct {
 	StartingLives       int    `json:"starting_lives"`
 	AutoWaveMinResource int    `json:"auto_wave_min_resource"`
 	AutoDefendMinStreak int    `json:"auto_defend_min_streak"`
+	FogOfWar            bool   `json:"fog_of_war"`
+	DefenderVisionRange int    `json:"defender_vision_range"`
+	BaseVisionRange     int    `json:"base_vision_range"`
 }
 
 func DefaultArenaRuleset() ArenaRuleset {
@@ -25,6 +28,9 @@ func DefaultArenaRuleset() ArenaRuleset {
 		StartingLives:       20,
 		AutoWaveMinResource: 260,
 		AutoDefendMinStreak: 2,
+		FogOfWar:            true,
+		DefenderVisionRange: 8,
+		BaseVisionRange:     6,
 	}
 }
 
@@ -74,6 +80,15 @@ func (g *Game) ApplyRuleset(ruleset ArenaRuleset) {
 	}
 	if ruleset.AutoDefendMinStreak > 0 {
 		g.AutoDefendMinStreak = ruleset.AutoDefendMinStreak
+	}
+	if ruleset.FogOfWar {
+		g.FogOfWar = true
+	}
+	if ruleset.DefenderVisionRange > 0 {
+		g.DefenderVisionRange = ruleset.DefenderVisionRange
+	}
+	if ruleset.BaseVisionRange > 0 {
+		g.BaseVisionRange = ruleset.BaseVisionRange
 	}
 	if ruleset.MapType != "" {
 		g.SetMapType(ruleset.MapType)

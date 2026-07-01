@@ -69,6 +69,10 @@ func (g *Game) getGameState() map[string]interface{} {
 		"obstacles":              obstacles,
 		"valid_tower_candidates": g.validTowerCandidates(12),
 		"pressure":               g.attackPressureSummary(),
+		"visibility":             g.visibilitySummary(),
+		"research":               g.researchSummary(),
+		"attacker_abilities":     g.attackerAbilitySummary(),
+		"director":               g.directorSummary(),
 		"last_action_status":     copyStringMap(g.LastActionStatus),
 		"last_rejected_reason":   copyStringMap(g.LastRejectedReason),
 		"resources":              resourcesIface,
@@ -80,6 +84,37 @@ func (g *Game) getGameState() map[string]interface{} {
 		"wave_queue":             len(g.WaveQueue),
 		"active_enemies":         len(g.Enemies),
 	}
+}
+
+func (g *Game) getPlayerGameState(playerID, role string) map[string]interface{} {
+	state := g.getGameState()
+	if role != "defender" || !g.FogOfWar {
+		return state
+	}
+
+	visibleEnemies := g.visibleEnemiesForDefender()
+	filtered := make([]interface{}, len(visibleEnemies))
+	for i, e := range visibleEnemies {
+		pathLen := 1
+		if e.PathID < len(g.Paths) {
+			pathLen = len(g.Paths[e.PathID])
+		}
+		progress := float64(e.PathIndex) / float64(pathLen)
+		filtered[i] = map[string]interface{}{
+			"type":     e.EnemyType,
+			"position": []int{e.Pos.Y, e.Pos.X},
+			"health":   e.Health,
+			"speed":    e.Speed,
+			"shield":   e.Shield,
+			"progress": progress,
+			"path_id":  e.PathID,
+		}
+	}
+	state["enemies"] = filtered
+	state["active_enemies"] = len(filtered)
+	state["visibility"] = g.visibilitySummary()
+	_ = playerID
+	return state
 }
 
 func (g *Game) validTowerCandidates(limit int) [][]int {
@@ -115,6 +150,150 @@ func (g *Game) attackPressureSummary() map[string]interface{} {
 		"defender_towers":    len(g.Towers),
 		"attacker_resources": g.Resources[g.Attacker],
 	}
+}
+
+func (g *Game) visibilitySummary() map[string]interface{} {
+	visible := len(g.Enemies)
+	if g.FogOfWar {
+		visible = len(g.visibleEnemiesForDefender())
+	}
+	return map[string]interface{}{
+		"fog_enabled":     g.FogOfWar,
+		"vision_range":    g.DefenderVisionRange,
+		"base_vision":     g.BaseVisionRange,
+		"visible_enemies": visible,
+		"hidden_enemies":  max(0, len(g.Enemies)-visible),
+	}
+}
+
+func (g *Game) researchSummary() map[string]interface{} {
+	summary := make(map[string]interface{}, len(g.ResearchLevels))
+	for tech, level := range g.ResearchLevels {
+		summary[tech] = level
+	}
+	return summary
+}
+
+func (g *Game) attackerAbilitySummary() []interface{} {
+	abilities := availableAttackerAbilities()
+	summary := make([]interface{}, 0, len(abilities))
+	for _, ability := range abilities {
+		current := ability
+		current.CurrentCD = g.AbilityCooldowns[ability.Name]
+		summary = append(summary, map[string]interface{}{
+			"name":             current.Name,
+			"cost":             current.Cost,
+			"cooldown":         current.Cooldown,
+			"current_cooldown": current.CurrentCD,
+			"description":      current.Description,
+		})
+	}
+	return summary
+}
+
+func (g *Game) directorSummary() map[string]interface{} {
+	return map[string]interface{}{
+		"pressure_level":    g.PressureLevel,
+		"pressure_triggers": g.PressureTriggers,
+		"attacker_noop":     g.NoopStreak[g.Attacker],
+		"quiet_board":       len(g.Enemies) == 0 && len(g.WaveQueue) == 0,
+	}
+}
+
+func (g *Game) visibleEnemiesForDefender() []*Enemy {
+	if !g.FogOfWar {
+		return append([]*Enemy(nil), g.Enemies...)
+	}
+	visible := make([]*Enemy, 0, len(g.Enemies))
+	for _, enemy := range g.Enemies {
+		if g.isEnemyVisibleToDefender(enemy) {
+			visible = append(visible, enemy)
+		}
+	}
+	return visible
+}
+
+func (g *Game) isEnemyVisibleToDefender(enemy *Enemy) bool {
+	if enemy == nil {
+		return false
+	}
+	if enemy.Pos.X <= g.BaseVisionRange {
+		return true
+	}
+	for _, tower := range g.Towers {
+		if distance(tower.Pos, enemy.Pos) <= float64(max(tower.Range, g.DefenderVisionRange)) {
+			return true
+		}
+	}
+	for _, zone := range g.SlowZones {
+		if distance(zone.Pos, enemy.Pos) <= float64(g.DefenderVisionRange) {
+			return true
+		}
+	}
+	return false
+}
+
+func (g *Game) researchTech(tech string) bool {
+	costs := map[string]int{"economy": 180, "range": 160, "control": 140}
+	cost, ok := costs[tech]
+	if !ok {
+		return false
+	}
+	if g.ResearchLevels[tech] >= 2 || g.Resources[g.Defender] < cost {
+		return false
+	}
+	g.Resources[g.Defender] -= cost
+	g.ResearchLevels[tech]++
+	switch tech {
+	case "economy":
+		g.Income[g.Defender] += 3
+	case "range":
+		for _, tower := range g.Towers {
+			tower.Range++
+		}
+	case "control":
+		g.DefenderVisionRange++
+	}
+	return true
+}
+
+func availableAttackerAbilities() []AbilitySpec {
+	return []AbilitySpec{
+		{Name: "surge", Cost: 80, Cooldown: 12, Description: "Increase active enemy speed by 50%"},
+		{Name: "shield_burst", Cost: 90, Cooldown: 14, Description: "Add temporary shield to active enemies"},
+		{Name: "reinforce_wave", Cost: 70, Cooldown: 10, Description: "Add extra enemies to the queue"},
+	}
+}
+
+func (g *Game) useAttackerAbility(name string) bool {
+	specs := map[string]AbilitySpec{}
+	for _, spec := range availableAttackerAbilities() {
+		specs[spec.Name] = spec
+	}
+	spec, ok := specs[name]
+	if !ok || g.AbilityCooldowns[name] > 0 || g.Resources[g.Attacker] < spec.Cost {
+		return false
+	}
+	g.Resources[g.Attacker] -= spec.Cost
+	g.AbilityCooldowns[name] = spec.Cooldown
+	switch name {
+	case "surge":
+		for _, enemy := range g.Enemies {
+			enemy.Speed *= 1.5
+		}
+	case "shield_burst":
+		for _, enemy := range g.Enemies {
+			enemy.Shield++
+		}
+	case "reinforce_wave":
+		for _, enemyType := range []string{"fast", "basic", "shielded"} {
+			if g.MaxWaveQueue > 0 && len(g.WaveQueue) >= g.MaxWaveQueue {
+				break
+			}
+			g.WaveQueue = append(g.WaveQueue, enemyType)
+		}
+	}
+	return true
 }
 
 // placeTower tries to build a tower and returns true on success.
@@ -321,6 +500,12 @@ func (g *Game) UpdateGameState() {
 			g.Resources[p] += inc
 		}
 	}
+	for ability, cooldown := range g.AbilityCooldowns {
+		if cooldown > 0 {
+			g.AbilityCooldowns[ability] = cooldown - 1
+		}
+	}
+	g.applyAdaptivePressure()
 
 	// 1. Spawn queued enemies gradually
 	if len(g.WaveQueue) > 0 {
@@ -493,4 +678,31 @@ func (g *Game) UpdateGameState() {
 			Details:  map[string]interface{}{"winner": g.Winner, "wave": g.Wave},
 		})
 	}
+}
+
+func (g *Game) applyAdaptivePressure() {
+	if g.GameOver || g.TickCount%20 != 0 {
+		return
+	}
+	quietBoard := len(g.Enemies) == 0 && len(g.WaveQueue) == 0
+	if !quietBoard || g.NoopStreak[g.Attacker] < 3 {
+		return
+	}
+	g.PressureTriggers++
+	g.PressureLevel++
+	if g.Resources[g.Attacker] >= 70 && g.AbilityCooldowns["reinforce_wave"] == 0 {
+		_ = g.useAttackerAbility("reinforce_wave")
+		return
+	}
+	if g.shouldAutoLaunchWave(g.Attacker) {
+		_ = g.spawnWave()
+		return
+	}
+	if g.Resources[g.Attacker] >= 20 && (g.MaxWaveQueue == 0 || len(g.WaveQueue) < g.MaxWaveQueue) {
+		g.WaveQueue = append(g.WaveQueue, "basic")
+	}
+}
+
+func distance(a, b Position) float64 {
+	return math.Sqrt(math.Pow(float64(a.Y-b.Y), 2) + math.Pow(float64(a.X-b.X), 2))
 }

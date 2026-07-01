@@ -24,6 +24,7 @@ func TestTowerPromptIncludesAllDefenderTools(t *testing.T) {
 		`"action": "place"`,
 		`"action": "upgrade"`,
 		`"action": "place_slow_zone"`,
+		`"action": "research"`,
 		`"action": "invest"`,
 		`"action": "save"`,
 		"Your available tools this turn:",
@@ -55,6 +56,7 @@ func TestEnemyPromptIncludesAllAttackerTools(t *testing.T) {
 	required := []string{
 		`"action": "spawn"`,
 		`"action": "wave"`,
+		`"action": "ability"`,
 		`"action": "invest"`,
 		`"action": "save"`,
 		"Your available tools this turn:",

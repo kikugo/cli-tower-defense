@@ -36,6 +36,12 @@ func normalizeDecision(role string, decision map[string]interface{}) map[string]
 			}
 		case "place_slow_zone":
 			normalized["position"] = normalizePosition(decision["position"], -1, -1)
+		case "research":
+			tech, _ := decision["tech"].(string)
+			if !isValidResearchTech(tech) {
+				tech = "economy"
+			}
+			normalized["tech"] = tech
 		}
 	default:
 		normalized["action"] = normalizeAttackerAction(action)
@@ -46,6 +52,12 @@ func normalizeDecision(role string, decision map[string]interface{}) map[string]
 				enemyType = "basic"
 			}
 			normalized["enemy_type"] = enemyType
+		case "ability":
+			ability, _ := decision["ability"].(string)
+			if !isValidAttackerAbility(ability) {
+				ability = "surge"
+			}
+			normalized["ability"] = ability
 		}
 	}
 
@@ -54,7 +66,7 @@ func normalizeDecision(role string, decision map[string]interface{}) map[string]
 
 func normalizeDefenderAction(action string) string {
 	switch action {
-	case "place", "upgrade", "place_slow_zone", "invest":
+	case "place", "upgrade", "place_slow_zone", "research", "invest":
 		return action
 	default:
 		return "save"
@@ -63,7 +75,7 @@ func normalizeDefenderAction(action string) string {
 
 func normalizeAttackerAction(action string) string {
 	switch action {
-	case "spawn", "wave", "invest":
+	case "spawn", "wave", "ability", "invest":
 		return action
 	default:
 		return "save"
@@ -93,3 +105,20 @@ func isValidEnemyType(t string) bool {
 	}
 }
 
+func isValidResearchTech(t string) bool {
+	switch t {
+	case "economy", "range", "control":
+		return true
+	default:
+		return false
+	}
+}
+
+func isValidAttackerAbility(t string) bool {
+	switch t {
+	case "surge", "shield_burst", "reinforce_wave":
+		return true
+	default:
+		return false
+	}
+}

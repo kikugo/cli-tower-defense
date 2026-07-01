@@ -319,9 +319,11 @@ func (h *OpenAIHandler) createTowerPrompt(gameState map[string]interface{}) stri
 			"   Rules: tower_id must exist.\n"+
 			"3. {\"action\": \"place_slow_zone\", \"position\": [y, x], \"reason\": \"...\", \"taunt\": \"...\"}\n"+
 			"   Cost: 150. Reduces enemy speed by 50%%. MUST be on a path.\n"+
-			"4. {\"action\": \"invest\", \"reason\": \"...\", \"taunt\": \"...\"}\n"+
+			"4. {\"action\": \"research\", \"tech\": \"economy|range|control\", \"reason\": \"...\", \"taunt\": \"...\"}\n"+
+			"   Cost: economy (180), range (160), control (140). Unlocks persistent defender bonuses.\n"+
+			"5. {\"action\": \"invest\", \"reason\": \"...\", \"taunt\": \"...\"}\n"+
 			"   Cost: 150. Permanently increases passive income.\n"+
-			"5. {\"action\": \"save\", \"reason\": \"...\", \"taunt\": \"...\"}\n\n"+
+			"6. {\"action\": \"save\", \"reason\": \"...\", \"taunt\": \"...\"}\n\n"+
 			"State summary:\n%s\n\n"+
 			"Strategic Advice:\n"+
 			"- Buffer towers (B) increase damage of nearby towers by 50%%. Place them in clusters.\n"+
@@ -435,9 +437,11 @@ func (h *GeminiHandler) createEnemyPrompt(gameState map[string]interface{}) stri
 			"Actions:\n"+
 			"1. {\"action\": \"spawn\", \"enemy_type\": \"basic|fast|tank|shielded|healer\", \"reason\": \"...\", \"taunt\": \"...\"}\n"+
 			"2. {\"action\": \"wave\", \"reason\": \"...\", \"taunt\": \"...\"}\n"+
-			"3. {\"action\": \"invest\", \"reason\": \"...\", \"taunt\": \"...\"}\n"+
+			"3. {\"action\": \"ability\", \"ability\": \"surge|shield_burst|reinforce_wave\", \"reason\": \"...\", \"taunt\": \"...\"}\n"+
+			"   Costs/cooldowns: surge (80/12), shield_burst (90/14), reinforce_wave (70/10).\n"+
+			"4. {\"action\": \"invest\", \"reason\": \"...\", \"taunt\": \"...\"}\n"+
 			"   Cost: 150. Permanently increases passive income.\n"+
-			"4. {\"action\": \"save\", \"reason\": \"...\", \"taunt\": \"...\"}\n\n"+
+			"5. {\"action\": \"save\", \"reason\": \"...\", \"taunt\": \"...\"}\n\n"+
 			"State summary:\n%s\n\n"+
 			"Strategic Advice:\n"+
 			"- Mix tank and healer units to create a slow but steady push.\n"+
@@ -492,6 +496,14 @@ func getFallbackEnemyDecision(resources int) map[string]interface{} {
 
 type SlowZone struct {
 	Pos Position
+}
+
+type AbilitySpec struct {
+	Name        string `json:"name"`
+	Cost        int    `json:"cost"`
+	Cooldown    int    `json:"cooldown"`
+	Description string `json:"description"`
+	CurrentCD   int    `json:"current_cooldown,omitempty"`
 }
 
 type Game struct {
@@ -556,6 +568,13 @@ type Game struct {
 	NoopStreak          map[string]int
 	AutoWaveMinResource int
 	AutoDefendMinStreak int
+	FogOfWar            bool
+	DefenderVisionRange int
+	BaseVisionRange     int
+	ResearchLevels      map[string]int
+	AbilityCooldowns    map[string]int
+	PressureLevel       int
+	PressureTriggers    int
 	Defender            string
 	Attacker            string
 	ModelNames          map[string]string
@@ -620,7 +639,7 @@ func NewGameFromResolvedConfig(resolved ResolvedMatchConfig) *Game {
 		GameSpeed:      0.1, AIDecisionInterval: map[string]int{p1: 2, p2: 2},
 		LastAIDecision: map[string]time.Time{p1: time.Now(), p2: time.Now()},
 		CurrentTurn:    p1, LastActionTime: time.Now(), StartedAt: time.Now(), MaxResources: 800, MaxWaves: 30, TurnTimeout: 45 * time.Second,
-		PauseBetweenTurns: true, PauseDuration: 1 * time.Second, lastStatePrintTime: time.Now(), rng: rng, Logs: make([]string, 0), MaxLogs: 250, MaxWaveQueue: 200, ReplayEvents: make([]ReplayEvent, 0), MaxReplayEvents: 10000, ActionCounters: map[string]int{}, RejectedActions: map[string]int{}, ProviderErrors: map[string]int{}, ProviderCalls: map[string]int{}, ProviderLatencyMS: map[string]int64{}, ProviderTokenUsage: map[string]int{}, ProviderCostMicros: map[string]int64{}, LastActionStatus: map[string]string{p1: "none", p2: "none"}, LastRejectedReason: map[string]string{p1: "", p2: ""}, NoopStreak: map[string]int{p1: 0, p2: 0}, AutoWaveMinResource: 260, AutoDefendMinStreak: 2,
+		PauseBetweenTurns: true, PauseDuration: 1 * time.Second, lastStatePrintTime: time.Now(), rng: rng, Logs: make([]string, 0), MaxLogs: 250, MaxWaveQueue: 200, ReplayEvents: make([]ReplayEvent, 0), MaxReplayEvents: 10000, ActionCounters: map[string]int{}, RejectedActions: map[string]int{}, ProviderErrors: map[string]int{}, ProviderCalls: map[string]int{}, ProviderLatencyMS: map[string]int64{}, ProviderTokenUsage: map[string]int{}, ProviderCostMicros: map[string]int64{}, LastActionStatus: map[string]string{p1: "none", p2: "none"}, LastRejectedReason: map[string]string{p1: "", p2: ""}, NoopStreak: map[string]int{p1: 0, p2: 0}, AutoWaveMinResource: 260, AutoDefendMinStreak: 2, FogOfWar: true, DefenderVisionRange: 8, BaseVisionRange: 6, ResearchLevels: map[string]int{"economy": 0, "range": 0, "control": 0}, AbilityCooldowns: map[string]int{"surge": 0, "shield_burst": 0, "reinforce_wave": 0},
 		PathTileSet: make(map[string]struct{}), ObstacleTileSet: make(map[string]struct{}), pendingTurnResults: make(chan turnResult, 8),
 	}
 	game.Paths = game.generatePaths()
@@ -755,7 +774,6 @@ func (g *Game) HandleAIDecisions() {
 		return
 	}
 	currentTime := time.Now()
-	gameState := g.getGameState()
 	if currentTime.Sub(g.lastStatePrintTime) > 10*time.Second {
 		g.logf("\n=== Game State ===\nWave: %d\nCurrent Turn: %s (%s)\n%s (Def) - Lives: %d, Res: %d\n%s (Att) - Res: %d\nActive Towers: %d, Enemies: %d\n==================\n",
 			g.Wave, g.CurrentTurn, g.ModelNames[g.CurrentTurn], g.ModelNames[g.Defender], g.Lives[g.Defender], g.Resources[g.Defender],
@@ -775,6 +793,7 @@ func (g *Game) HandleAIDecisions() {
 	if player == g.Attacker {
 		role = "attacker"
 	}
+	gameState := g.getPlayerGameState(player, role)
 	if role == "defender" && g.Resources[player] < 100 {
 		g.logf("%s (Def) saving resources (%d)", g.ModelNames[player], g.Resources[player])
 		g.LastAIDecision[player] = currentTime
@@ -901,6 +920,15 @@ func (g *Game) applyDecision(playerID, role string, decision map[string]interfac
 			} else {
 				outcome = "rejected:invalid_or_unaffordable_slow_zone"
 			}
+		} else if action == "research" {
+			tech, _ := decision["tech"].(string)
+			if g.researchTech(tech) {
+				g.LastDecisions[playerID] = fmt.Sprintf("Researched %s", tech)
+				applied = true
+				outcome = "applied_primary"
+			} else {
+				outcome = "rejected:invalid_or_unaffordable_research"
+			}
 		} else if action == "invest" {
 			if g.invest(playerID) {
 				g.LastDecisions[playerID] = "Invested in economy"
@@ -953,6 +981,15 @@ func (g *Game) applyDecision(playerID, role string, decision map[string]interfac
 				outcome = "applied_primary"
 			} else {
 				outcome = "rejected:unaffordable_wave"
+			}
+		} else if action == "ability" {
+			ability, _ := decision["ability"].(string)
+			if g.useAttackerAbility(ability) {
+				g.LastDecisions[playerID] = fmt.Sprintf("Used %s ability", ability)
+				applied = true
+				outcome = "applied_primary"
+			} else {
+				outcome = "rejected:invalid_or_unavailable_ability"
 			}
 		} else if action == "invest" {
 			if g.invest(playerID) {
@@ -1223,6 +1260,18 @@ func summarizePromptState(gameState map[string]interface{}) string {
 	}
 	if pressure, ok := gameState["pressure"]; ok {
 		lines = append(lines, fmt.Sprintf("- pressure: %v", pressure))
+	}
+	if visibility, ok := gameState["visibility"]; ok {
+		lines = append(lines, fmt.Sprintf("- visibility: %v", visibility))
+	}
+	if research, ok := gameState["research"]; ok {
+		lines = append(lines, fmt.Sprintf("- research: %v", research))
+	}
+	if abilities, ok := gameState["attacker_abilities"]; ok {
+		lines = append(lines, fmt.Sprintf("- attacker_abilities: %v", abilities))
+	}
+	if director, ok := gameState["director"]; ok {
+		lines = append(lines, fmt.Sprintf("- director: %v", director))
 	}
 	if rejected, ok := gameState["last_rejected_reason"]; ok {
 		lines = append(lines, fmt.Sprintf("- last_rejected_reason: %v", rejected))
