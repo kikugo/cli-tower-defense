@@ -116,7 +116,8 @@ Tower types: basic (^) sniper (⌖) splash (⊕) | Enemy types: basic (o) fast (
 
    The optional `price_input_per_million` and `price_output_per_million` fields
    set USD pricing per one million tokens. When present, headless match results
-   include an estimated cost derived from parsed provider token usage.
+   include an estimated cost derived from parsed provider token usage. The same
+   fields work inside a `-profiles` catalog entry.
 
 4. Run the game:
 
