@@ -11,6 +11,7 @@ tower-defense
 main
 tower_defense
 .gocache/
+.gomodcache/
 # Test binary, built with `go test -c`
 *.test
 
