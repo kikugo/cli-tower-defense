@@ -483,6 +483,9 @@ func (m model) View() string {
 		fmt.Sprintf("Pressure: active=%d queued=%d", len(m.game.Enemies), len(m.game.WaveQueue)),
 		fmt.Sprintf("Provider errors: %s=%d %s=%d", p1Name, m.game.TotalProviderErrorsForPlayer(p1ID), p2Name, m.game.TotalProviderErrorsForPlayer(p2ID)),
 		fmt.Sprintf("Rejected actions: %s=%d %s=%d", p1Name, m.game.TotalRejectedActionsForPlayer(p1ID), p2Name, m.game.TotalRejectedActionsForPlayer(p2ID)),
+		fmt.Sprintf("Provider calls: %s=%d %s=%d", p1Name, m.game.ProviderCalls[p1ID], p2Name, m.game.ProviderCalls[p2ID]),
+		fmt.Sprintf("Tokens: %s=%d %s=%d", p1Name, m.game.ProviderTokenUsage[p1ID], p2Name, m.game.ProviderTokenUsage[p2ID]),
+		fmt.Sprintf("Est cost: %s=%s %s=%s", p1Name, fmtCostMicros(m.game.ProviderCostMicros[p1ID]), p2Name, fmtCostMicros(m.game.ProviderCostMicros[p2ID])),
 		fmt.Sprintf("Noop streak: %s=%d %s=%d", p1Name, m.game.NoopStreak[p1ID], p2Name, m.game.NoopStreak[p2ID]),
 		fmt.Sprintf("Last status: %s=%s", p1Name, m.game.LastActionStatus[p1ID]),
 		fmt.Sprintf("Last status: %s=%s", p2Name, m.game.LastActionStatus[p2ID]),
@@ -530,6 +533,15 @@ func (m model) View() string {
 		footer = "PAUSED | " + footer
 	}
 	return lipgloss.JoinVertical(lipgloss.Left, ui, footer)
+}
+
+// fmtCostMicros renders a USD-millionths cost as a dollar figure, or "-" when
+// no cost has accrued (for example when no pricing is configured).
+func fmtCostMicros(micros int64) string {
+	if micros <= 0 {
+		return "-"
+	}
+	return fmt.Sprintf("$%.4f", float64(micros)/1_000_000)
 }
 
 // clampReplayIdx keeps a replay index within [0, total-1].

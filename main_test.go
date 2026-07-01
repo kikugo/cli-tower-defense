@@ -41,6 +41,18 @@ func TestReplayGameEndIndex(t *testing.T) {
 	}
 }
 
+func TestFmtCostMicros(t *testing.T) {
+	if got := fmtCostMicros(0); got != "-" {
+		t.Fatalf("expected - for zero cost, got %q", got)
+	}
+	if got := fmtCostMicros(-5); got != "-" {
+		t.Fatalf("expected - for negative cost, got %q", got)
+	}
+	if got := fmtCostMicros(8000); got != "$0.0080" {
+		t.Fatalf("expected $0.0080, got %q", got)
+	}
+}
+
 func TestProgressBar(t *testing.T) {
 	if got := progressBar(0, 1, 40); got != "" {
 		t.Fatalf("expected empty bar for single event, got %q", got)
