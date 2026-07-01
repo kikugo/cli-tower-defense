@@ -107,10 +107,16 @@ Tower types: basic (^) sniper (⌖) splash (⊕) | Enemy types: basic (o) fast (
          "HTTP-Referer": "https://example.com",
          "X-Title": "tower-defense"
        },
-       "timeout_seconds": 20
+       "timeout_seconds": 20,
+       "price_input_per_million": 0.15,
+       "price_output_per_million": 0.60
      }
    }
    ```
+
+   The optional `price_input_per_million` and `price_output_per_million` fields
+   set USD pricing per one million tokens. When present, headless match results
+   include an estimated cost derived from parsed provider token usage.
 
 4. Run the game:
 
@@ -145,6 +151,18 @@ Tower types: basic (^) sniper (⌖) splash (⊕) | Enemy types: basic (o) fast (
 - `Space`: Pause/resume
 - `R`: Toggle tower range preview
 - `↑` / `↓` (or `K` / `J`): Scroll battle logs
+
+### Replay viewer controls
+
+When you open a replay with `-replay-input`, the timeline supports:
+
+- `Space`: Pause/resume auto-play
+- `n` / `→` and `b` / `←`: Step one event forward or back
+- `]` / `[`: Jump 10 events forward or back
+- `g` / `G`: Jump to the first or last event
+- `e`: Jump to the game-end event
+
+The sidebar shows the board reconstructed from the event stream at the current point: towers on the field, enemies spawned, kills, breaches, and the running result.
 
 ## Providers
 
@@ -183,8 +201,15 @@ You can adjust game parameters from CLI flags:
 - `-map-type`: Map archetype (`straight`, `forked`, `choke`, `zigzag`, `open-field`)
 - `-result-json`: Write headless match summary JSON
 - `-replay-json`: Write replay event stream JSON
+- `-manifest-json`: Write run manifest JSON (reproducibility metadata)
+- `-report-md`: Write the headless match summary as a markdown report
 - `-replay-input`: Load replay JSON and open replay viewer mode
+- `-ruleset-preset`: Arena ruleset preset (`default`, `fast`, `marathon`)
+- `-ruleset`: Path to an arena ruleset JSON
+- `-profiles`, `-player1-profile`, `-player2-profile`: Reusable model profile catalog + matchup selection
 - `-tournament`: Run tournament config JSON (headless batch)
+- `-tournament-csv`: Write ranked tournament standings as CSV
+- `-ratings-json`: Read/write persistent Elo-like model ratings across tournament runs
 
 - `GameSpeed`: Controls how fast the game runs
 - `AIDecisionInterval`: How often each AI makes decisions
@@ -204,15 +229,41 @@ go run main.go -headless -seed=42 -max-ticks=2500 -max-waves=10
 Replay + result export:
 
 ```bash
-go run main.go -headless -seed=42 -max-ticks=1200 -result-json=match.json -replay-json=replay.json
+go run main.go -headless -seed=42 -max-ticks=1200 -result-json=match.json -replay-json=replay.json -report-md=match.md
 go run main.go -replay-input=replay.json
 ```
+
+`match.md` is a markdown summary: winner, win reason, wave progress, and a
+per-player table of score, provider calls, average latency, token usage,
+estimated cost, rejected actions, and errors.
 
 Tournament run:
 
 ```bash
-go run main.go -tournament=tournament.json
+go run main.go -tournament=tournament.json -ratings-json=ratings.json -tournament-csv=standings.csv
 ```
+
+`standings.csv` holds the standings ranked best-first (win rate, then average
+normalized score), one row per model. The JSON report on stdout carries the full
+per-run results, manifests, and ratings.
+
+## Arena Workflow
+
+The end-to-end loop for comparing two models:
+
+1. Define the matchup (env `MODEL_MATCH_CONFIG`, a `-profiles` catalog, or a
+   `-tournament` config) and optionally a ruleset (`-ruleset-preset` or
+   `-ruleset`).
+2. Run reproducibly with a fixed `-seed`; export results with `-result-json`,
+   `-replay-json`, `-manifest-json`, and `-report-md`.
+3. Inspect a match after the fact with `-replay-input`, stepping and seeking
+   through the timeline to see the reconstructed board at any point.
+4. Run many seeds and role swaps with `-tournament`, persisting ratings with
+   `-ratings-json` and exporting rankings with `-tournament-csv`.
+
+All of these come from the same seeded run, so the result, replay, report, and
+standings describe the same match. Fix the seed and you get the same outcome
+every time.
 
 Manual TUI check:
 
