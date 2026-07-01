@@ -1,0 +1,56 @@
+package main
+
+import (
+	"strings"
+	"testing"
+
+	eng "tower-defense/engine"
+)
+
+func TestClampReplayIdx(t *testing.T) {
+	cases := []struct {
+		idx, total, want int
+	}{
+		{-3, 10, 0},
+		{5, 10, 5},
+		{20, 10, 9},
+		{0, 0, 0},
+		{4, 1, 0},
+	}
+	for _, c := range cases {
+		if got := clampReplayIdx(c.idx, c.total); got != c.want {
+			t.Fatalf("clampReplayIdx(%d,%d)=%d want %d", c.idx, c.total, got, c.want)
+		}
+	}
+}
+
+func TestReplayGameEndIndex(t *testing.T) {
+	events := []eng.ReplayEvent{
+		{Type: eng.ReplayTick},
+		{Type: eng.ReplaySpawn},
+		{Type: eng.ReplayGameEnd},
+		{Type: eng.ReplayTick},
+	}
+	if got := replayGameEndIndex(events, 0); got != 2 {
+		t.Fatalf("expected game end at index 2, got %d", got)
+	}
+
+	noEnd := []eng.ReplayEvent{{Type: eng.ReplayTick}, {Type: eng.ReplaySpawn}}
+	if got := replayGameEndIndex(noEnd, 1); got != 1 {
+		t.Fatalf("expected fallback index 1, got %d", got)
+	}
+}
+
+func TestProgressBar(t *testing.T) {
+	if got := progressBar(0, 1, 40); got != "" {
+		t.Fatalf("expected empty bar for single event, got %q", got)
+	}
+	bar := progressBar(0, 10, 20)
+	if !strings.HasPrefix(bar, "[|") {
+		t.Fatalf("expected marker at start, got %q", bar)
+	}
+	endBar := progressBar(9, 10, 20)
+	if !strings.HasSuffix(endBar, "|]") {
+		t.Fatalf("expected marker at end, got %q", endBar)
+	}
+}

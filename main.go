@@ -211,12 +211,32 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "r":
 			m.showRange = !m.showRange
 		case "n", "right", "l":
-			if m.replayMode && m.replayIdx < len(m.replay)-1 {
-				m.replayIdx++
+			if m.replayMode {
+				m.replayIdx = clampReplayIdx(m.replayIdx+1, len(m.replay))
 			}
 		case "b", "left", "h":
-			if m.replayMode && m.replayIdx > 0 {
-				m.replayIdx--
+			if m.replayMode {
+				m.replayIdx = clampReplayIdx(m.replayIdx-1, len(m.replay))
+			}
+		case "]":
+			if m.replayMode {
+				m.replayIdx = clampReplayIdx(m.replayIdx+10, len(m.replay))
+			}
+		case "[":
+			if m.replayMode {
+				m.replayIdx = clampReplayIdx(m.replayIdx-10, len(m.replay))
+			}
+		case "g", "home":
+			if m.replayMode {
+				m.replayIdx = 0
+			}
+		case "G", "end":
+			if m.replayMode {
+				m.replayIdx = clampReplayIdx(len(m.replay)-1, len(m.replay))
+			}
+		case "e":
+			if m.replayMode {
+				m.replayIdx = replayGameEndIndex(m.replay, m.replayIdx)
 			}
 		}
 	}
@@ -512,6 +532,50 @@ func (m model) View() string {
 	return lipgloss.JoinVertical(lipgloss.Left, ui, footer)
 }
 
+// clampReplayIdx keeps a replay index within [0, total-1].
+func clampReplayIdx(idx, total int) int {
+	if total <= 0 {
+		return 0
+	}
+	if idx < 0 {
+		return 0
+	}
+	if idx > total-1 {
+		return total - 1
+	}
+	return idx
+}
+
+// replayGameEndIndex returns the index of the first game_end event, or the
+// current index if none is present.
+func replayGameEndIndex(events []eng.ReplayEvent, fallback int) int {
+	for i, ev := range events {
+		if ev.Type == eng.ReplayGameEnd {
+			return i
+		}
+	}
+	return clampReplayIdx(fallback, len(events))
+}
+
+// progressBar renders a simple textual timeline position indicator.
+func progressBar(idx, total, width int) string {
+	if total <= 1 || width <= 0 {
+		return ""
+	}
+	pos := (idx * (width - 1)) / (total - 1)
+	var b strings.Builder
+	b.WriteByte('[')
+	for i := 0; i < width; i++ {
+		if i == pos {
+			b.WriteByte('|')
+		} else {
+			b.WriteByte('-')
+		}
+	}
+	b.WriteByte(']')
+	return b.String()
+}
+
 func (m model) replayView() string {
 	total := len(m.replay)
 	if total == 0 {
@@ -528,6 +592,7 @@ func (m model) replayView() string {
 	left := uiBorder.Render(strings.Join([]string{
 		"Replay Timeline",
 		fmt.Sprintf("Event %d/%d", m.replayIdx+1, total),
+		progressBar(m.replayIdx, total, 40),
 		fmt.Sprintf("Type: %s", ev.Type),
 		fmt.Sprintf("Player: %s", ev.PlayerID),
 		fmt.Sprintf("Role: %s", ev.Role),
@@ -535,9 +600,10 @@ func (m model) replayView() string {
 		fmt.Sprintf("Reason: %s", wrapText(ev.Reason, 58)),
 		"",
 		"Controls:",
-		"space pause/resume",
-		"n/right next event",
-		"b/left previous event",
+		"space pause/resume auto-play",
+		"n/right step forward, b/left step back",
+		"]/[ jump +/-10 events",
+		"g/G start/end, e jump to game end",
 		"q quit",
 	}, "\n"))
 
@@ -547,15 +613,12 @@ func (m model) replayView() string {
 			details = string(data)
 		}
 	}
-	right := sidebarStyle.Render(strings.Join([]string{
-		"Arena Metrics",
-		fmt.Sprintf("replay events: %d", total),
-		fmt.Sprintf("at index: %d", m.replayIdx),
-		fmt.Sprintf("timestamp: %s", ev.Time.Format(time.RFC3339)),
-		"",
-		"Event Details:",
-		details,
-	}, "\n"))
+
+	// Reconstruct the board/state at this point in the timeline.
+	snap := eng.ReconstructSnapshot(m.replay, m.replayIdx+1)
+	stateLines := append([]string{"Board State (reconstructed)"}, snap.SummaryLines()...)
+	stateLines = append(stateLines, "", "Event Details:", details)
+	right := sidebarStyle.Render(strings.Join(stateLines, "\n"))
 
 	ui := lipgloss.JoinHorizontal(lipgloss.Top, left, right)
 	status := "running"
