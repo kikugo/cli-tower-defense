@@ -18,3 +18,38 @@ func TestBuildScoreBreakdownRewardsWinningPlayer(t *testing.T) {
 		t.Fatalf("expected winner score to be higher, p1=%f p2=%f", p1.Normalized, p2.Normalized)
 	}
 }
+
+func TestNormalizedScoreStaysInUnitRange(t *testing.T) {
+	// A dominant player with a huge raw score must not exceed 1.0.
+	dominant := MatchResult{
+		Winner:   "p1",
+		Waves:    30,
+		MaxWaves: 30,
+		Score:    map[string]int{"p1": 100000, "p2": 0},
+		Lives:    map[string]int{"p1": 100, "p2": 0},
+	}
+	// A player drowning in penalties must not drop below 0.0.
+	punished := MatchResult{
+		Winner:          "p1",
+		Waves:           0,
+		MaxWaves:        30,
+		Score:           map[string]int{"p1": 0, "p2": 0},
+		Lives:           map[string]int{"p2": 0},
+		RejectedActions: map[string]int{"p2:spawn": 500},
+		ProviderErrors:  map[string]int{"p2:timeout": 500},
+	}
+
+	for _, tc := range []struct {
+		name   string
+		result MatchResult
+		player string
+	}{
+		{"dominant", dominant, "p1"},
+		{"punished", punished, "p2"},
+	} {
+		got := BuildScoreBreakdown(tc.result, tc.player).Normalized
+		if got < 0 || got > 1 {
+			t.Fatalf("%s: normalized score %f out of [0,1]", tc.name, got)
+		}
+	}
+}
