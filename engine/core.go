@@ -819,7 +819,12 @@ func tileKey(y, x int) string {
 }
 
 func (g *Game) HandleAIDecisions() {
-	g.processPendingTurnResults()
+	if g.processPendingTurnResults() {
+		// A decision was just applied. Return so the caller can advance the
+		// simulation before the next turn is dispatched; dispatching in the
+		// same call would keep AIThinking permanently true and starve ticks.
+		return
+	}
 
 	if !g.AIEnabled || g.GameOver {
 		return
@@ -1131,10 +1136,12 @@ func (g *Game) isDecisionIntervalElapsed(playerID string, now time.Time) bool {
 	return now.Sub(lastDecision) >= time.Duration(intervalSecs)*time.Second
 }
 
-func (g *Game) processPendingTurnResults() {
+func (g *Game) processPendingTurnResults() bool {
+	processed := false
 	for {
 		select {
 		case result := <-g.pendingTurnResults:
+			processed = true
 			g.AIThinking[result.playerID] = false
 			g.LastAIDecision[result.playerID] = time.Now()
 			g.ProviderCalls[result.playerID]++
@@ -1164,7 +1171,7 @@ func (g *Game) processPendingTurnResults() {
 			g.applyDecision(result.playerID, result.role, result.decision)
 			g.switchTurn()
 		default:
-			return
+			return processed
 		}
 	}
 }

@@ -39,6 +39,39 @@ func TestStrictAlternationGivesBothPlayersTurns(t *testing.T) {
 	}
 }
 
+// TestHeadlessLoopAdvancesTicks mirrors main's runHeadlessSimulation loop:
+// with strict alternation the sim must still tick between decisions instead
+// of starving behind back-to-back dispatches.
+func TestHeadlessLoopAdvancesTicks(t *testing.T) {
+	g := NewGame("test", "test")
+	g.PauseBetweenTurns = false
+	g.AIDecisionInterval[g.Player1] = 0
+	g.AIDecisionInterval[g.Player2] = 0
+
+	sp := &scriptedProvider{
+		defenderAction: map[string]interface{}{"action": "save"},
+		attackerAction: map[string]interface{}{"action": "save"},
+	}
+	g.DecisionRouter.SetPlayerProvider(g.Player1, sp)
+	g.DecisionRouter.SetPlayerProvider(g.Player2, sp)
+
+	ticks := 0
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) && ticks < 10 && !g.GameOver {
+		if g.AIThinking[g.Player1] || g.AIThinking[g.Player2] {
+			g.HandleAIDecisions()
+			time.Sleep(time.Millisecond)
+			continue
+		}
+		g.UpdateGameState()
+		g.HandleAIDecisions()
+		ticks++
+	}
+	if ticks < 10 {
+		t.Fatalf("expected simulation to reach 10 ticks, got %d (loop starved by dispatches)", ticks)
+	}
+}
+
 func TestBreachStopsScoringAfterGameOver(t *testing.T) {
 	g := NewGame("test", "test")
 	g.SetMapType("straight")
