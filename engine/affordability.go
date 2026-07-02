@@ -1,6 +1,9 @@
 package engine
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 var defenderResearchCosts = map[string]int{
 	"economy": 180, "range": 160, "control": 140,
@@ -15,10 +18,48 @@ func waveCostForWave(wave int) int {
 	return cost
 }
 
+// suppressionStreakThreshold is how many consecutive rejections of the same
+// action it takes before that action family is withheld from the menu until
+// the player successfully does something else.
+const suppressionStreakThreshold = 3
+
+// suppressedActionFor names the action family currently withheld from a
+// player's menu, or "" when none. "save" is never suppressed.
+func (g *Game) suppressedActionFor(playerID string) string {
+	if g.RejectionStreak[playerID] < suppressionStreakThreshold {
+		return ""
+	}
+	action := g.LastRejectedAction[playerID]
+	if action == "save" {
+		return ""
+	}
+	return action
+}
+
 // affordableActions lists the actions a player can legally attempt right now,
 // in deterministic order, so prompts can steer models away from rejected
-// moves. "save" is always legal.
+// moves. "save" is always legal. An action family rejected several times in a
+// row is withheld until the player succeeds at something else.
 func (g *Game) affordableActions(playerID, role string) []string {
+	actions := g.affordableActionsUnfiltered(playerID, role)
+	suppressed := g.suppressedActionFor(playerID)
+	if suppressed == "" {
+		return actions
+	}
+	kept := actions[:0]
+	for _, a := range actions {
+		base := a
+		if idx := strings.IndexByte(a, ':'); idx >= 0 {
+			base = a[:idx]
+		}
+		if base != suppressed {
+			kept = append(kept, a)
+		}
+	}
+	return kept
+}
+
+func (g *Game) affordableActionsUnfiltered(playerID, role string) []string {
 	actions := []string{"save"}
 	res := g.Resources[playerID]
 

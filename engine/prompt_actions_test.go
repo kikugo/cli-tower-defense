@@ -101,6 +101,59 @@ func TestMenusHonorSuppressedAction(t *testing.T) {
 	}
 }
 
+func TestRepeatedRejectionsSuppressActionFamily(t *testing.T) {
+	g := NewGame("test", "test")
+	g.Resources[g.Defender] = 500
+	// Three consecutive rejected upgrades (bogus tower id has no fallback).
+	tw := g.newTower(2, 2, "basic", nil)
+	g.Towers = append(g.Towers, &tw)
+	for i := 0; i < 3; i++ {
+		g.applyDecision(g.Defender, "defender", map[string]interface{}{
+			"action": "upgrade", "tower_id": float64(999),
+		})
+	}
+	if g.RejectionStreak[g.Defender] < 3 {
+		t.Fatalf("expected streak >= 3, got %d", g.RejectionStreak[g.Defender])
+	}
+
+	actions := g.affordableActions(g.Defender, "defender")
+	for _, a := range actions {
+		if strings.HasPrefix(a, "upgrade:") {
+			t.Fatalf("upgrade should be suppressed after 3 rejections, got %v", actions)
+		}
+	}
+	state := g.getPlayerGameState(g.Defender, "defender")
+	if got, _ := state["suppressed_action"].(string); got != "upgrade" {
+		t.Fatalf("expected suppressed_action upgrade, got %q", got)
+	}
+	prompt := (&OpenAIHandler{}).createTowerPrompt(state)
+	if !strings.Contains(prompt, "BLOCKED") {
+		t.Fatalf("prompt should announce the block:\n%s", prompt)
+	}
+
+	// A successful action resets the streak and restores the family.
+	g.applyDecision(g.Defender, "defender", map[string]interface{}{"action": "save"})
+	restored := false
+	for _, a := range g.affordableActions(g.Defender, "defender") {
+		if strings.HasPrefix(a, "upgrade:") {
+			restored = true
+		}
+	}
+	if !restored {
+		t.Fatalf("upgrade should return after a successful action")
+	}
+}
+
+func TestSuppressionNeverBlocksSave(t *testing.T) {
+	g := NewGame("test", "test")
+	g.RejectionStreak[g.Attacker] = 5
+	g.LastRejectedAction[g.Attacker] = "save" // cannot happen, but must be harmless
+	actions := g.affordableActions(g.Attacker, "attacker")
+	if len(actions) == 0 || actions[0] != "save" {
+		t.Fatalf("save must always be available, got %v", actions)
+	}
+}
+
 func TestLivePromptsUseMenus(t *testing.T) {
 	g := NewGame("test", "test")
 	g.Resources[g.Attacker] = 10 // broke: below every spawn cost
