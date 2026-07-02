@@ -11,6 +11,10 @@ const (
 
 	rejectPenaltyPerAction = 0.02
 	errorPenaltyPerError   = 0.05
+	// Penalty caps keep discipline metrics from erasing match outcomes:
+	// a shutout winner with many rejections still scores like a winner.
+	maxRejectPenalty       = 0.25
+	maxErrorPenalty        = 0.25
 	startingLivesReference = 20.0
 )
 
@@ -53,7 +57,13 @@ func BuildScoreBreakdown(result MatchResult, playerID string) ScoreBreakdown {
 	}
 
 	rejectPenalty := float64(totalByPlayerPrefix(result.RejectedActions, playerID)) * rejectPenaltyPerAction
+	if rejectPenalty > maxRejectPenalty {
+		rejectPenalty = maxRejectPenalty
+	}
 	errPenalty := float64(totalByPlayerPrefix(result.ProviderErrors, playerID)) * errorPenaltyPerError
+	if errPenalty > maxErrorPenalty {
+		errPenalty = maxErrorPenalty
+	}
 
 	normalized := scoreShare*scoreShareWeight +
 		winBonus*winBonusWeight +

@@ -19,6 +19,26 @@ func TestBuildScoreBreakdownRewardsWinningPlayer(t *testing.T) {
 	}
 }
 
+func TestRejectionPenaltyIsCapped(t *testing.T) {
+	// A shutout defender (all lives, decent score, won) with a huge rejection
+	// count must not be crushed to zero: penalties cap so outcomes dominate.
+	result := MatchResult{
+		Winner:          "p1",
+		Waves:           0,
+		MaxWaves:        5,
+		Score:           map[string]int{"p1": 480, "p2": 0},
+		Lives:           map[string]int{"p1": 20, "p2": 20},
+		RejectedActions: map[string]int{"p1:place": 185},
+	}
+	got := BuildScoreBreakdown(result, "p1")
+	if got.RejectPenalty > maxRejectPenalty {
+		t.Fatalf("expected reject penalty capped at %v, got %v", maxRejectPenalty, got.RejectPenalty)
+	}
+	if got.Normalized <= 0.3 {
+		t.Fatalf("shutout winner should keep a meaningful score, got %v", got.Normalized)
+	}
+}
+
 func TestNormalizedScoreStaysInUnitRange(t *testing.T) {
 	// A dominant player with a huge raw score must not exceed 1.0.
 	dominant := MatchResult{
