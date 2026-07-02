@@ -598,6 +598,7 @@ type Game struct {
 	Player2             string
 	pendingTurnResults  chan turnResult
 	mapInitRecorded     bool
+	winReasonOverride   string
 }
 
 type turnResult struct {

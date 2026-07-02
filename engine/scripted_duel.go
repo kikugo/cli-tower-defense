@@ -65,5 +65,6 @@ func RunScriptedDuel(cfg ScriptedDuelConfig) MatchResult {
 		g.HandleAIDecisions()
 		ticks++
 	}
+	g.ResolveTimeout()
 	return g.BuildMatchResult()
 }

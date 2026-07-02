@@ -747,6 +747,7 @@ func runHeadless(m model) {
 
 	ticks := 0
 	ticks = runHeadlessSimulation(m.game, limit)
+	m.game.ResolveTimeout()
 
 	result := "incomplete"
 	if m.game.GameOver {
@@ -894,6 +895,7 @@ func runTournamentMatch(matchup eng.TournamentMatchup, seed int64, config eng.To
 	}
 	maxTicks := config.NormalizedMaxTicksForMain()
 	runHeadlessSimulation(g, maxTicks)
+	g.ResolveTimeout()
 	result := eng.TournamentMatchResult{
 		Matchup: matchup.Name,
 		Seed:    seed,

@@ -79,9 +79,35 @@ func (r MatchResult) DefenderHeld() bool {
 	return r.Winner == "" && r.Lives[r.Defender] > 0
 }
 
+// ResolveTimeout ends a match that hit its tick limit. Surviving the full
+// horizon is a defender win — the attacker failed to finish the job — so
+// "winner: none" stalemates no longer exist for bounded runs.
+func (g *Game) ResolveTimeout() {
+	if g == nil || g.GameOver {
+		return
+	}
+	g.GameOver = true
+	if g.Lives[g.Defender] > 0 {
+		g.Winner = g.Defender
+		g.winReasonOverride = "defender_outlasted"
+	} else {
+		g.Winner = g.Attacker
+		g.winReasonOverride = "defender_lives_depleted"
+	}
+	g.recordReplayEvent(ReplayEvent{
+		Type:     ReplayGameEnd,
+		PlayerID: g.Winner,
+		Reason:   g.winReasonOverride,
+		Details:  map[string]interface{}{"winner": g.Winner, "wave": g.Wave},
+	})
+}
+
 func (g *Game) inferWinReason() string {
 	if !g.GameOver {
 		return "incomplete"
+	}
+	if g.winReasonOverride != "" {
+		return g.winReasonOverride
 	}
 	if g.Winner == g.Defender {
 		return "max_waves_cleared"

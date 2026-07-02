@@ -33,6 +33,53 @@ func TestDefenderBaselineScriptEscalates(t *testing.T) {
 	}
 }
 
+func TestResolveTimeoutCreditsDefenderSurvival(t *testing.T) {
+	g := NewGame("test", "test")
+	g.ResolveTimeout()
+	if !g.GameOver || g.Winner != g.Defender {
+		t.Fatalf("expected defender survival win, over=%v winner=%q", g.GameOver, g.Winner)
+	}
+	result := g.BuildMatchResult()
+	if result.WinReason != "defender_outlasted" {
+		t.Fatalf("expected defender_outlasted reason, got %q", result.WinReason)
+	}
+	ends := 0
+	for _, ev := range g.ReplayEvents {
+		if ev.Type == ReplayGameEnd {
+			ends++
+		}
+	}
+	if ends != 1 {
+		t.Fatalf("expected one game_end event, got %d", ends)
+	}
+}
+
+func TestResolveTimeoutNoopWhenAlreadyOver(t *testing.T) {
+	g := NewGame("test", "test")
+	g.GameOver = true
+	g.Winner = g.Attacker
+	g.ResolveTimeout()
+	if g.Winner != g.Attacker {
+		t.Fatalf("expected existing winner preserved, got %q", g.Winner)
+	}
+	if g.BuildMatchResult().WinReason == "defender_outlasted" {
+		t.Fatalf("timeout reason must not override a decided match")
+	}
+}
+
+func TestRunScriptedDuelResolvesTimeouts(t *testing.T) {
+	// A duel that cannot finish (save-only scripts, tiny tick budget) must
+	// still end with a decisive survival verdict, not winner "".
+	result := RunScriptedDuel(ScriptedDuelConfig{
+		Seed: 3, MaxTicks: 10,
+		Ruleset: BaselineDuelRuleset(), Balance: DefaultBalanceConfig(),
+		DefenderScript: "defender_invest", AttackerScript: "attacker_spawn",
+	})
+	if result.Winner == "" {
+		t.Fatalf("expected timeout to resolve to a winner, got none (%s)", result.WinReason)
+	}
+}
+
 func TestDefenderHeld(t *testing.T) {
 	win := MatchResult{Winner: "p1", Defender: "p1", Lives: map[string]int{"p1": 3}}
 	if !win.DefenderHeld() {
