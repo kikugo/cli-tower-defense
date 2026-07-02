@@ -20,9 +20,11 @@ func TestAffordableActionsDefenderRich(t *testing.T) {
 	g := NewGame("test", "test")
 	g.Resources[g.Defender] = 200
 	got := g.affordableActions(g.Defender, "defender")
+	// custom is deliberately absent: it is not in the prompt schema and
+	// placeTower rejects it, so advertising it would guarantee rejections.
 	want := []string{
 		"save",
-		"place:basic", "place:custom", "place:splash",
+		"place:basic", "place:splash",
 		"place_slow_zone",
 		"research:economy", "research:range", "research:control",
 		"invest",

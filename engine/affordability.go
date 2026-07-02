@@ -2,17 +2,6 @@ package engine
 
 import "fmt"
 
-// attackerSpawnCosts is the single source of truth for spawn pricing, shared
-// by spawnEnemy and affordability reporting.
-var attackerSpawnCosts = map[string]int{
-	"basic": 20, "fast": 30, "tank": 50, "shielded": 40, "healer": 30,
-}
-
-// defenderTowerCosts mirrors NewTower's cost table for affordability checks.
-var defenderTowerCosts = map[string]int{
-	"basic": 100, "custom": 150, "splash": 200, "sniper": 250, "buffer": 300,
-}
-
 var defenderResearchCosts = map[string]int{
 	"economy": 180, "range": 160, "control": 140,
 }
@@ -37,8 +26,8 @@ func (g *Game) affordableActions(playerID, role string) []string {
 		// Only advertise tower placement when a legal cell actually exists;
 		// on a saturated board "place" would be guaranteed to be rejected.
 		if len(g.validTowerCandidates(1)) > 0 {
-			for _, name := range []string{"basic", "custom", "splash", "sniper", "buffer"} {
-				if res >= defenderTowerCosts[name] {
+			for _, name := range placeableTowerTypes {
+				if cost, ok := g.towerCost(name); ok && res >= cost {
 					actions = append(actions, "place:"+name)
 				}
 			}
@@ -62,8 +51,8 @@ func (g *Game) affordableActions(playerID, role string) []string {
 		return actions
 	}
 
-	for _, name := range []string{"basic", "fast", "healer", "shielded", "tank"} {
-		if res >= attackerSpawnCosts[name] {
+	for _, name := range attackerEnemyTypes {
+		if cost, ok := g.spawnCost(name); ok && res >= cost {
 			actions = append(actions, "spawn:"+name)
 		}
 	}

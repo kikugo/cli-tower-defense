@@ -334,9 +334,15 @@ func (g *Game) useAttackerAbility(name string) bool {
 
 // placeTower tries to build a tower and returns true on success.
 func (g *Game) placeTower(y, x int, towerType string) bool {
-	costs := map[string]int{"basic": 100, "splash": 200, "sniper": 250, "buffer": 300}
-	cost, ok := costs[towerType]
-	if !ok {
+	allowed := false
+	for _, name := range placeableTowerTypes {
+		if name == towerType {
+			allowed = true
+			break
+		}
+	}
+	cost, ok := g.towerCost(towerType)
+	if !allowed || !ok {
 		g.logf("Invalid tower type: %s", towerType)
 		return false
 	}
@@ -346,7 +352,7 @@ func (g *Game) placeTower(y, x int, towerType string) bool {
 	if ok, _ := g.canPlaceTowerAt(y, x); !ok {
 		return false
 	}
-	tw := NewTower(y, x, towerType, nil)
+	tw := g.newTower(y, x, towerType, nil)
 	g.Towers = append(g.Towers, &tw)
 	g.Resources[g.Defender] -= cost
 	g.recordReplayEvent(ReplayEvent{
@@ -443,7 +449,7 @@ func (g *Game) invest(playerID string) bool {
 
 // spawnEnemy deducts resources and adds an enemy to the field.
 func (g *Game) spawnEnemy(enemyType string, _ map[string]interface{}) bool {
-	cost, ok := attackerSpawnCosts[enemyType]
+	cost, ok := g.spawnCost(enemyType)
 	if !ok {
 		g.logf("Invalid enemy type: %s", enemyType)
 		return false
@@ -458,7 +464,7 @@ func (g *Game) spawnEnemy(enemyType string, _ map[string]interface{}) bool {
 		return false
 	}
 	start := path[0]
-	en := NewEnemy(start.Y, start.X, enemyType, nil)
+	en := g.newEnemy(start.Y, start.X, enemyType, nil)
 	en.PathID = pathIdx
 	g.Enemies = append(g.Enemies, &en)
 	g.Resources[g.Attacker] -= cost
@@ -550,7 +556,7 @@ func (g *Game) UpdateGameState() {
 		path := g.Paths[pathIdx]
 		if len(path) > 0 {
 			start := path[0]
-			en := NewEnemy(start.Y, start.X, etype, nil)
+			en := g.newEnemy(start.Y, start.X, etype, nil)
 			en.PathID = pathIdx
 			g.Enemies = append(g.Enemies, &en)
 		}
@@ -645,8 +651,8 @@ func (g *Game) UpdateGameState() {
 				continue
 			}
 			g.Lives[g.Defender]--
-			g.Resources[g.Attacker] += 30
-			g.Score[g.Attacker] += 50
+			g.Resources[g.Attacker] += g.Balance.BreachResourceBounty
+			g.Score[g.Attacker] += g.Balance.BreachScore
 			g.recordReplayEvent(ReplayEvent{
 				Type:     ReplayBreach,
 				PlayerID: g.Attacker,

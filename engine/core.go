@@ -64,43 +64,11 @@ func (t *Tower) Upgrade() {
 	}
 }
 
+// NewTower builds a tower from default balance numbers. Game code should use
+// g.newTower so a tuned Game.Balance applies.
 func NewTower(y, x int, towerType string, params map[string]interface{}) Tower {
-	types := map[string]map[string]interface{}{
-		"basic":  {"char": '^', "damage": 15, "range": 5, "cooldown": 5, "cost": 100},
-		"sniper": {"char": '⌖', "damage": 50, "range": 12, "cooldown": 15, "cost": 250},
-		"splash": {"char": '⊕', "damage": 10, "range": 3, "cooldown": 3, "cost": 200},
-		"buffer": {"char": 'B', "damage": 0, "range": 2, "cooldown": 0, "cost": 300}, // Buffs nearby towers
-		"custom": {"char": '?', "damage": 20, "range": 7, "cooldown": 8, "cost": 150},
-	}
-
-	t := types[towerType]
-	if towerType == "custom" && params != nil {
-		for k, v := range params {
-			t[k] = v
-		}
-	}
-
-	char := t["char"].(rune)
-	damage := toInt(t["damage"])
-	maxCD := toInt(t["cooldown"])
-	rangeVal := toInt(t["range"])
-	cost := toInt(t["cost"])
-
-	return Tower{
-		Entity: Entity{
-			Pos:       Position{Y: y, X: x},
-			Char:      char,
-			Health:    100,
-			MaxHealth: 100,
-			Damage:    damage,
-			Cooldown:  0,
-			MaxCD:     maxCD,
-		},
-		TowerType: towerType,
-		Range:     rangeVal,
-		Cost:      cost,
-		Strategy:  "nearest",
-	}
+	g := &Game{Balance: DefaultBalanceConfig()}
+	return g.newTower(y, x, towerType, params)
 }
 
 func toInt(v interface{}) int {
@@ -201,50 +169,11 @@ type Enemy struct {
 	Shield        int
 }
 
+// NewEnemy builds an enemy from default balance numbers. Game code should use
+// g.newEnemy so a tuned Game.Balance applies.
 func NewEnemy(y, x int, enemyType string, params map[string]interface{}) Enemy {
-	types := map[string]map[string]interface{}{
-		"basic":    {"char": 'o', "health": float64(100), "speed": float64(1.0), "reward": float64(20)},
-		"fast":     {"char": '>', "health": float64(50), "speed": float64(2.0), "reward": float64(15)},
-		"tank":     {"char": '□', "health": float64(300), "speed": float64(0.5), "reward": float64(50)},
-		"shielded": {"char": 'S', "health": float64(150), "speed": float64(0.8), "reward": float64(40), "shield": float64(2)},
-		"healer":   {"char": 'H', "health": float64(80), "speed": float64(1.0), "reward": float64(30)},
-		"custom":   {"char": '?', "health": float64(150), "speed": float64(1.2), "reward": float64(25)},
-	}
-
-	e := types[enemyType]
-	if enemyType == "custom" && params != nil {
-		for k, v := range params {
-			e[k] = v
-		}
-	}
-
-	char := e["char"].(rune)
-	health := int(e["health"].(float64))
-	speed := e["speed"].(float64)
-	reward := int(e["reward"].(float64))
-	shield := 0
-	if s, ok := e["shield"]; ok {
-		shield = int(s.(float64))
-	}
-
-	return Enemy{
-		Entity: Entity{
-			Pos:       Position{Y: y, X: x},
-			Char:      char,
-			Health:    health,
-			MaxHealth: health,
-			Damage:    0,
-			Cooldown:  0,
-			MaxCD:     0,
-		},
-		EnemyType:     enemyType,
-		Speed:         speed,
-		Reward:        reward,
-		DistanceMoved: 0,
-		PathIndex:     0,
-		PathID:        0,
-		Shield:        shield,
-	}
+	g := &Game{Balance: DefaultBalanceConfig()}
+	return g.newEnemy(y, x, enemyType, params)
 }
 
 type AIHandler struct {
@@ -614,6 +543,7 @@ type Game struct {
 	ProviderTokenUsage  map[string]int
 	ProviderCostMicros  map[string]int64
 	TokenPricing        map[string]tokenPricing
+	Balance             BalanceConfig
 	LastActionStatus    map[string]string
 	LastRejectedReason  map[string]string
 	NoopStreak          map[string]int
@@ -690,6 +620,7 @@ func NewGameFromResolvedConfig(resolved ResolvedMatchConfig) *Game {
 		WaveQueue: make([]string, 0), GameOver: false, AIEnabled: true, AIThinking: map[string]bool{p1: false, p2: false},
 		Defender: p1, Attacker: p2, ModelNames: map[string]string{p1: resolved.Player1.Model, p2: resolved.Player2.Model}, Player1: p1, Player2: p2,
 		DecisionRouter: router,
+		Balance:        DefaultBalanceConfig(),
 		GameSpeed:      0.1, AIDecisionInterval: map[string]int{p1: 2, p2: 2},
 		LastAIDecision: map[string]time.Time{p1: time.Now(), p2: time.Now()},
 		CurrentTurn:    p1, LastActionTime: time.Now(), StartedAt: time.Now(), MaxResources: 800, MaxWaves: 30, TurnTimeout: 45 * time.Second,
