@@ -89,6 +89,9 @@ func (g *Game) getGameState() map[string]interface{} {
 func (g *Game) getPlayerGameState(playerID, role string) map[string]interface{} {
 	state := g.getGameState()
 	state["affordable_actions"] = g.affordableActions(playerID, role)
+	state["your_last_action_status"] = g.LastActionStatus[playerID]
+	state["your_last_rejected_reason"] = g.LastRejectedReason[playerID]
+	state["your_rejection_streak"] = g.RejectionStreak[playerID]
 	if role != "defender" || !g.FogOfWar {
 		return state
 	}

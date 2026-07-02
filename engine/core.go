@@ -335,6 +335,25 @@ func formatAffordableActions(gameState map[string]interface{}) string {
 	return line
 }
 
+// rejectionFeedbackLine renders a forceful warning when the player's previous
+// action(s) were rejected, escalating with the streak so models break out of
+// repeat-invalid-action loops. Empty when the last action was applied.
+func rejectionFeedbackLine(gameState map[string]interface{}) string {
+	streak, _ := toIntFromAny(gameState["your_rejection_streak"])
+	if streak <= 0 {
+		return ""
+	}
+	reason, _ := gameState["your_last_rejected_reason"].(string)
+	reason = strings.TrimPrefix(reason, "rejected:")
+	if reason == "" {
+		reason = "invalid action"
+	}
+	if streak == 1 {
+		return fmt.Sprintf("WARNING: your previous action was REJECTED (%s). Do not repeat it; pick from the affordable actions above.\n", reason)
+	}
+	return fmt.Sprintf("STOP: your last %d actions were ALL REJECTED (%s). You MUST choose a different action or position this turn.\n", streak, reason)
+}
+
 func (h *OpenAIHandler) createTowerPrompt(gameState map[string]interface{}) string {
 	pathsCount := gameState["paths_count"].(int)
 	wave := gameState["wave"].(int)
@@ -342,7 +361,8 @@ func (h *OpenAIHandler) createTowerPrompt(gameState map[string]interface{}) stri
 	prompt := fmt.Sprintf(
 		"You are the Defender in a Tower Defense Battleground. Goal: Stop enemies from reaching the end.\n"+
 			"Current Resources: %v, Base Income: %v, Wave: %d, Paths: %d\n"+
-			"You can currently afford ONLY these actions: %s\n\n"+
+			"You can currently afford ONLY these actions: %s\n"+
+			"%s\n"+
 			"Current objective: maximize survival and defend lives while keeping future economy viable.\n"+
 			"Legal action schema: exactly one JSON object with keys action, reason, taunt and action-specific fields.\n"+
 			"Your available tools this turn:\n"+
@@ -369,7 +389,7 @@ func (h *OpenAIHandler) createTowerPrompt(gameState map[string]interface{}) stri
 			"- You can send a taunt message to your opponent!\n\n"+
 			"Respond with exactly one JSON object only.",
 		gameState["resources"], gameState["income"], wave, pathsCount,
-		formatAffordableActions(gameState), stateSummary,
+		formatAffordableActions(gameState), rejectionFeedbackLine(gameState), stateSummary,
 	)
 	return prompt
 }
@@ -451,7 +471,8 @@ func (h *GeminiHandler) createEnemyPrompt(gameState map[string]interface{}) stri
 	prompt := fmt.Sprintf(
 		"You are the Attacker in a Tower Defense Battleground. Goal: Overwhelm the Defender.\n"+
 			"Current Resources: %v, Base Income: %v, Wave: %d, Paths: %d\n"+
-			"You can currently afford ONLY these actions: %s\n\n"+
+			"You can currently afford ONLY these actions: %s\n"+
+			"%s\n"+
 			"Current objective: convert resources into breaches quickly while maintaining wave pressure.\n"+
 			"Legal action schema: exactly one JSON object with keys action, reason, taunt and action-specific fields.\n"+
 			"Your available tools this turn:\n"+
@@ -479,7 +500,7 @@ func (h *GeminiHandler) createEnemyPrompt(gameState map[string]interface{}) stri
 			"- Taunt your opponent to get inside their circuits!\n\n"+
 			"Respond with exactly one JSON object only.",
 		gameState["resources"], gameState["income"], wave, gameState["paths_count"],
-		formatAffordableActions(gameState), waveCost, stateSummary, gameState["paths_count"],
+		formatAffordableActions(gameState), rejectionFeedbackLine(gameState), waveCost, stateSummary, gameState["paths_count"],
 	)
 	return prompt
 }
@@ -596,6 +617,7 @@ type Game struct {
 	LastActionStatus    map[string]string
 	LastRejectedReason  map[string]string
 	NoopStreak          map[string]int
+	RejectionStreak     map[string]int
 	AutoWaveMinResource int
 	AutoDefendMinStreak int
 	AssistsDisabled     bool
@@ -671,7 +693,7 @@ func NewGameFromResolvedConfig(resolved ResolvedMatchConfig) *Game {
 		GameSpeed:      0.1, AIDecisionInterval: map[string]int{p1: 2, p2: 2},
 		LastAIDecision: map[string]time.Time{p1: time.Now(), p2: time.Now()},
 		CurrentTurn:    p1, LastActionTime: time.Now(), StartedAt: time.Now(), MaxResources: 800, MaxWaves: 30, TurnTimeout: 45 * time.Second,
-		PauseBetweenTurns: true, PauseDuration: 1 * time.Second, lastStatePrintTime: time.Now(), rng: rng, Logs: make([]string, 0), MaxLogs: 250, MaxWaveQueue: 200, ReplayEvents: make([]ReplayEvent, 0), MaxReplayEvents: 10000, ActionCounters: map[string]int{}, RejectedActions: map[string]int{}, ProviderErrors: map[string]int{}, ProviderCalls: map[string]int{}, ProviderLatencyMS: map[string]int64{}, ProviderTokenUsage: map[string]int{}, ProviderCostMicros: map[string]int64{}, TokenPricing: map[string]tokenPricing{p1: pricingFromConfig(resolved.Player1), p2: pricingFromConfig(resolved.Player2)}, LastActionStatus: map[string]string{p1: "none", p2: "none"}, LastRejectedReason: map[string]string{p1: "", p2: ""}, NoopStreak: map[string]int{p1: 0, p2: 0}, AutoWaveMinResource: 260, AutoDefendMinStreak: 2, FogOfWar: true, DefenderVisionRange: 8, BaseVisionRange: 6, ResearchLevels: map[string]int{"economy": 0, "range": 0, "control": 0}, AbilityCooldowns: map[string]int{"surge": 0, "shield_burst": 0, "reinforce_wave": 0},
+		PauseBetweenTurns: true, PauseDuration: 1 * time.Second, lastStatePrintTime: time.Now(), rng: rng, Logs: make([]string, 0), MaxLogs: 250, MaxWaveQueue: 200, ReplayEvents: make([]ReplayEvent, 0), MaxReplayEvents: 10000, ActionCounters: map[string]int{}, RejectedActions: map[string]int{}, ProviderErrors: map[string]int{}, ProviderCalls: map[string]int{}, ProviderLatencyMS: map[string]int64{}, ProviderTokenUsage: map[string]int{}, ProviderCostMicros: map[string]int64{}, TokenPricing: map[string]tokenPricing{p1: pricingFromConfig(resolved.Player1), p2: pricingFromConfig(resolved.Player2)}, LastActionStatus: map[string]string{p1: "none", p2: "none"}, LastRejectedReason: map[string]string{p1: "", p2: ""}, NoopStreak: map[string]int{p1: 0, p2: 0}, RejectionStreak: map[string]int{p1: 0, p2: 0}, AutoWaveMinResource: 260, AutoDefendMinStreak: 2, FogOfWar: true, DefenderVisionRange: 8, BaseVisionRange: 6, ResearchLevels: map[string]int{"economy": 0, "range": 0, "control": 0}, AbilityCooldowns: map[string]int{"surge": 0, "shield_burst": 0, "reinforce_wave": 0},
 		PathTileSet: make(map[string]struct{}), EnemyTileIndex: make(map[string][]*Enemy), ObstacleTileSet: make(map[string]struct{}), pendingTurnResults: make(chan turnResult, 8),
 	}
 	game.Paths = game.generatePaths()
@@ -1073,7 +1095,10 @@ func (g *Game) applyDecision(playerID, role string, decision map[string]interfac
 		}
 	}
 	g.ActionCounters[playerID+":"+action]++
-	if !applied {
+	if applied {
+		g.RejectionStreak[playerID] = 0
+	} else {
+		g.RejectionStreak[playerID]++
 		g.RejectedActions[playerID+":"+action]++
 		g.LastRejectedReason[playerID] = outcome
 		g.logf("%s (%s) action rejected: %s", modelName, action, outcome)
