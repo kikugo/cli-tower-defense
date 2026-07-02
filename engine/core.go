@@ -300,13 +300,26 @@ func (h *OpenAIHandler) GetTowerDecision(gameState map[string]interface{}) (map[
 	return h.parseTowerResponse(content)
 }
 
+// formatAffordableActions renders the affordable_actions list for prompts.
+func formatAffordableActions(gameState map[string]interface{}) string {
+	actions, ok := gameState["affordable_actions"].([]string)
+	if !ok || len(actions) == 0 {
+		return "save"
+	}
+	if len(actions) == 1 && actions[0] == "save" {
+		return "save (nothing else is affordable this turn)"
+	}
+	return strings.Join(actions, ", ")
+}
+
 func (h *OpenAIHandler) createTowerPrompt(gameState map[string]interface{}) string {
 	pathsCount := gameState["paths_count"].(int)
 	wave := gameState["wave"].(int)
 	stateSummary := summarizePromptState(gameState)
 	prompt := fmt.Sprintf(
 		"You are the Defender in a Tower Defense Battleground. Goal: Stop enemies from reaching the end.\n"+
-			"Current Resources: %v, Base Income: %v, Wave: %d, Paths: %d\n\n"+
+			"Current Resources: %v, Base Income: %v, Wave: %d, Paths: %d\n"+
+			"You can currently afford ONLY these actions: %s\n\n"+
 			"Current objective: maximize survival and defend lives while keeping future economy viable.\n"+
 			"Legal action schema: exactly one JSON object with keys action, reason, taunt and action-specific fields.\n"+
 			"Your available tools this turn:\n"+
@@ -332,7 +345,8 @@ func (h *OpenAIHandler) createTowerPrompt(gameState map[string]interface{}) stri
 			"- If last_rejected_reason is non-empty, avoid repeating the same invalid action pattern.\n"+
 			"- You can send a taunt message to your opponent!\n\n"+
 			"Respond with exactly one JSON object only.",
-		gameState["resources"], gameState["income"], wave, pathsCount, stateSummary,
+		gameState["resources"], gameState["income"], wave, pathsCount,
+		formatAffordableActions(gameState), stateSummary,
 	)
 	return prompt
 }
@@ -354,13 +368,6 @@ func (h *OpenAIHandler) parseTowerResponse(response string) (map[string]interfac
 						decision["position"] = []interface{}{float64(10), float64(10)}
 					}
 					return decision, nil
-				} else if action == "save" {
-					return map[string]interface{}{
-						"action":     "place",
-						"tower_type": "basic",
-						"position":   []interface{}{float64(10), float64(10)},
-						"reason":     "Converted save to place for better defense",
-					}, nil
 				}
 				return decision, nil
 			}
@@ -416,14 +423,12 @@ func (h *GeminiHandler) GetEnemyDecision(gameState map[string]interface{}) (map[
 
 func (h *GeminiHandler) createEnemyPrompt(gameState map[string]interface{}) string {
 	wave := gameState["wave"].(int)
-	waveCost := 40 + (wave * 5)
-	if waveCost > 200 {
-		waveCost = 200
-	}
+	waveCost := waveCostForWave(wave)
 	stateSummary := summarizePromptState(gameState)
 	prompt := fmt.Sprintf(
 		"You are the Attacker in a Tower Defense Battleground. Goal: Overwhelm the Defender.\n"+
-			"Current Resources: %v, Base Income: %v, Wave: %d, Paths: %d\n\n"+
+			"Current Resources: %v, Base Income: %v, Wave: %d, Paths: %d\n"+
+			"You can currently afford ONLY these actions: %s\n\n"+
 			"Current objective: convert resources into breaches quickly while maintaining wave pressure.\n"+
 			"Legal action schema: exactly one JSON object with keys action, reason, taunt and action-specific fields.\n"+
 			"Your available tools this turn:\n"+
@@ -451,7 +456,7 @@ func (h *GeminiHandler) createEnemyPrompt(gameState map[string]interface{}) stri
 			"- Taunt your opponent to get inside their circuits!\n\n"+
 			"Respond with exactly one JSON object only.",
 		gameState["resources"], gameState["income"], wave, gameState["paths_count"],
-		waveCost, stateSummary, gameState["paths_count"],
+		formatAffordableActions(gameState), waveCost, stateSummary, gameState["paths_count"],
 	)
 	return prompt
 }
