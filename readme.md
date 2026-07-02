@@ -165,6 +165,10 @@ When you open a replay with `-replay-input`, the timeline supports:
 
 The sidebar shows the board reconstructed from the event stream at the current point: towers on the field, enemies spawned, kills, breaches, and the running result.
 
+Replays recorded after the `map_init` event was introduced also draw the
+board itself: path, obstacles, towers, breach markers, and the position of
+the current event. Older replay files fall back to the text summary.
+
 ## Providers
 
 Provider types:
@@ -205,7 +209,8 @@ You can adjust game parameters from CLI flags:
 - `-manifest-json`: Write run manifest JSON (reproducibility metadata)
 - `-report-md`: Write the headless match summary as a markdown report
 - `-replay-input`: Load replay JSON and open replay viewer mode
-- `-ruleset-preset`: Arena ruleset preset (`default`, `fast`, `marathon`)
+- `-ruleset-preset`: Arena ruleset preset (`default`, `fast`, `marathon`, `fair`)
+- The `fair` preset disables engine assists (auto-wave, auto-defend, adaptive pressure) so results measure pure model decisions; any ruleset JSON can set `"disable_assists": true`
 - `-ruleset`: Path to an arena ruleset JSON
 - `-profiles`, `-player1-profile`, `-player2-profile`: Reusable model profile catalog + matchup selection
 - `-tournament`: Run tournament config JSON (headless batch)
@@ -282,7 +287,7 @@ During manual check, watch:
 
 ## Known Issues
 
-- Terminal resize handling is limited
+- Terminals narrower than 84 columns show a resize notice; between 84 and 119 columns the sidebar stacks below the map
 - Some Unicode characters might not display correctly in all terminals
 - API rate limiting may affect gameplay if decision intervals are too short
 
