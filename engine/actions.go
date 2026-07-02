@@ -511,6 +511,9 @@ func (g *Game) UpdateGameState() {
 	if g == nil || g.GameOver {
 		return
 	}
+	if !g.mapInitRecorded {
+		g.recordMapInitEvent()
+	}
 	g.TickCount++
 	g.recordReplayEvent(ReplayEvent{
 		Type: ReplayTick,

@@ -1,6 +1,9 @@
 package engine
 
-import "fmt"
+import (
+	"encoding/json"
+	"fmt"
+)
 
 // SnapshotTower is a static tower marker reconstructed from a replay stream.
 type SnapshotTower struct {
@@ -28,6 +31,12 @@ type ReplaySnapshot struct {
 	GameOver        bool            `json:"game_over"`
 	Winner          string          `json:"winner"`
 	WinReason       string          `json:"win_reason"`
+	HasMap          bool            `json:"has_map"`
+	MapHeight       int             `json:"map_height,omitempty"`
+	MapWidth        int             `json:"map_width,omitempty"`
+	MapPaths        [][]Position    `json:"map_paths,omitempty"`
+	MapObstacles    []Position      `json:"map_obstacles,omitempty"`
+	BreachPoints    []Position      `json:"breach_points,omitempty"`
 }
 
 // ReconstructSnapshot walks the first `index` replay events and derives the
@@ -76,6 +85,12 @@ func ReconstructSnapshot(events []ReplayEvent, index int) ReplaySnapshot {
 			if lives, ok := toIntFromAny(ev.Details["defender_lives"]); ok {
 				snap.DefenderLives = lives
 			}
+			if ev.Position != nil {
+				snap.BreachPoints = append(snap.BreachPoints, *ev.Position)
+				if len(snap.BreachPoints) > 20 {
+					snap.BreachPoints = snap.BreachPoints[len(snap.BreachPoints)-20:]
+				}
+			}
 		case ReplayDamage:
 			if health, ok := toIntFromAny(ev.Details["enemy_health"]); ok && health <= 0 {
 				snap.Kills++
@@ -86,6 +101,8 @@ func ReconstructSnapshot(events []ReplayEvent, index int) ReplaySnapshot {
 			snap.RejectedActions++
 		case ReplayProviderErr:
 			snap.ProviderErrors++
+		case ReplayMapInit:
+			applyMapInit(&snap, ev.Details)
 		case ReplayGameEnd:
 			snap.GameOver = true
 			if winner, ok := ev.Details["winner"].(string); ok && winner != "" {
@@ -107,6 +124,44 @@ func (s ReplaySnapshot) TotalEnemiesSpawned() int {
 		total += n
 	}
 	return total
+}
+
+// applyMapInit copies map layout data from a map_init event into the
+// snapshot. A JSON round-trip normalizes both the typed in-memory payload and
+// the []interface{} shape produced by loading replay JSON from disk.
+func applyMapInit(snap *ReplaySnapshot, details map[string]interface{}) {
+	raw, err := json.Marshal(details)
+	if err != nil {
+		return
+	}
+	var payload struct {
+		MapHeight int       `json:"map_height"`
+		MapWidth  int       `json:"map_width"`
+		Paths     [][][]int `json:"paths"`
+		Obstacles [][]int   `json:"obstacles"`
+	}
+	if json.Unmarshal(raw, &payload) != nil || payload.MapWidth <= 0 || payload.MapHeight <= 0 {
+		return
+	}
+	snap.MapHeight = payload.MapHeight
+	snap.MapWidth = payload.MapWidth
+	snap.MapPaths = make([][]Position, len(payload.Paths))
+	for i, path := range payload.Paths {
+		pts := make([]Position, 0, len(path))
+		for _, pt := range path {
+			if len(pt) == 2 {
+				pts = append(pts, Position{Y: pt[0], X: pt[1]})
+			}
+		}
+		snap.MapPaths[i] = pts
+	}
+	snap.MapObstacles = make([]Position, 0, len(payload.Obstacles))
+	for _, pt := range payload.Obstacles {
+		if len(pt) == 2 {
+			snap.MapObstacles = append(snap.MapObstacles, Position{Y: pt[0], X: pt[1]})
+		}
+	}
+	snap.HasMap = true
 }
 
 // SummaryLines returns compact, render-ready lines describing the snapshot,

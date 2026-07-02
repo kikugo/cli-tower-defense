@@ -17,6 +17,7 @@ const (
 	ReplayGameEnd     ReplayEventType = "game_end"
 	ReplayRejected    ReplayEventType = "rejected"
 	ReplayProviderErr ReplayEventType = "provider_error"
+	ReplayMapInit     ReplayEventType = "map_init"
 )
 
 type ReplayEvent struct {
@@ -71,6 +72,39 @@ func (g *Game) recordReplayEvent(event ReplayEvent) {
 	}
 	g.ReplayEvents = append(g.ReplayEvents, event)
 	if g.MaxReplayEvents > 0 && len(g.ReplayEvents) > g.MaxReplayEvents {
-		g.ReplayEvents = g.ReplayEvents[len(g.ReplayEvents)-g.MaxReplayEvents:]
+		if g.ReplayEvents[0].Type == ReplayMapInit {
+			// Keep the map layout; trim the oldest events after it.
+			overflow := len(g.ReplayEvents) - g.MaxReplayEvents
+			g.ReplayEvents = append(g.ReplayEvents[:1], g.ReplayEvents[1+overflow:]...)
+		} else {
+			g.ReplayEvents = g.ReplayEvents[len(g.ReplayEvents)-g.MaxReplayEvents:]
+		}
 	}
+}
+
+// recordMapInitEvent captures the board layout once so replays are
+// self-contained and the viewer can redraw the map.
+func (g *Game) recordMapInitEvent() {
+	paths := make([][][]int, len(g.Paths))
+	for i, path := range g.Paths {
+		pts := make([][]int, len(path))
+		for j, pos := range path {
+			pts[j] = []int{pos.Y, pos.X}
+		}
+		paths[i] = pts
+	}
+	obstacles := make([][]int, len(g.Obstacles))
+	for i, pos := range g.Obstacles {
+		obstacles[i] = []int{pos.Y, pos.X}
+	}
+	g.recordReplayEvent(ReplayEvent{
+		Type: ReplayMapInit,
+		Details: map[string]interface{}{
+			"map_height": g.MapHeight,
+			"map_width":  g.MapWidth,
+			"paths":      paths,
+			"obstacles":  obstacles,
+		},
+	})
+	g.mapInitRecorded = true
 }

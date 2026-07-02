@@ -589,6 +589,7 @@ type Game struct {
 	Player1             string
 	Player2             string
 	pendingTurnResults  chan turnResult
+	mapInitRecorded     bool
 }
 
 type turnResult struct {
