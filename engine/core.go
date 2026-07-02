@@ -316,21 +316,7 @@ func (h *OpenAIHandler) createTowerPrompt(gameState map[string]interface{}) stri
 			"%s\n"+
 			"Current objective: maximize survival and defend lives while keeping future economy viable.\n"+
 			"Legal action schema: exactly one JSON object with keys action, reason, taunt and action-specific fields.\n"+
-			"Your available tools this turn:\n"+
-			"Actions:\n"+
-			"1. {\"action\": \"place\", \"tower_type\": \"basic|sniper|splash|buffer\", \"position\": [y, x], \"reason\": \"...\", \"taunt\": \"...\"}\n"+
-			"   Costs: basic (%d), splash (%d), sniper (%d), buffer (%d)\n"+
-			"   Rules: Position must be inside map, not on path, not on obstacle, not on another tower.\n"+
-			"2. {\"action\": \"upgrade\", \"tower_id\": <int>, \"reason\": \"...\", \"taunt\": \"...\"}\n"+
-			"   Cost: 150 * (current_level + 1). Increases damage and range.\n"+
-			"   Rules: tower_id must exist.\n"+
-			"3. {\"action\": \"place_slow_zone\", \"position\": [y, x], \"reason\": \"...\", \"taunt\": \"...\"}\n"+
-			"   Cost: 150. Reduces enemy speed by 50%%. MUST be on a path.\n"+
-			"4. {\"action\": \"research\", \"tech\": \"economy|range|control\", \"reason\": \"...\", \"taunt\": \"...\"}\n"+
-			"   Cost: economy (180), range (160), control (140). Unlocks persistent defender bonuses.\n"+
-			"5. {\"action\": \"invest\", \"reason\": \"...\", \"taunt\": \"...\"}\n"+
-			"   Cost: 150. Permanently increases passive income.\n"+
-			"6. {\"action\": \"save\", \"reason\": \"...\", \"taunt\": \"...\"}\n\n"+
+			"Your available tools this turn:\n%s\n"+
 			"State summary:\n%s\n\n"+
 			"Strategic Advice:\n"+
 			"- Buffer towers (B) increase damage of nearby towers by 50%%. Place them in clusters.\n"+
@@ -341,10 +327,7 @@ func (h *OpenAIHandler) createTowerPrompt(gameState map[string]interface{}) stri
 			"Respond with exactly one JSON object only.",
 		gameState["resources"], gameState["income"], wave, pathsCount,
 		formatAffordableActions(gameState), rejectionFeedbackLine(gameState),
-		promptCost(gameState, "tower_costs", "basic"),
-		promptCost(gameState, "tower_costs", "splash"),
-		promptCost(gameState, "tower_costs", "sniper"),
-		promptCost(gameState, "tower_costs", "buffer"),
+		buildDefenderActionMenu(gameState),
 		stateSummary,
 	)
 	return prompt
@@ -422,7 +405,6 @@ func (h *GeminiHandler) GetEnemyDecision(gameState map[string]interface{}) (map[
 
 func (h *GeminiHandler) createEnemyPrompt(gameState map[string]interface{}) string {
 	wave := gameState["wave"].(int)
-	waveCost := waveCostForWave(wave)
 	stateSummary := summarizePromptState(gameState)
 	prompt := fmt.Sprintf(
 		"You are the Attacker in a Tower Defense Battleground. Goal: Overwhelm the Defender.\n"+
@@ -431,22 +413,7 @@ func (h *GeminiHandler) createEnemyPrompt(gameState map[string]interface{}) stri
 			"%s\n"+
 			"Current objective: convert resources into breaches quickly while maintaining wave pressure.\n"+
 			"Legal action schema: exactly one JSON object with keys action, reason, taunt and action-specific fields.\n"+
-			"Your available tools this turn:\n"+
-			"Enemy Options (cost):\n"+
-			"- basic (%d): Standard unit\n"+
-			"- fast (%d): Quick and nimble\n"+
-			"- tank (%d): High durability\n"+
-			"- shielded (%d): Takes 50%% less damage from all towers\n"+
-			"- healer (%d): Heals nearby enemies in an area\n"+
-			"- wave (%d): Massive multi-path assault\n\n"+
-			"Actions:\n"+
-			"1. {\"action\": \"spawn\", \"enemy_type\": \"basic|fast|tank|shielded|healer\", \"reason\": \"...\", \"taunt\": \"...\"}\n"+
-			"2. {\"action\": \"wave\", \"reason\": \"...\", \"taunt\": \"...\"}\n"+
-			"3. {\"action\": \"ability\", \"ability\": \"surge|shield_burst|reinforce_wave\", \"reason\": \"...\", \"taunt\": \"...\"}\n"+
-			"   Costs/cooldowns: surge (80/12), shield_burst (90/14), reinforce_wave (70/10).\n"+
-			"4. {\"action\": \"invest\", \"reason\": \"...\", \"taunt\": \"...\"}\n"+
-			"   Cost: 150. Permanently increases passive income.\n"+
-			"5. {\"action\": \"save\", \"reason\": \"...\", \"taunt\": \"...\"}\n\n"+
+			"Your available tools this turn:\n%s\n"+
 			"State summary:\n%s\n\n"+
 			"Strategic Advice:\n"+
 			"- Mix tank and healer units to create a slow but steady push.\n"+
@@ -457,12 +424,8 @@ func (h *GeminiHandler) createEnemyPrompt(gameState map[string]interface{}) stri
 			"Respond with exactly one JSON object only.",
 		gameState["resources"], gameState["income"], wave, gameState["paths_count"],
 		formatAffordableActions(gameState), rejectionFeedbackLine(gameState),
-		promptCost(gameState, "spawn_costs", "basic"),
-		promptCost(gameState, "spawn_costs", "fast"),
-		promptCost(gameState, "spawn_costs", "tank"),
-		promptCost(gameState, "spawn_costs", "shielded"),
-		promptCost(gameState, "spawn_costs", "healer"),
-		waveCost, stateSummary, gameState["paths_count"],
+		buildAttackerActionMenu(gameState),
+		stateSummary, gameState["paths_count"],
 	)
 	return prompt
 }
