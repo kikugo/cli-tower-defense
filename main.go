@@ -40,6 +40,7 @@ type model struct {
 	tournament    string
 	tournamentCSV string
 	tournamentMD  string
+	balanceSweep  string
 	ratingsJSON   string
 	replayIn      string
 	replayMode    bool
@@ -71,6 +72,7 @@ func initialModel() model {
 	tournament := flag.String("tournament", "", "run tournament config JSON instead of a single TUI match")
 	tournamentCSV := flag.String("tournament-csv", "", "write tournament standings CSV to this path")
 	tournamentMD := flag.String("tournament-md", "", "write tournament markdown report to this path")
+	balanceSweep := flag.String("balance-sweep", "", "run balance sweep config JSON and print win-rate table")
 	ratingsJSON := flag.String("ratings-json", "", "path to read/write persistent model ratings for tournaments")
 	flag.Parse()
 	_ = godotenv.Load()
@@ -148,7 +150,7 @@ func initialModel() model {
 			g.AIDecisionInterval[g.Attacker] = 0
 		}
 	}
-	m := model{game: g, tickDur: 100 * time.Millisecond, headless: *headless, maxTicks: *maxTicks, resultJSON: *resultJSON, replayJSON: *replayJSON, manifestJSON: *manifestJSON, reportMD: *reportMD, tournament: *tournament, tournamentCSV: *tournamentCSV, tournamentMD: *tournamentMD, ratingsJSON: *ratingsJSON, replayIn: *replayIn, seed: *seed, ruleset: appliedRuleset}
+	m := model{game: g, tickDur: 100 * time.Millisecond, headless: *headless, maxTicks: *maxTicks, resultJSON: *resultJSON, replayJSON: *replayJSON, manifestJSON: *manifestJSON, reportMD: *reportMD, tournament: *tournament, tournamentCSV: *tournamentCSV, tournamentMD: *tournamentMD, balanceSweep: *balanceSweep, ratingsJSON: *ratingsJSON, replayIn: *replayIn, seed: *seed, ruleset: appliedRuleset}
 	if *replayIn != "" {
 		var events []eng.ReplayEvent
 		raw, err := os.ReadFile(*replayIn)
@@ -711,6 +713,12 @@ func (m model) replayView() string {
 
 func main() {
 	m := initialModel()
+	if m.balanceSweep != "" {
+		if err := runBalanceSweep(m.balanceSweep); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
 	if m.tournament != "" {
 		if err := runTournament(m.tournament, m.ratingsJSON, m.tournamentCSV, m.tournamentMD); err != nil {
 			log.Fatal(err)

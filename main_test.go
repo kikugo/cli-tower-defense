@@ -41,6 +41,28 @@ func TestReplayGameEndIndex(t *testing.T) {
 	}
 }
 
+func TestApplyBalanceOverride(t *testing.T) {
+	base := eng.DefaultBalanceConfig()
+	bounty := 0
+	out := applyBalanceOverride(base, balanceOverride{
+		Towers:               map[string]eng.TowerStat{"basic": {Damage: 25, Range: 5, Cooldown: 3, Cost: 100}},
+		BreachResourceBounty: &bounty,
+	})
+	if out.Towers["basic"].Damage != 25 || out.Towers["basic"].Cooldown != 3 {
+		t.Fatalf("expected basic tower override, got %+v", out.Towers["basic"])
+	}
+	if out.BreachResourceBounty != 0 {
+		t.Fatalf("expected bounty override 0, got %d", out.BreachResourceBounty)
+	}
+	// base must not be mutated
+	if base.Towers["basic"].Damage != 15 || base.BreachResourceBounty != 30 {
+		t.Fatalf("override mutated the base config: %+v", base.Towers["basic"])
+	}
+	if out.Enemies["tank"].Health != base.Enemies["tank"].Health {
+		t.Fatalf("untouched enemies must carry over")
+	}
+}
+
 func TestLayoutForSize(t *testing.T) {
 	cases := []struct {
 		width int
