@@ -55,7 +55,10 @@ func RunScriptedDuel(cfg ScriptedDuelConfig) MatchResult {
 	for ticks < maxTicks && !g.GameOver && time.Now().Before(deadline) {
 		if g.AIThinking[g.Player1] || g.AIThinking[g.Player2] {
 			g.HandleAIDecisions()
-			time.Sleep(200 * time.Microsecond)
+			// Scripted providers respond instantly; this only yields to the
+			// worker goroutine, so keep it tiny (200µs here made sleeps the
+			// dominant cost of whole sweeps).
+			time.Sleep(10 * time.Microsecond)
 			continue
 		}
 		g.UpdateGameState()

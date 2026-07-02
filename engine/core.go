@@ -270,17 +270,20 @@ func formatAffordableActions(gameState map[string]interface{}) string {
 	return line
 }
 
-// promptCost reads a per-type cost map out of the game state with a fallback
-// so prompts never render zeros if a key is missing.
-func promptCost(gameState map[string]interface{}, mapKey, name string, fallback int) int {
-	costs, ok := gameState[mapKey].(map[string]int)
-	if !ok {
-		return fallback
+// promptCost reads a per-type cost map out of the game state, falling back to
+// the default balance config so prompts never render zeros — and never go
+// stale, since the fallback is derived rather than hardcoded.
+func promptCost(gameState map[string]interface{}, mapKey, name string) int {
+	if costs, ok := gameState[mapKey].(map[string]int); ok {
+		if cost, ok := costs[name]; ok {
+			return cost
+		}
 	}
-	if cost, ok := costs[name]; ok {
-		return cost
+	def := DefaultBalanceConfig()
+	if mapKey == "tower_costs" {
+		return def.Towers[name].Cost
 	}
-	return fallback
+	return def.Enemies[name].SpawnCost
 }
 
 // rejectionFeedbackLine renders a forceful warning when the player's previous
@@ -338,10 +341,10 @@ func (h *OpenAIHandler) createTowerPrompt(gameState map[string]interface{}) stri
 			"Respond with exactly one JSON object only.",
 		gameState["resources"], gameState["income"], wave, pathsCount,
 		formatAffordableActions(gameState), rejectionFeedbackLine(gameState),
-		promptCost(gameState, "tower_costs", "basic", 100),
-		promptCost(gameState, "tower_costs", "splash", 200),
-		promptCost(gameState, "tower_costs", "sniper", 250),
-		promptCost(gameState, "tower_costs", "buffer", 300),
+		promptCost(gameState, "tower_costs", "basic"),
+		promptCost(gameState, "tower_costs", "splash"),
+		promptCost(gameState, "tower_costs", "sniper"),
+		promptCost(gameState, "tower_costs", "buffer"),
 		stateSummary,
 	)
 	return prompt
@@ -454,11 +457,11 @@ func (h *GeminiHandler) createEnemyPrompt(gameState map[string]interface{}) stri
 			"Respond with exactly one JSON object only.",
 		gameState["resources"], gameState["income"], wave, gameState["paths_count"],
 		formatAffordableActions(gameState), rejectionFeedbackLine(gameState),
-		promptCost(gameState, "spawn_costs", "basic", 20),
-		promptCost(gameState, "spawn_costs", "fast", 30),
-		promptCost(gameState, "spawn_costs", "tank", 50),
-		promptCost(gameState, "spawn_costs", "shielded", 40),
-		promptCost(gameState, "spawn_costs", "healer", 30),
+		promptCost(gameState, "spawn_costs", "basic"),
+		promptCost(gameState, "spawn_costs", "fast"),
+		promptCost(gameState, "spawn_costs", "tank"),
+		promptCost(gameState, "spawn_costs", "shielded"),
+		promptCost(gameState, "spawn_costs", "healer"),
 		waveCost, stateSummary, gameState["paths_count"],
 	)
 	return prompt
