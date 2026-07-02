@@ -38,3 +38,40 @@ func TestStrictAlternationGivesBothPlayersTurns(t *testing.T) {
 		t.Fatalf("expected call parity, got p1=%d p2=%d", p1, p2)
 	}
 }
+
+func TestBreachStopsScoringAfterGameOver(t *testing.T) {
+	g := NewGame("test", "test")
+	g.SetMapType("straight")
+	g.Lives[g.Defender] = 1
+
+	path := g.Paths[0]
+	last := path[len(path)-1]
+	for i := 0; i < 3; i++ {
+		e := NewEnemy(last.Y, last.X, "basic", nil)
+		e.PathIndex = len(path) - 1
+		g.Enemies = append(g.Enemies, &e)
+	}
+	attackerScoreBefore := g.Score[g.Attacker]
+
+	g.UpdateGameState()
+
+	if g.Lives[g.Defender] != 0 {
+		t.Fatalf("expected lives clamped at 0, got %d", g.Lives[g.Defender])
+	}
+	if !g.GameOver || g.Winner != g.Attacker {
+		t.Fatalf("expected attacker win, over=%v winner=%q", g.GameOver, g.Winner)
+	}
+	// Only the first breach may score; the two post-game-over breaches must not.
+	if got := g.Score[g.Attacker] - attackerScoreBefore; got != 50 {
+		t.Fatalf("expected exactly one scored breach (50), got %d", got)
+	}
+	ends := 0
+	for _, ev := range g.ReplayEvents {
+		if ev.Type == ReplayGameEnd {
+			ends++
+		}
+	}
+	if ends != 1 {
+		t.Fatalf("expected exactly one game_end event, got %d", ends)
+	}
+}

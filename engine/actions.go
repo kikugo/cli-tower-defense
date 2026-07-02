@@ -637,6 +637,11 @@ func (g *Game) UpdateGameState() {
 		}
 
 		if e.PathIndex >= len(path)-1 {
+			if g.GameOver {
+				// Match already decided this tick; remove the enemy without
+				// scoring further breaches or driving lives negative.
+				continue
+			}
 			g.Lives[g.Defender]--
 			g.Resources[g.Attacker] += 30
 			g.Score[g.Attacker] += 50
