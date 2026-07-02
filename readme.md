@@ -216,6 +216,7 @@ You can adjust game parameters from CLI flags:
 - `-tournament`: Run tournament config JSON (headless batch)
 - `-tournament-csv`: Write ranked tournament standings as CSV
 - `-tournament-md`: Write a tournament markdown report (standings + per-match results)
+- `-balance-sweep`: Run a balance sweep config JSON (scripted duels across seeds) and print a defender win-rate table
 - `-ratings-json`: Read/write persistent Elo-like model ratings across tournament runs
 
 - `GameSpeed`: Controls how fast the game runs
@@ -272,6 +273,13 @@ The end-to-end loop for comparing two models:
 All of these come from the same seeded run, so the result, replay, report, and
 standings describe the same match. Fix the seed and you get the same outcome
 every time.
+
+Combat and economy numbers live in one config (`engine/balance.go`), and run
+manifests record a `balance_version` so results from different eras aren't
+compared by accident. To test a balance change, describe candidates in a sweep
+JSON and run `go run . -balance-sweep=sweep.json`; each candidate plays
+scripted duels across seeds and the table reports how often the baseline
+defense held. A regression test pins the shipped defaults to that measurement.
 
 Manual TUI check:
 
