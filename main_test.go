@@ -43,6 +43,8 @@ func TestReplayGameEndIndex(t *testing.T) {
 
 func TestApplyBalanceOverride(t *testing.T) {
 	base := eng.DefaultBalanceConfig()
+	origBasic := base.Towers["basic"]
+	origBounty := base.BreachResourceBounty
 	bounty := 0
 	out := applyBalanceOverride(base, balanceOverride{
 		Towers:               map[string]eng.TowerStat{"basic": {Damage: 25, Range: 5, Cooldown: 3, Cost: 100}},
@@ -54,8 +56,9 @@ func TestApplyBalanceOverride(t *testing.T) {
 	if out.BreachResourceBounty != 0 {
 		t.Fatalf("expected bounty override 0, got %d", out.BreachResourceBounty)
 	}
-	// base must not be mutated
-	if base.Towers["basic"].Damage != 15 || base.BreachResourceBounty != 30 {
+	// base must not be mutated (compare against captured pre-call values,
+	// not literals, so the test survives default retuning)
+	if base.Towers["basic"] != origBasic || base.BreachResourceBounty != origBounty {
 		t.Fatalf("override mutated the base config: %+v", base.Towers["basic"])
 	}
 	if out.Enemies["tank"].Health != base.Enemies["tank"].Health {

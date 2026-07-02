@@ -40,9 +40,17 @@ func (p *ScriptedProvider) GetTowerDecision(gameState map[string]interface{}) (m
 		}
 		if canPlace {
 			if candidates, ok := gameState["valid_tower_candidates"].([][]int); ok && len(candidates) > 0 {
+				// Spread towers along the path instead of clustering at the
+				// entrance: stride through the candidate list by how many
+				// towers already exist.
+				built := 0
+				if towers, ok := gameState["towers"].([]interface{}); ok {
+					built = len(towers)
+				}
+				idx := (built * 3) % len(candidates)
 				return map[string]interface{}{
 					"action": "place", "tower_type": "basic",
-					"position": []interface{}{float64(candidates[0][0]), float64(candidates[0][1])},
+					"position": []interface{}{float64(candidates[idx][0]), float64(candidates[idx][1])},
 					"reason":   "baseline: build coverage",
 				}, nil
 			}

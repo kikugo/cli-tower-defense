@@ -16,3 +16,11 @@ func TestBuildRunManifestIncludesCoreFields(t *testing.T) {
 		t.Fatalf("expected git commit in manifest")
 	}
 }
+
+func TestManifestCarriesBalanceVersion(t *testing.T) {
+	g := NewGame("test", "test")
+	m := BuildRunManifest("headless", g, 1, false, 100, DefaultArenaRuleset(), "")
+	if m.BalanceVersion != DefaultBalanceConfig().Version {
+		t.Fatalf("expected balance version %q, got %q", DefaultBalanceConfig().Version, m.BalanceVersion)
+	}
+}

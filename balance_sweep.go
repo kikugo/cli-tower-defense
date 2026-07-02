@@ -75,7 +75,9 @@ func runBalanceSweep(path string) error {
 		cfg.DefenderScript = "defender_baseline"
 	}
 	if cfg.AttackerScript == "" {
-		cfg.AttackerScript = "attacker_spawn"
+		// The default scripted attacker launches waves when resources allow,
+		// giving the defender a real wave-clear victory path.
+		cfg.AttackerScript = "attacker_baseline"
 	}
 	ruleset := eng.BaselineDuelRuleset()
 	if cfg.Ruleset != nil {
@@ -91,7 +93,7 @@ func runBalanceSweep(path string) error {
 				Seed: seed, MaxTicks: cfg.MaxTicks, Ruleset: ruleset, Balance: balance,
 				DefenderScript: cfg.DefenderScript, AttackerScript: cfg.AttackerScript,
 			})
-			if result.Winner == result.Defender {
+			if result.DefenderHeld() {
 				wins++
 			}
 			totalTicks += result.Ticks

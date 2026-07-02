@@ -33,6 +33,25 @@ func TestDefenderBaselineScriptEscalates(t *testing.T) {
 	}
 }
 
+func TestDefenderHeld(t *testing.T) {
+	win := MatchResult{Winner: "p1", Defender: "p1", Lives: map[string]int{"p1": 3}}
+	if !win.DefenderHeld() {
+		t.Fatalf("outright win must count as held")
+	}
+	survived := MatchResult{Winner: "", Defender: "p1", Lives: map[string]int{"p1": 2}}
+	if !survived.DefenderHeld() {
+		t.Fatalf("surviving to max ticks with lives must count as held")
+	}
+	lost := MatchResult{Winner: "p2", Defender: "p1", Lives: map[string]int{"p1": 0}}
+	if lost.DefenderHeld() {
+		t.Fatalf("attacker win must not count as held")
+	}
+	depleted := MatchResult{Winner: "", Defender: "p1", Lives: map[string]int{"p1": 0}}
+	if depleted.DefenderHeld() {
+		t.Fatalf("zero lives at timeout must not count as held")
+	}
+}
+
 func TestRunScriptedDuelIsDeterministicAndFast(t *testing.T) {
 	cfg := ScriptedDuelConfig{
 		Seed: 11, MaxTicks: 400,

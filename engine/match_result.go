@@ -68,6 +68,17 @@ func (g *Game) BuildMatchResult() MatchResult {
 	}
 }
 
+// DefenderHeld reports whether the defense succeeded: either an outright
+// defender win, or the match ran out of ticks with defender lives intact
+// (survival against sustained pressure). Used by balance sweeps and the
+// band regression test.
+func (r MatchResult) DefenderHeld() bool {
+	if r.Winner == r.Defender && r.Winner != "" {
+		return true
+	}
+	return r.Winner == "" && r.Lives[r.Defender] > 0
+}
+
 func (g *Game) inferWinReason() string {
 	if !g.GameOver {
 		return "incomplete"

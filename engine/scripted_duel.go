@@ -13,16 +13,14 @@ type ScriptedDuelConfig struct {
 	AttackerScript string
 }
 
-// BaselineDuelRuleset is the standard balance-measurement arena: assists off,
-// straight lane, modest lives so duels resolve quickly.
+// BaselineDuelRuleset is the standard balance-measurement arena: the real
+// default economy (300 resources, income 5, 20 lives) on seeded random maps,
+// assists off, capped at 5 waves so duels resolve quickly.
 func BaselineDuelRuleset() ArenaRuleset {
 	rs := DefaultArenaRuleset()
 	rs.Name = "baseline-duel"
-	rs.MapType = "straight"
+	rs.MapType = "" // seeded random maps: layout variance is the point
 	rs.MaxWaves = 5
-	rs.StartingResources = 400
-	rs.StartingIncome = 10
-	rs.StartingLives = 6
 	rs.DisableAssists = true
 	return rs
 }
