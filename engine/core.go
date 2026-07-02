@@ -264,6 +264,19 @@ func formatAffordableActions(gameState map[string]interface{}) string {
 	return line
 }
 
+// promptCost reads a per-type cost map out of the game state with a fallback
+// so prompts never render zeros if a key is missing.
+func promptCost(gameState map[string]interface{}, mapKey, name string, fallback int) int {
+	costs, ok := gameState[mapKey].(map[string]int)
+	if !ok {
+		return fallback
+	}
+	if cost, ok := costs[name]; ok {
+		return cost
+	}
+	return fallback
+}
+
 // rejectionFeedbackLine renders a forceful warning when the player's previous
 // action(s) were rejected, escalating with the streak so models break out of
 // repeat-invalid-action loops. Empty when the last action was applied.
@@ -297,7 +310,7 @@ func (h *OpenAIHandler) createTowerPrompt(gameState map[string]interface{}) stri
 			"Your available tools this turn:\n"+
 			"Actions:\n"+
 			"1. {\"action\": \"place\", \"tower_type\": \"basic|sniper|splash|buffer\", \"position\": [y, x], \"reason\": \"...\", \"taunt\": \"...\"}\n"+
-			"   Costs: basic (100), splash (200), sniper (250), buffer (300)\n"+
+			"   Costs: basic (%d), splash (%d), sniper (%d), buffer (%d)\n"+
 			"   Rules: Position must be inside map, not on path, not on obstacle, not on another tower.\n"+
 			"2. {\"action\": \"upgrade\", \"tower_id\": <int>, \"reason\": \"...\", \"taunt\": \"...\"}\n"+
 			"   Cost: 150 * (current_level + 1). Increases damage and range.\n"+
@@ -318,7 +331,12 @@ func (h *OpenAIHandler) createTowerPrompt(gameState map[string]interface{}) stri
 			"- You can send a taunt message to your opponent!\n\n"+
 			"Respond with exactly one JSON object only.",
 		gameState["resources"], gameState["income"], wave, pathsCount,
-		formatAffordableActions(gameState), rejectionFeedbackLine(gameState), stateSummary,
+		formatAffordableActions(gameState), rejectionFeedbackLine(gameState),
+		promptCost(gameState, "tower_costs", "basic", 100),
+		promptCost(gameState, "tower_costs", "splash", 200),
+		promptCost(gameState, "tower_costs", "sniper", 250),
+		promptCost(gameState, "tower_costs", "buffer", 300),
+		stateSummary,
 	)
 	return prompt
 }
@@ -406,11 +424,11 @@ func (h *GeminiHandler) createEnemyPrompt(gameState map[string]interface{}) stri
 			"Legal action schema: exactly one JSON object with keys action, reason, taunt and action-specific fields.\n"+
 			"Your available tools this turn:\n"+
 			"Enemy Options (cost):\n"+
-			"- basic (20): Standard unit\n"+
-			"- fast (30): Quick and nimble\n"+
-			"- tank (50): High durability\n"+
-			"- shielded (40): Takes 50%% less damage from all towers\n"+
-			"- healer (30): Heals nearby enemies in an area\n"+
+			"- basic (%d): Standard unit\n"+
+			"- fast (%d): Quick and nimble\n"+
+			"- tank (%d): High durability\n"+
+			"- shielded (%d): Takes 50%% less damage from all towers\n"+
+			"- healer (%d): Heals nearby enemies in an area\n"+
 			"- wave (%d): Massive multi-path assault\n\n"+
 			"Actions:\n"+
 			"1. {\"action\": \"spawn\", \"enemy_type\": \"basic|fast|tank|shielded|healer\", \"reason\": \"...\", \"taunt\": \"...\"}\n"+
@@ -429,7 +447,13 @@ func (h *GeminiHandler) createEnemyPrompt(gameState map[string]interface{}) stri
 			"- Taunt your opponent to get inside their circuits!\n\n"+
 			"Respond with exactly one JSON object only.",
 		gameState["resources"], gameState["income"], wave, gameState["paths_count"],
-		formatAffordableActions(gameState), rejectionFeedbackLine(gameState), waveCost, stateSummary, gameState["paths_count"],
+		formatAffordableActions(gameState), rejectionFeedbackLine(gameState),
+		promptCost(gameState, "spawn_costs", "basic", 20),
+		promptCost(gameState, "spawn_costs", "fast", 30),
+		promptCost(gameState, "spawn_costs", "tank", 50),
+		promptCost(gameState, "spawn_costs", "shielded", 40),
+		promptCost(gameState, "spawn_costs", "healer", 30),
+		waveCost, stateSummary, gameState["paths_count"],
 	)
 	return prompt
 }

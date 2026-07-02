@@ -62,9 +62,24 @@ func (g *Game) getGameState() map[string]interface{} {
 		livesIface[k] = v
 	}
 
+	towerCosts := map[string]int{}
+	for _, name := range placeableTowerTypes {
+		if cost, ok := g.towerCost(name); ok {
+			towerCosts[name] = cost
+		}
+	}
+	spawnCosts := map[string]int{}
+	for _, name := range attackerEnemyTypes {
+		if cost, ok := g.spawnCost(name); ok {
+			spawnCosts[name] = cost
+		}
+	}
+
 	return map[string]interface{}{
 		"towers":                 towers,
 		"enemies":                enemies,
+		"tower_costs":            towerCosts,
+		"spawn_costs":            spawnCosts,
 		"slow_zones":             slowZones,
 		"obstacles":              obstacles,
 		"valid_tower_candidates": g.validTowerCandidates(12),
