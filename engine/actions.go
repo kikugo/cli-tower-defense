@@ -88,6 +88,7 @@ func (g *Game) getGameState() map[string]interface{} {
 
 func (g *Game) getPlayerGameState(playerID, role string) map[string]interface{} {
 	state := g.getGameState()
+	state["affordable_actions"] = g.affordableActions(playerID, role)
 	if role != "defender" || !g.FogOfWar {
 		return state
 	}
@@ -113,7 +114,6 @@ func (g *Game) getPlayerGameState(playerID, role string) map[string]interface{} 
 	state["enemies"] = filtered
 	state["active_enemies"] = len(filtered)
 	state["visibility"] = g.visibilitySummary()
-	_ = playerID
 	return state
 }
 
@@ -440,8 +440,7 @@ func (g *Game) invest(playerID string) bool {
 
 // spawnEnemy deducts resources and adds an enemy to the field.
 func (g *Game) spawnEnemy(enemyType string, _ map[string]interface{}) bool {
-	costs := map[string]int{"basic": 20, "fast": 30, "tank": 50, "shielded": 40, "healer": 30}
-	cost, ok := costs[enemyType]
+	cost, ok := attackerSpawnCosts[enemyType]
 	if !ok {
 		g.logf("Invalid enemy type: %s", enemyType)
 		return false
@@ -473,10 +472,7 @@ func (g *Game) spawnEnemy(enemyType string, _ map[string]interface{}) bool {
 
 // spawnWave queues a mix of enemies and deducts resources.
 func (g *Game) spawnWave() bool {
-	waveCost := 40 + g.Wave*5
-	if waveCost > 200 {
-		waveCost = 200
-	}
+	waveCost := waveCostForWave(g.Wave)
 	if g.Resources[g.Attacker] < waveCost {
 		return false
 	}
