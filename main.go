@@ -474,34 +474,36 @@ func (m model) View() string {
 	p2Taunt := wrapText(m.game.LastTaunt[p2ID], 30)
 
 	infoLines := []string{
+		sectionTitle("Match"),
 		turnStyle.Render(fmt.Sprintf("Turn: %s", curName)),
-		fmt.Sprintf("Wave: %d", m.game.Wave),
+		waveProgressBar(m.game.Wave, m.game.MaxWaves, 14),
 		fmt.Sprintf("Tick: %d", m.game.TickCount),
 		fmt.Sprintf("Queue: %d | Enemies: %d | Towers: %d", len(m.game.WaveQueue), len(m.game.Enemies), len(m.game.Towers)),
+		"",
+		sectionTitle("Economy"),
 		fmt.Sprintf("Lives (%s): %d", defName, m.game.Lives[defID]),
 		fmt.Sprintf("Resources (%s): %d (inc: %d)", defName, m.game.Resources[defID], m.game.Income[defID]),
 		fmt.Sprintf("Resources (%s): %d (inc: %d)", attName, m.game.Resources[attID], m.game.Income[attID]),
-		fmt.Sprintf("Pressure: active=%d queued=%d", len(m.game.Enemies), len(m.game.WaveQueue)),
-		fmt.Sprintf("Provider errors: %s=%d %s=%d", p1Name, m.game.TotalProviderErrorsForPlayer(p1ID), p2Name, m.game.TotalProviderErrorsForPlayer(p2ID)),
-		fmt.Sprintf("Rejected actions: %s=%d %s=%d", p1Name, m.game.TotalRejectedActionsForPlayer(p1ID), p2Name, m.game.TotalRejectedActionsForPlayer(p2ID)),
+		"",
+		sectionTitle("Telemetry"),
 		fmt.Sprintf("Provider calls: %s=%d %s=%d", p1Name, m.game.ProviderCalls[p1ID], p2Name, m.game.ProviderCalls[p2ID]),
 		fmt.Sprintf("Tokens: %s=%d %s=%d", p1Name, m.game.ProviderTokenUsage[p1ID], p2Name, m.game.ProviderTokenUsage[p2ID]),
 		fmt.Sprintf("Est cost: %s=%s %s=%s", p1Name, fmtCostMicros(m.game.ProviderCostMicros[p1ID]), p2Name, fmtCostMicros(m.game.ProviderCostMicros[p2ID])),
+		fmt.Sprintf("Provider errors: %s=%d %s=%d", p1Name, m.game.TotalProviderErrorsForPlayer(p1ID), p2Name, m.game.TotalProviderErrorsForPlayer(p2ID)),
+		fmt.Sprintf("Rejected actions: %s=%d %s=%d", p1Name, m.game.TotalRejectedActionsForPlayer(p1ID), p2Name, m.game.TotalRejectedActionsForPlayer(p2ID)),
 		fmt.Sprintf("Noop streak: %s=%d %s=%d", p1Name, m.game.NoopStreak[p1ID], p2Name, m.game.NoopStreak[p2ID]),
+		"",
+		sectionTitle("Decisions"),
 		fmt.Sprintf("Last status: %s=%s", p1Name, m.game.LastActionStatus[p1ID]),
 		fmt.Sprintf("Last status: %s=%s", p2Name, m.game.LastActionStatus[p2ID]),
 		fmt.Sprintf("Last reject: %s=%s", p1Name, wrapText(m.game.LastRejectedReason[p1ID], 20)),
 		fmt.Sprintf("Last reject: %s=%s", p2Name, wrapText(m.game.LastRejectedReason[p2ID], 20)),
-		"",
-		"Strategy Reasoning:",
 		fmt.Sprintf("%s: %s", p1Name, p1Reason),
 		fmt.Sprintf("%s: %s", p2Name, p2Reason),
-		"",
-		"Battle Taunts:",
 		fmt.Sprintf("%s: \"%s\"", p1Name, p1Taunt),
 		fmt.Sprintf("%s: \"%s\"", p2Name, p2Taunt),
 		"",
-		"Logs (↑/↓):",
+		sectionTitle("Logs (↑/↓)"),
 	}
 
 	maxLogs := 10
@@ -535,6 +537,23 @@ func (m model) View() string {
 	}
 	return lipgloss.JoinVertical(lipgloss.Left, ui, footer)
 }
+
+// waveProgressBar renders wave progress as a compact bar for the sidebar.
+func waveProgressBar(wave, maxWaves, width int) string {
+	if maxWaves <= 0 || width <= 0 {
+		return fmt.Sprintf("Wave %d", wave)
+	}
+	filled := wave * width / maxWaves
+	if filled > width {
+		filled = width
+	}
+	return fmt.Sprintf("Wave %d/%d [%s%s]", wave, maxWaves,
+		strings.Repeat("█", filled), strings.Repeat("─", width-filled))
+}
+
+var sectionTitleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("39"))
+
+func sectionTitle(s string) string { return sectionTitleStyle.Render(s) }
 
 // fmtCostMicros renders a USD-millionths cost as a dollar figure, or "-" when
 // no cost has accrued (for example when no pricing is configured).

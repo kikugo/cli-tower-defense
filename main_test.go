@@ -41,6 +41,19 @@ func TestReplayGameEndIndex(t *testing.T) {
 	}
 }
 
+func TestWaveProgressBar(t *testing.T) {
+	got := waveProgressBar(3, 10, 10)
+	if got != "Wave 3/10 [███───────]" {
+		t.Fatalf("got %q", got)
+	}
+	if got := waveProgressBar(12, 10, 10); got != "Wave 12/10 [██████████]" {
+		t.Fatalf("overflow should clamp, got %q", got)
+	}
+	if got := waveProgressBar(2, 0, 10); got != "Wave 2" {
+		t.Fatalf("zero max should degrade, got %q", got)
+	}
+}
+
 func TestFmtCostMicros(t *testing.T) {
 	if got := fmtCostMicros(0); got != "-" {
 		t.Fatalf("expected - for zero cost, got %q", got)
