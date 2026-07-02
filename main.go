@@ -290,6 +290,9 @@ func (m model) View() string {
 	if m.game == nil {
 		return "loading..."
 	}
+	if layoutForSize(m.width) == layoutTooSmall {
+		return "terminal too small (need at least 84 columns)\npress q to quit"
+	}
 	if m.game.GameOver {
 		winnerName := m.game.ModelNames[m.game.Winner]
 		if m.game.Winner == "none" {
@@ -506,7 +509,7 @@ func (m model) View() string {
 		sectionTitle("Logs (↑/↓)"),
 	}
 
-	maxLogs := 10
+	maxLogs := visibleLogCount(m.height)
 	if len(m.game.Logs) < maxLogs {
 		maxLogs = len(m.game.Logs)
 	}
@@ -524,7 +527,12 @@ func (m model) View() string {
 
 	sidebar := sidebarStyle.Render(strings.Join(infoLines, "\n"))
 
-	ui := lipgloss.JoinHorizontal(lipgloss.Top, mapView, sidebar)
+	var ui string
+	if layoutForSize(m.width) == layoutStacked {
+		ui = lipgloss.JoinVertical(lipgloss.Left, mapView, sidebar)
+	} else {
+		ui = lipgloss.JoinHorizontal(lipgloss.Top, mapView, sidebar)
+	}
 
 	speed := math.Round((100.0/float64(m.tickDur/time.Millisecond))*10) / 10
 	aiStatus := "on"
@@ -536,6 +544,44 @@ func (m model) View() string {
 		footer = "PAUSED | " + footer
 	}
 	return lipgloss.JoinVertical(lipgloss.Left, ui, footer)
+}
+
+type layoutMode int
+
+const (
+	layoutWide layoutMode = iota
+	layoutStacked
+	layoutTooSmall
+)
+
+// layoutForSize picks the view arrangement for the current terminal width.
+// Zero/negative means the first WindowSizeMsg has not arrived yet.
+func layoutForSize(width int) layoutMode {
+	switch {
+	case width <= 0:
+		return layoutWide
+	case width < 84:
+		return layoutTooSmall
+	case width < 120:
+		return layoutStacked
+	default:
+		return layoutWide
+	}
+}
+
+// visibleLogCount fits the log tail to the terminal height.
+func visibleLogCount(height int) int {
+	if height <= 0 {
+		return 10
+	}
+	n := height - 30 // map + chrome overhead
+	if n < 3 {
+		return 3
+	}
+	if n > 15 {
+		return 15
+	}
+	return n
 }
 
 // waveProgressBar renders wave progress as a compact bar for the sidebar.

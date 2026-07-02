@@ -41,6 +41,39 @@ func TestReplayGameEndIndex(t *testing.T) {
 	}
 }
 
+func TestLayoutForSize(t *testing.T) {
+	cases := []struct {
+		width int
+		want  layoutMode
+	}{
+		{0, layoutWide}, // size unknown before first WindowSizeMsg
+		{200, layoutWide},
+		{119, layoutStacked},
+		{84, layoutStacked},
+		{83, layoutTooSmall},
+	}
+	for _, c := range cases {
+		if got := layoutForSize(c.width); got != c.want {
+			t.Fatalf("layoutForSize(%d)=%v want %v", c.width, got, c.want)
+		}
+	}
+}
+
+func TestVisibleLogCount(t *testing.T) {
+	if got := visibleLogCount(0); got != 10 {
+		t.Fatalf("unknown height should default to 10, got %d", got)
+	}
+	if got := visibleLogCount(24); got != 3 {
+		t.Fatalf("short terminal should clamp to 3, got %d", got)
+	}
+	if got := visibleLogCount(100); got != 15 {
+		t.Fatalf("tall terminal should clamp to 15, got %d", got)
+	}
+	if got := visibleLogCount(38); got != 8 {
+		t.Fatalf("expected 8 for height 38, got %d", got)
+	}
+}
+
 func TestWaveProgressBar(t *testing.T) {
 	got := waveProgressBar(3, 10, 10)
 	if got != "Wave 3/10 [███───────]" {
