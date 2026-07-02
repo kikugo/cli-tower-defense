@@ -342,11 +342,10 @@ func (m model) View() string {
 		}
 	}
 
-	// Tower glyphs by type
-	towerGlyph := map[string]rune{"basic": '^', "splash": '⊕', "sniper": '⌖', "buffer": 'B'}
+	// Tower glyphs by type (shared with the replay board renderer)
 	towerAt := make(map[string]*eng.Tower)
 	for _, t := range m.game.Towers {
-		glyph, ok := towerGlyph[t.TowerType]
+		glyph, ok := towerGlyphs[t.TowerType]
 		if !ok {
 			glyph = '^'
 		}
@@ -635,6 +634,9 @@ func (m model) replayView() string {
 	right := sidebarStyle.Render(strings.Join(stateLines, "\n"))
 
 	ui := lipgloss.JoinHorizontal(lipgloss.Top, left, right)
+	if board := renderSnapshotBoard(snap, ev.Position); board != "" {
+		ui = lipgloss.JoinVertical(lipgloss.Left, board, ui)
+	}
 	status := "running"
 	if m.paused {
 		status = "paused"
