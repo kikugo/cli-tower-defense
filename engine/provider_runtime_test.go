@@ -22,3 +22,14 @@ func TestProviderErrorLabel(t *testing.T) {
 	}
 }
 
+func TestCompletionTokenBudget(t *testing.T) {
+	if got := completionTokenBudget(nil); got != 300 {
+		t.Fatalf("expected default 300, got %d", got)
+	}
+	if got := completionTokenBudget(map[string]float64{"max_tokens": 500}); got != 500 {
+		t.Fatalf("expected override 500, got %d", got)
+	}
+	if got := completionTokenBudget(map[string]float64{"max_tokens": 0}); got != 300 {
+		t.Fatalf("expected zero override to fall back to 300, got %d", got)
+	}
+}

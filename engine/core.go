@@ -269,7 +269,7 @@ func (h *OpenAIHandler) GetTowerDecision(gameState map[string]interface{}) (map[
 			{"role": "user", "content": prompt},
 		},
 		"temperature": 0.7,
-		"max_tokens":  150,
+		"max_tokens":  300,
 	}
 	reqJSON, err := json.Marshal(reqBody)
 	if err != nil {

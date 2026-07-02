@@ -41,3 +41,14 @@ func wrapProviderError(providerName, operation string, err error) error {
 	return fmt.Errorf("%s %s failed: %w", providerName, operation, err)
 }
 
+// defaultCompletionTokens is sized so reasoning models still emit a JSON
+// decision after spending hidden tokens on reasoning. Profiles override via
+// params.max_tokens.
+const defaultCompletionTokens = 300
+
+func completionTokenBudget(params map[string]float64) int {
+	if v, ok := params["max_tokens"]; ok && v > 0 {
+		return int(v)
+	}
+	return defaultCompletionTokens
+}

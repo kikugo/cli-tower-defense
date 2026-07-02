@@ -52,13 +52,10 @@ func (p *OpenAICompatibleProvider) GetEnemyDecision(gameState map[string]interfa
 
 func (p *OpenAICompatibleProvider) getChatCompletion(prompt string) (string, tokenUsage, error) {
 	temperature := 0.7
-	maxTokens := 150.0
 	if v, ok := p.config.Params["temperature"]; ok {
 		temperature = v
 	}
-	if v, ok := p.config.Params["max_tokens"]; ok {
-		maxTokens = v
-	}
+	maxTokens := completionTokenBudget(p.config.Params)
 
 	reqBody := map[string]interface{}{
 		"model": p.config.Model,
@@ -66,7 +63,7 @@ func (p *OpenAICompatibleProvider) getChatCompletion(prompt string) (string, tok
 			{"role": "user", "content": prompt},
 		},
 		"temperature": temperature,
-		"max_tokens":  int(maxTokens),
+		"max_tokens":  maxTokens,
 	}
 	reqJSON, err := json.Marshal(reqBody)
 	if err != nil {
