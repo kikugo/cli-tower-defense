@@ -838,18 +838,6 @@ func (g *Game) HandleAIDecisions() {
 		role = "attacker"
 	}
 	gameState := g.getPlayerGameState(player, role)
-	if role == "defender" && g.Resources[player] < 100 {
-		g.logf("%s (Def) saving resources (%d)", g.ModelNames[player], g.Resources[player])
-		g.LastAIDecision[player] = currentTime
-		g.switchTurn()
-		return
-	}
-	if role == "attacker" && g.Resources[player] < 20 {
-		g.logf("%s (Att) saving resources (%d)", g.ModelNames[player], g.Resources[player])
-		g.LastAIDecision[player] = currentTime
-		g.switchTurn()
-		return
-	}
 	if !g.isDecisionIntervalElapsed(player, currentTime) {
 		return
 	}
