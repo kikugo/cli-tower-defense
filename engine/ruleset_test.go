@@ -1,6 +1,53 @@
 package engine
 
-import "testing"
+import (
+	"encoding/json"
+	"testing"
+)
+
+func TestDisableAssistsBlocksAutoBehaviors(t *testing.T) {
+	g := NewGame("test", "test")
+	ruleset := DefaultArenaRuleset()
+	ruleset.DisableAssists = true
+	g.ApplyRuleset(ruleset)
+
+	g.Resources[g.Attacker] = 500
+	g.NoopStreak[g.Attacker] = 5
+	if g.shouldAutoLaunchWave(g.Attacker) {
+		t.Fatalf("expected auto wave disabled")
+	}
+	g.Resources[g.Defender] = 500
+	g.NoopStreak[g.Defender] = 5
+	if g.shouldAutoDefendAfterSave(g.Defender) {
+		t.Fatalf("expected auto defend disabled")
+	}
+	g.TickCount = 20 // applyAdaptivePressure only fires on %20 ticks
+	before := g.PressureTriggers
+	g.applyAdaptivePressure()
+	if g.PressureTriggers != before {
+		t.Fatalf("expected adaptive pressure disabled")
+	}
+}
+
+func TestFairPresetDisablesAssists(t *testing.T) {
+	rs, err := PresetArenaRuleset("fair")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !rs.DisableAssists {
+		t.Fatalf("expected fair preset to disable assists")
+	}
+}
+
+func TestRulesetJSONDefaultKeepsAssistsOn(t *testing.T) {
+	var rs ArenaRuleset
+	if err := json.Unmarshal([]byte(`{"name":"legacy"}`), &rs); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if rs.DisableAssists {
+		t.Fatalf("expected assists on for legacy ruleset JSON")
+	}
+}
 
 func TestPresetArenaRulesetFast(t *testing.T) {
 	r, err := PresetArenaRuleset("fast")

@@ -570,6 +570,7 @@ type Game struct {
 	NoopStreak          map[string]int
 	AutoWaveMinResource int
 	AutoDefendMinStreak int
+	AssistsDisabled     bool
 	FogOfWar            bool
 	DefenderVisionRange int
 	BaseVisionRange     int
@@ -1447,6 +1448,9 @@ func (g *Game) TotalRejectedActionsForPlayer(playerID string) int {
 }
 
 func (g *Game) shouldAutoLaunchWave(playerID string) bool {
+	if g.AssistsDisabled {
+		return false
+	}
 	minResources := g.AutoWaveMinResource
 	if minResources <= 0 {
 		minResources = 260
@@ -1464,6 +1468,9 @@ func (g *Game) shouldAutoLaunchWave(playerID string) bool {
 }
 
 func (g *Game) shouldAutoDefendAfterSave(playerID string) bool {
+	if g.AssistsDisabled {
+		return false
+	}
 	minStreak := g.AutoDefendMinStreak
 	if minStreak <= 0 {
 		minStreak = 2

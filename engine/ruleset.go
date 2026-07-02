@@ -15,6 +15,10 @@ type ArenaRuleset struct {
 	FogOfWar            bool   `json:"fog_of_war"`
 	DefenderVisionRange int    `json:"defender_vision_range"`
 	BaseVisionRange     int    `json:"base_vision_range"`
+	// DisableAssists turns off engine help (auto-wave, auto-defend, adaptive
+	// pressure) so matches measure pure model decisions. Zero value keeps
+	// assists on, so existing ruleset JSONs are unaffected.
+	DisableAssists bool `json:"disable_assists"`
 }
 
 func DefaultArenaRuleset() ArenaRuleset {
@@ -50,6 +54,10 @@ func PresetArenaRuleset(name string) (ArenaRuleset, error) {
 		base.MaxTicks = 6000
 		base.MaxWaves = 45
 		base.StartingResources = 350
+		return base, nil
+	case "fair":
+		base.Name = "fair"
+		base.DisableAssists = true
 		return base, nil
 	default:
 		return ArenaRuleset{}, fmt.Errorf("unknown ruleset preset %q", name)
@@ -93,4 +101,5 @@ func (g *Game) ApplyRuleset(ruleset ArenaRuleset) {
 	if ruleset.MapType != "" {
 		g.SetMapType(ruleset.MapType)
 	}
+	g.AssistsDisabled = ruleset.DisableAssists
 }

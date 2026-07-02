@@ -739,6 +739,9 @@ func (g *Game) runTowerPhase() {
 }
 
 func (g *Game) applyAdaptivePressure() {
+	if g.AssistsDisabled {
+		return
+	}
 	if g.GameOver || g.TickCount%20 != 0 {
 		return
 	}
