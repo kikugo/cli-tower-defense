@@ -98,6 +98,12 @@ func (t *Tower) Attack(enemies []*Enemy) []*Enemy {
 
 	var targets []Target
 	for _, enemy := range enemies {
+		if enemy.Health <= 0 {
+			// Killed earlier this tick; the spatial index is only rebuilt
+			// between phases, so corpses must be skipped here or towers
+			// waste shots on them (and kills would be rewarded twice).
+			continue
+		}
 		distance := math.Sqrt(math.Pow(float64(t.Pos.Y-enemy.Pos.Y), 2) + math.Pow(float64(t.Pos.X-enemy.Pos.X), 2))
 		if distance <= float64(t.Range) {
 			sortKey := distance

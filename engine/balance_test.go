@@ -62,6 +62,64 @@ func TestBreachBountyHonorsBalance(t *testing.T) {
 	}
 }
 
+func TestTowersDoNotShootCorpses(t *testing.T) {
+	g := NewGame("test", "test")
+	g.SetMapType("straight")
+	g.Towers = nil
+	g.Enemies = nil
+
+	y := g.MapHeight / 2
+	// Two towers covering the same spot.
+	t1 := g.newTower(y-1, 10, "basic", nil)
+	t2 := g.newTower(y+1, 10, "basic", nil)
+	g.Towers = append(g.Towers, &t1, &t2)
+
+	dead := g.newEnemy(y, 10, "basic", nil)
+	dead.Health = 0
+	alive := g.newEnemy(y, 11, "basic", nil)
+	g.Enemies = append(g.Enemies, &dead, &alive)
+
+	g.rebuildEnemySpatialIndex()
+	g.runTowerPhase()
+
+	if alive.Health >= alive.MaxHealth {
+		t.Fatalf("expected towers to damage the living enemy, health still %d", alive.Health)
+	}
+}
+
+func TestKillRewardCountedOnce(t *testing.T) {
+	g := NewGame("test", "test")
+	g.SetMapType("straight")
+	g.Towers = nil
+	g.Enemies = nil
+	g.Score[g.Defender] = 0
+	resBefore := g.Resources[g.Defender]
+
+	y := g.MapHeight / 2
+	// Two overlapping high-damage towers; a 1 HP enemy dies to the first hit.
+	st := g.Balance.Towers["basic"]
+	st.Damage = 500
+	g.Balance.Towers["basic"] = st
+	t1 := g.newTower(y-1, 10, "basic", nil)
+	t2 := g.newTower(y+1, 10, "basic", nil)
+	g.Towers = append(g.Towers, &t1, &t2)
+
+	victim := g.newEnemy(y, 10, "basic", nil)
+	victim.Health = 1
+	g.Enemies = append(g.Enemies, &victim)
+
+	g.rebuildEnemySpatialIndex()
+	g.runTowerPhase()
+
+	reward := g.Balance.Enemies["basic"].Reward
+	if got := g.Score[g.Defender]; got != reward {
+		t.Fatalf("expected kill scored exactly once (%d), got %d", reward, got)
+	}
+	if got := g.Resources[g.Defender] - resBefore; got != reward {
+		t.Fatalf("expected kill reward paid exactly once (%d), got %d", reward, got)
+	}
+}
+
 func TestPlaceTowerRejectsUnknownType(t *testing.T) {
 	g := NewGame("test", "test")
 	g.Resources[g.Defender] = 500
