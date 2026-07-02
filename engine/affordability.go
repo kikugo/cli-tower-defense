@@ -34,9 +34,13 @@ func (g *Game) affordableActions(playerID, role string) []string {
 	res := g.Resources[playerID]
 
 	if role == "defender" {
-		for _, name := range []string{"basic", "custom", "splash", "sniper", "buffer"} {
-			if res >= defenderTowerCosts[name] {
-				actions = append(actions, "place:"+name)
+		// Only advertise tower placement when a legal cell actually exists;
+		// on a saturated board "place" would be guaranteed to be rejected.
+		if len(g.validTowerCandidates(1)) > 0 {
+			for _, name := range []string{"basic", "custom", "splash", "sniper", "buffer"} {
+				if res >= defenderTowerCosts[name] {
+					actions = append(actions, "place:"+name)
+				}
 			}
 		}
 		for id, tower := range g.Towers {

@@ -2,6 +2,7 @@ package engine
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -55,6 +56,56 @@ func TestPlayerGameStateIncludesAffordableActions(t *testing.T) {
 	attState := g.getPlayerGameState(g.Attacker, "attacker")
 	if _, ok := attState["affordable_actions"].([]string); !ok {
 		t.Fatalf("expected attacker affordable_actions, got %#v", attState["affordable_actions"])
+	}
+}
+
+func TestAffordableActionsExcludesPlaceWhenBoardSaturated(t *testing.T) {
+	g := NewGame("test", "test")
+	g.Resources[g.Defender] = 500
+	// Shrink to a two-tile path and block every legal neighbor cell so no
+	// tower placement exists anywhere.
+	g.Paths = [][]Position{{{Y: 2, X: 2}, {Y: 2, X: 3}}}
+	g.rebuildPathTileSet()
+	g.Obstacles = nil
+	g.ObstacleTileSet = map[string]struct{}{}
+	g.Towers = nil
+	for _, pos := range []Position{{Y: 1, X: 2}, {Y: 3, X: 2}, {Y: 2, X: 1}, {Y: 1, X: 3}, {Y: 3, X: 3}, {Y: 2, X: 4}} {
+		tw := NewTower(pos.Y, pos.X, "basic", nil)
+		g.Towers = append(g.Towers, &tw)
+	}
+
+	got := g.affordableActions(g.Defender, "defender")
+	for _, action := range got {
+		if strings.HasPrefix(action, "place:") {
+			t.Fatalf("expected no place actions on saturated board, got %v", got)
+		}
+	}
+	// Everything else stays affordable at 500 resources.
+	found := map[string]bool{}
+	for _, action := range got {
+		found[action] = true
+	}
+	for _, want := range []string{"save", "place_slow_zone", "invest"} {
+		if !found[want] {
+			t.Fatalf("expected %q still affordable, got %v", want, got)
+		}
+	}
+}
+
+func TestFormatAffordableActionsIncludesTowerCandidates(t *testing.T) {
+	state := map[string]interface{}{
+		"affordable_actions":     []string{"save", "place:basic"},
+		"valid_tower_candidates": [][]int{{3, 12}, {5, 7}, {6, 9}, {8, 1}},
+	}
+	got := formatAffordableActions(state)
+	if !strings.Contains(got, "place:basic") {
+		t.Fatalf("expected place listed, got %q", got)
+	}
+	if !strings.Contains(got, "[3 12]") || !strings.Contains(got, "[5 7]") || !strings.Contains(got, "[6 9]") {
+		t.Fatalf("expected first three candidate cells inline, got %q", got)
+	}
+	if strings.Contains(got, "[8 1]") {
+		t.Fatalf("expected candidate list capped at three, got %q", got)
 	}
 }
 

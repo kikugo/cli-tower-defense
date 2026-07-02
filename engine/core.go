@@ -301,6 +301,8 @@ func (h *OpenAIHandler) GetTowerDecision(gameState map[string]interface{}) (map[
 }
 
 // formatAffordableActions renders the affordable_actions list for prompts.
+// When tower placement is affordable, the first legal cells are shown inline
+// so models pick a valid position instead of guessing.
 func formatAffordableActions(gameState map[string]interface{}) string {
 	actions, ok := gameState["affordable_actions"].([]string)
 	if !ok || len(actions) == 0 {
@@ -309,7 +311,28 @@ func formatAffordableActions(gameState map[string]interface{}) string {
 	if len(actions) == 1 && actions[0] == "save" {
 		return "save (nothing else is affordable this turn)"
 	}
-	return strings.Join(actions, ", ")
+	line := strings.Join(actions, ", ")
+	hasPlace := false
+	for _, action := range actions {
+		if strings.HasPrefix(action, "place:") {
+			hasPlace = true
+			break
+		}
+	}
+	if hasPlace {
+		if candidates, ok := gameState["valid_tower_candidates"].([][]int); ok && len(candidates) > 0 {
+			limit := 3
+			if len(candidates) < limit {
+				limit = len(candidates)
+			}
+			cells := make([]string, 0, limit)
+			for _, cell := range candidates[:limit] {
+				cells = append(cells, fmt.Sprintf("%v", cell))
+			}
+			line += "; valid tower cells include " + strings.Join(cells, ", ")
+		}
+	}
+	return line
 }
 
 func (h *OpenAIHandler) createTowerPrompt(gameState map[string]interface{}) string {
