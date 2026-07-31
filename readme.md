@@ -2,6 +2,8 @@
 
 A terminal-based tower defense game written in Go where any two configured LLMs can compete in real-time.
 
+![Two models playing a match](docs/demo.gif)
+
 ## Game Overview
 
 In this tower defense game, two configured models battle it out:
