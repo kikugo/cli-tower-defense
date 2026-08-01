@@ -318,12 +318,26 @@ func (h *OpenAIHandler) createTowerPrompt(gameState map[string]interface{}) stri
 			"Legal action schema: exactly one JSON object with keys action, reason, taunt and action-specific fields.\n"+
 			"Your available tools this turn:\n%s\n"+
 			"State summary:\n%s\n\n"+
+			"Tower stats (damage / range / cooldown / cost):\n"+
+			"- basic  34 / 5 / 2 / 100. Your workhorse: cheap and fires often.\n"+
+			"- sniper 50 / 12 / 15 / 250. Long reach and hard hitting, but fires once every 15 ticks.\n"+
+			"- splash 10 / 3 / 3 / 200. Low damage, hits groups.\n"+
+			"- buffer 0 / 2 / n/a / 300. Deals no damage at all.\n\n"+
 			"Strategic Advice:\n"+
-			"- Buffer towers (B) increase damage of nearby towers by 50%%. Place them in clusters.\n"+
-			"- Watch out for Healer enemies (H) and Shielded enemies (S).\n"+
+			"- A buffer tower adds +50%% damage to every OTHER tower within 2 tiles, and the bonus\n"+
+			"  stacks if several buffers overlap. It never attacks, so it is only worth its 300 cost\n"+
+			"  when it sits beside two or more damage towers. Placing buffers next to each other\n"+
+			"  achieves nothing, because a buffer has no damage to boost.\n"+
+			"- Shielded enemies (S) carry shield 2, which divides ALL incoming damage by 3: a sniper\n"+
+			"  hit drops from 50 to 16. Volume of fire beats single big hits against them.\n"+
+			"- Healer enemies (H) restore health to nearby enemies, so kill them first when both are\n"+
+			"  in range.\n"+
+			"- Enemy health for reference: basic 100, fast 50, tank 300, shielded 150, healer 80.\n"+
 			"- Invest early if you can afford to, but don't let your lives drop too low.\n"+
-			"- If last_rejected_reason is non-empty, avoid repeating the same invalid action pattern.\n"+
-			"- You can send a taunt message to your opponent!\n\n"+
+			"- Only choose an action listed as affordable above. Anything else is rejected and you\n"+
+			"  lose the turn.\n"+
+			"- If last_rejected_reason is non-empty, change the action AND the position, not just one.\n"+
+			"- You may include a taunt for your opponent.\n\n"+
 			"Respond with exactly one JSON object only.",
 		gameState["resources"], gameState["income"], wave, pathsCount,
 		formatAffordableActions(gameState), rejectionFeedbackLine(gameState),
@@ -372,7 +386,10 @@ func (h *GeminiHandler) GetEnemyDecision(gameState map[string]interface{}) (map[
 	prompt := h.createEnemyPrompt(gameState)
 	reqBody := map[string]interface{}{
 		"contents":         []map[string]interface{}{{"parts": []map[string]interface{}{{"text": prompt}}}},
-		"generationConfig": map[string]interface{}{"temperature": 0.7, "maxOutputTokens": 150},
+		// 150 starves reasoning models: they spend the budget on hidden reasoning and
+		// return empty content, which silently drops the turn to a fallback. The
+		// defender path already allowed 300, so this was also a role asymmetry.
+		"generationConfig": map[string]interface{}{"temperature": 0.7, "maxOutputTokens": 400},
 	}
 	reqJSON, err := json.Marshal(reqBody)
 	if err != nil {
@@ -415,12 +432,27 @@ func (h *GeminiHandler) createEnemyPrompt(gameState map[string]interface{}) stri
 			"Legal action schema: exactly one JSON object with keys action, reason, taunt and action-specific fields.\n"+
 			"Your available tools this turn:\n%s\n"+
 			"State summary:\n%s\n\n"+
+			"Unit stats (health / speed / spawn cost):\n"+
+			"- basic    100 / 1.0 / 20. Cheapest body.\n"+
+			"- fast      50 / 2.0 / 30. Fragile, but crosses the map in half the time.\n"+
+			"- tank     300 / 0.5 / 50. Six times a basic's health, slowest mover.\n"+
+			"- shielded 150 / 0.8 / 40. Shield 2 divides all incoming damage by 3.\n"+
+			"- healer    80 / 1.0 / 30. Restores health to nearby enemies.\n\n"+
 			"Strategic Advice:\n"+
-			"- Mix tank and healer units to create a slow but steady push.\n"+
-			"- Shielded enemies are best against sniper towers.\n"+
-			"- Sending a wave splits enemies across all %d paths.\n"+
-			"- If last_rejected_reason is non-empty, choose a different legal action next turn.\n"+
-			"- Taunt your opponent to get inside their circuits!\n\n"+
+			"- Shielded units take one third damage from every tower, not just some of them. They\n"+
+			"  are the efficient way through concentrated defences: 150 health behind shield 2\n"+
+			"  absorbs roughly 450 raw damage for 40 resources.\n"+
+			"- A healer behind tanks keeps the tanks alive far longer than either unit alone. Sent\n"+
+			"  by itself a healer has nothing to heal and dies quickly.\n"+
+			"- Fast units are for slipping past long-cooldown towers such as snipers, which fire\n"+
+			"  once every 15 ticks and cannot re-target quickly.\n"+
+			"- Sending a wave splits enemies across all %d paths, so it thins any single defence\n"+
+			"  but commits your resources at once.\n"+
+			"- Only choose an action listed as affordable above. Anything else is rejected and you\n"+
+			"  lose the turn, which is the most common way to fall behind.\n"+
+			"- If last_rejected_reason is non-empty, pick a genuinely different action, not the same\n"+
+			"  one with a different unit.\n"+
+			"- You may include a taunt for your opponent.\n\n"+
 			"Respond with exactly one JSON object only.",
 		gameState["resources"], gameState["income"], wave, gameState["paths_count"],
 		formatAffordableActions(gameState), rejectionFeedbackLine(gameState),
