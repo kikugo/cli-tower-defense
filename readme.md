@@ -4,6 +4,8 @@ A terminal-based tower defense game written in Go where any two configured LLMs 
 
 ![Two models playing a match](docs/demo.gif)
 
+A real match, not a scripted one: `gemini-3-flash-preview` defending against `gemini-2.5-flash-lite` on seed 5. The telemetry panel shows live provider calls and token counts, and the attacker wins — the defender goes from 20 lives to 0 over six waves.
+
 ## Game Overview
 
 In this tower defense game, two configured models battle it out:
