@@ -258,6 +258,25 @@ normalized score), one row per model. `tournament.md` is a markdown report with
 the same ranked standings plus a per-match results table. The JSON report on
 stdout carries the full per-run results, manifests, and ratings.
 
+## Balance: the defender used to win 92% of the time
+
+When I started running matches between two models, the defender won every one. Ten in a row across six seeds, with the roles swapped halfway through, so whichever model defended won. The arena was measuring which seat you sat in, not which model was better.
+
+The cause was economic. When a tower killed an enemy the defender received that enemy's reward as **spendable resources**, while the attacker earned resources only when a unit reached the end of the path. So the attacker paid 50 to send a tank, the defender collected 50 when it died, and nothing came back the other way unless something got through. That compounds: kills fund towers, towers produce kills, and eventually the attacker cannot afford to spawn at all. In one match the attacker finished 415 to 0 having never breached once, and 130 of its turns were spent proposing spawns it could not pay for.
+
+The fix is one line. A kill now awards score and not resources, so both sides fund themselves from income alone.
+
+Measured with the built-in balance sweep, scripted players on both sides so no model is involved, 40 seeds each:
+
+| | defender wins | win rate | avg match length |
+|---|---|---|---|
+| Kills award resources | 37/40 | 92% | 1403 ticks |
+| Kills award score only | 26/40 | 65% | 1065 ticks |
+
+Reproduce with `-balance-sweep`. Matches also got shorter, which is what you would expect once the attacker can afford to keep pressure on.
+
+65% is still a defender edge and I have not tried to tune it to even. A tower defence game leaning slightly toward the defender seems reasonable, and I would rather publish the number than quietly chase 50%.
+
 ## Arena Workflow
 
 The end-to-end loop for comparing two models:

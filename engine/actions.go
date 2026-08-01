@@ -753,8 +753,14 @@ func (g *Game) runTowerPhase() {
 					Details:  map[string]interface{}{"tower_type": t.TowerType, "enemy_type": e.EnemyType, "enemy_health": e.Health},
 				})
 				if e.Health <= 0 {
+					// Score only, deliberately not resources. Paying the defender
+					// spendable resources for every kill created a feedback loop:
+					// the attacker pays to spawn, the defender is paid when it
+					// kills, buys more defence, kills more, and the attacker runs
+					// out of money and cannot spawn at all. Measured at 92%
+					// defender wins over 40 seeds with scripted players on both
+					// sides, so it was the game and not the models.
 					g.Score[g.Defender] += e.Reward
-					g.Resources[g.Defender] += e.Reward
 				}
 			}
 			t.Damage = originalDamage
