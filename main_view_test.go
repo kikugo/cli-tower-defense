@@ -73,6 +73,23 @@ func containsBoardMarker(s string) (rune, bool) {
 	return 0, false
 }
 
+// fitTarget returns the terminal size a rendered frame must fit inside for a
+// given (w, h) test case. It is almost always (w, h) itself, EXCEPT for the
+// {0, 0} case: that is the frame Bubble Tea renders before the first
+// tea.WindowSizeMsg arrives, and computeLayout (main_layout.go) deliberately
+// normalizes a zero width or height to 80x24 rather than treating it as an
+// unbounded/"wide" terminal. Asserting lipgloss.Height(out) <= 0 for that
+// case would be unsatisfiable by ANY string -- lipgloss.Height("") is 1, not
+// 0 -- so it isn't a real requirement; the real requirement is that the
+// {0,0} frame fits the SAME 80x24 box computeLayout actually renders it
+// into.
+func fitTarget(w, h int) (int, int) {
+	if w == 0 && h == 0 {
+		return 80, 24
+	}
+	return w, h
+}
+
 // poolTail returns a copy of the last n entries of pool (or the whole pool,
 // copied, if it has fewer than n entries).
 func poolTail(pool []string, n int) []string {
@@ -232,13 +249,14 @@ func TestViewNeverExceedsTerminal(t *testing.T) {
 					out := renderAt(t, game, sz.w, sz.h)
 					gotH := lipgloss.Height(out)
 					gotW := lipgloss.Width(out)
-					if gotH > sz.h {
+					wantW, wantH := fitTarget(sz.w, sz.h)
+					if gotH > wantH {
 						t.Errorf("rendered height %d exceeds terminal height %d (w=%d h=%d logs=%d pair=%s/%s)",
-							gotH, sz.h, sz.w, sz.h, logCount, pair[0], pair[1])
+							gotH, wantH, sz.w, sz.h, logCount, pair[0], pair[1])
 					}
-					if gotW > sz.w {
+					if gotW > wantW {
 						t.Errorf("rendered width %d exceeds terminal width %d (w=%d h=%d logs=%d pair=%s/%s)",
-							gotW, sz.w, sz.w, sz.h, logCount, pair[0], pair[1])
+							gotW, wantW, sz.w, sz.h, logCount, pair[0], pair[1])
 					}
 				})
 			}
@@ -290,12 +308,14 @@ func TestGameOverAndReplayFitInvariant(t *testing.T) {
 		{119, 40}, {120, 40}, {160, 50}, {204, 60},
 	}
 
-	// main.go:298-303 special-cases GameOver into a bare two-line string,
-	// discarding the board and every statistic at the moment they matter
-	// most. Applying the fit invariant here is expected to mostly PASS
-	// (two short lines fit almost any terminal) -- the defect this
-	// documents is loss of information, not overflow, and the {0,0} case
-	// (width/height both zero) still fails the literal invariant.
+	// The game-over screen (main.go's gameOverView) is checked against the
+	// same fit invariant every other View() path is: whatever it renders
+	// must already fit inside the terminal, at every size in the matrix
+	// including {0,0} (checked against the 80x24 computeLayout normalizes
+	// that case to -- see fitTarget). This alone would have passed even for
+	// the old bare two-line "Game Over!" string; the defect that string had
+	// (discarding the board and every statistic) is what TestGameOverContentPresence
+	// below exists to catch.
 	t.Run("game_over", func(t *testing.T) {
 		game := newScriptedGame(t, "o3", "gpt-4")
 		game.ResolveTimeout() // forces a decisive GameOver verdict, same as headless/tournament paths use
@@ -310,11 +330,12 @@ func TestGameOverAndReplayFitInvariant(t *testing.T) {
 			t.Run(fmt.Sprintf("%dx%d", sz.w, sz.h), func(t *testing.T) {
 				out := renderAt(t, game, sz.w, sz.h)
 				gotH, gotW := lipgloss.Height(out), lipgloss.Width(out)
-				if gotH > sz.h {
-					t.Errorf("rendered height %d exceeds terminal height %d", gotH, sz.h)
+				wantW, wantH := fitTarget(sz.w, sz.h)
+				if gotH > wantH {
+					t.Errorf("rendered height %d exceeds terminal height %d", gotH, wantH)
 				}
-				if gotW > sz.w {
-					t.Errorf("rendered width %d exceeds terminal width %d", gotW, sz.w)
+				if gotW > wantW {
+					t.Errorf("rendered width %d exceeds terminal width %d", gotW, wantW)
 				}
 			})
 		}
@@ -357,13 +378,78 @@ func TestGameOverAndReplayFitInvariant(t *testing.T) {
 				m.width, m.height = sz.w, sz.h
 				out := m.View()
 				gotH, gotW := lipgloss.Height(out), lipgloss.Width(out)
-				if gotH > sz.h {
-					t.Errorf("rendered height %d exceeds terminal height %d (replay event 0, map_init details dump)", gotH, sz.h)
+				wantW, wantH := fitTarget(sz.w, sz.h)
+				if gotH > wantH {
+					t.Errorf("rendered height %d exceeds terminal height %d (replay event 0, map_init details dump)", gotH, wantH)
 				}
-				if gotW > sz.w {
-					t.Errorf("rendered width %d exceeds terminal width %d", gotW, sz.w)
+				if gotW > wantW {
+					t.Errorf("rendered width %d exceeds terminal width %d", gotW, wantW)
 				}
 			})
 		}
 	})
+}
+
+// TestGameOverContentPresence is the assertion the fit invariant cannot
+// provide: TestGameOverAndReplayFitInvariant's game_over subtest only checks
+// that the rendered DIMENSIONS fit the terminal, and the old bare
+// "Game Over! Winner: %s\nPress q to quit." string trivially satisfied that
+// at every size -- a two-row string fits almost any terminal, so that test
+// passed even while the screen discarded the board, score, wave, and cost at
+// the exact moment they matter most. This test checks CONTENT instead: the
+// winner's model name, the end reason, the wave reached, and both players'
+// scores must all be substrings of the rendered output, and at least one
+// board glyph must survive, at every size in the same matrix used elsewhere
+// in this file.
+//
+// Verified to FAIL against the pre-gameOverView implementation: stashing
+// main.go's change (git stash push -- main.go) and re-running this test
+// reproduces exactly the failure it exists to catch -- reported verbatim in
+// the task report, not just asserted here.
+func TestGameOverContentPresence(t *testing.T) {
+	sizes := []struct{ w, h int }{
+		{0, 0}, {60, 15}, {80, 24}, {84, 24}, {100, 30},
+		{119, 40}, {120, 40}, {160, 50}, {204, 60},
+	}
+
+	game := newScriptedGame(t, "o3", "gpt-4")
+	game.ResolveTimeout() // forces a decisive GameOver verdict, same as headless/tournament paths use
+	if !game.GameOver {
+		t.Fatalf("test setup failed: expected GameOver=true after ResolveTimeout()")
+	}
+
+	result := game.BuildMatchResult()
+	winnerName := shortName(result.WinnerModel, gameOverCardNameCells)
+	if winnerName == "" {
+		t.Fatalf("test setup invariant violated: shortName(%q, %d) is empty", result.WinnerModel, gameOverCardNameCells)
+	}
+	scoreText := fmt.Sprintf("%d / %d", result.Score[result.Defender], result.Score[result.Attacker])
+	waveText := fmt.Sprintf("%d/%d", result.Waves, result.MaxWaves)
+	t.Logf("game over result: winner=%s (%s) reason=%q wave=%s score=%s", result.Winner, winnerName, result.WinReason, waveText, scoreText)
+
+	for _, sz := range sizes {
+		sz := sz
+		t.Run(fmt.Sprintf("%dx%d", sz.w, sz.h), func(t *testing.T) {
+			out := renderAt(t, game, sz.w, sz.h)
+
+			if !strings.Contains(out, winnerName) {
+				t.Errorf("output missing winner model name %q", winnerName)
+			}
+			if !strings.Contains(out, result.WinReason) {
+				t.Errorf("output missing end reason %q", result.WinReason)
+			}
+			if !strings.Contains(out, waveText) {
+				t.Errorf("output missing wave progress %q", waveText)
+			}
+			if !strings.Contains(out, scoreText) {
+				t.Errorf("output missing both players' scores %q", scoreText)
+			}
+			if _, ok := containsBoardMarker(out); !ok {
+				t.Errorf("output contains no board marker (any of %q)", string(boardMarkerRunes))
+			}
+			if t.Failed() {
+				t.Logf("--- rendered output (%dx%d) ---\n%s", sz.w, sz.h, out)
+			}
+		})
+	}
 }

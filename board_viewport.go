@@ -244,6 +244,25 @@ func autoFollowPanX(g *eng.Game, viewportW int) int {
 	return clampPan(leadX-viewportW/2, g.MapWidth, viewportW)
 }
 
+// boardInteriorSize returns the interior viewport size (columns, rows) for a
+// board pane of rect rc: rc's own w/h minus uiBorder's border+padding
+// overhead, capped to the map's own dimensions. renderBoard and
+// renderBoardWithCard both build the interior from this; buildGameOverCard
+// (view_render.go) must size the game-over card to fit inside that same
+// interior, so all three go through this one function rather than
+// recomputing the vw/vh arithmetic independently and risking drift.
+func boardInteriorSize(g *eng.Game, rc rect) (vw, vh int) {
+	vw = boardViewportWidth(g.MapWidth, rc.w)
+	vh = rc.h - 2
+	if vh > g.MapHeight {
+		vh = g.MapHeight
+	}
+	if vh < 0 {
+		vh = 0
+	}
+	return vw, vh
+}
+
 // renderBoard renders the live game board into exactly rc.h rows of exactly
 // rc.w columns each (invariant #5: every pane renders exactly its allotted
 // rows). At rc.w >= boardMaxW (84) the full 80-column map fits and panX is
@@ -258,14 +277,7 @@ func renderBoard(g *eng.Game, rc rect, panX int, showRange bool) []string {
 
 	grid, towerAt, enemyAt, particleAt := buildLiveGrid(g, showRange)
 
-	vw := boardViewportWidth(g.MapWidth, rc.w)
-	vh := rc.h - 2
-	if vh > g.MapHeight {
-		vh = g.MapHeight
-	}
-	if vh < 0 {
-		vh = 0
-	}
+	vw, vh := boardInteriorSize(g, rc)
 	panX = clampPan(panX, g.MapWidth, vw)
 
 	rows := make([]string, vh)
@@ -278,6 +290,77 @@ func renderBoard(g *eng.Game, rc rect, panX int, showRange bool) []string {
 	if vw < g.MapWidth && len(out) > 0 {
 		out[0] = panIndicator(out[0], panX, vw, g.MapWidth, rc.w)
 	}
+
+	final := make([]string, rc.h)
+	for i := 0; i < rc.h; i++ {
+		if i < len(out) {
+			final[i] = padCells(out[i], rc.w)
+		} else {
+			final[i] = padCells("", rc.w)
+		}
+	}
+	return final
+}
+
+// renderBoardWithCard renders the frozen game-over board exactly like
+// renderBoard, but splices a centered card (already-rendered lines, e.g. from
+// buildGameOverCard) into the middle of the interior grid rows. card may be
+// nil (no room for one -- see buildGameOverCard), in which case this is
+// identical to renderBoard.
+//
+// The card is spliced in by regenerating each affected row's surviving
+// left/right segments FRESH from the raw grid via styleLiveGridRow, at the
+// exact column ranges outside the card, rather than by cutting into
+// renderBoard's already-ANSI-rendered output. Cutting pre-rendered text at an
+// arbitrary column risks slicing inside an escape sequence (the same class of
+// bug the layout engine's own doc comments warn about for wordwrap); building
+// each segment independently from the source grid sidesteps that risk
+// entirely, and as a bonus keeps the board genuinely visible on both flanks
+// of the card on every affected row, not just in the untouched rows above and
+// below it.
+func renderBoardWithCard(g *eng.Game, rc rect, panX int, showRange bool, card []string) []string {
+	if len(card) == 0 {
+		return renderBoard(g, rc, panX, showRange)
+	}
+	if rc.h <= 0 || rc.w <= 0 {
+		return blankRows(rc.h, rc.w)
+	}
+
+	grid, towerAt, enemyAt, particleAt := buildLiveGrid(g, showRange)
+
+	vw, vh := boardInteriorSize(g, rc)
+	panX = clampPan(panX, g.MapWidth, vw)
+
+	cardW := 0
+	for _, l := range card {
+		if w := lipgloss.Width(l); w > cardW {
+			cardW = w
+		}
+	}
+	cardH := len(card)
+
+	fits := cardH > 0 && cardH <= vh && cardW > 0 && cardW <= vw
+	top, left := 0, 0
+	if fits {
+		top = (vh - cardH) / 2
+		left = (vw - cardW) / 2
+	}
+
+	rows := make([]string, vh)
+	for y := 0; y < vh; y++ {
+		if fits && y >= top && y < top+cardH {
+			leftSeg := styleLiveGridRow(grid, y, panX, left, towerAt, enemyAt, particleAt)
+			rightStart := panX + left + cardW
+			rightCols := vw - left - cardW
+			rightSeg := styleLiveGridRow(grid, y, rightStart, rightCols, towerAt, enemyAt, particleAt)
+			rows[y] = leftSeg + padCells(card[y-top], cardW) + rightSeg
+		} else {
+			rows[y] = styleLiveGridRow(grid, y, panX, vw, towerAt, enemyAt, particleAt)
+		}
+	}
+
+	bordered := uiBorder.Render(strings.Join(rows, "\n"))
+	out := strings.Split(bordered, "\n")
 
 	final := make([]string, rc.h)
 	for i := 0; i < rc.h; i++ {

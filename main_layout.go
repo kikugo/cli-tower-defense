@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -54,6 +55,53 @@ func fitLines(lines []string, width, budget int) []string {
 		rows = append(rows, "")
 	}
 	return rows
+}
+
+// wrapAllLines wraps every input line to width via the exact same lipgloss
+// primitive fitLines is defined in terms of, but WITHOUT capping or padding
+// to a budget -- the complete wrapped row list, however long. fitLines is
+// equivalent to wrapAllLines followed by a cap/pad to budget; it is kept as
+// its own loop (rather than calling this) so it can still break out early
+// once budget is reached, which matters for large inputs (e.g. a 250-entry
+// raw log tail) where only the first few rows are ever wanted. This function
+// exists for fitLinesWithMoreIndicator below, which needs the TRUE row count
+// (to report how many rows a "+N more lines" indicator hides) and so cannot
+// stop early.
+func wrapAllLines(lines []string, width int) []string {
+	style := lipgloss.NewStyle().Width(width)
+	rows := make([]string, 0, len(lines))
+	for _, line := range lines {
+		wrapped := style.Render(line)
+		rows = append(rows, strings.Split(wrapped, "\n")...)
+	}
+	return rows
+}
+
+// fitLinesWithMoreIndicator behaves exactly like fitLines (always returns
+// EXACTLY budget rows, via the same wrapping primitive) except when lines
+// would otherwise be silently cut to fit budget: the last returned row is
+// replaced with a "+N more lines" indicator reporting how many wrapped rows
+// were hidden, so a viewer can tell content was cut rather than assuming the
+// pane's content ends where the pane does. This is the fix for the replay
+// Event Details JSON pane (main.go's replayView), which can be arbitrarily
+// long -- the map_init event's full paths array alone renders ~396 rows
+// before any budget is applied (main_view_test.go's replay_event_zero case).
+func fitLinesWithMoreIndicator(lines []string, width, budget int) []string {
+	if budget < 0 {
+		budget = 0
+	}
+	all := wrapAllLines(lines, width)
+	if len(all) <= budget {
+		return fitLines(lines, width, budget)
+	}
+	if budget == 0 {
+		return nil
+	}
+	kept := append([]string{}, all[:budget-1]...)
+	hidden := len(all) - len(kept)
+	indicator := fmt.Sprintf("… +%d more lines", hidden)
+	kept = append(kept, lipgloss.NewStyle().Width(width).Render(truncateCells(indicator, width)))
+	return kept
 }
 
 // ellipsis is appended by shortName when truncation is needed. It is a

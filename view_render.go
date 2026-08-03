@@ -14,6 +14,8 @@ import (
 	"time"
 
 	eng "tower-defense/engine"
+
+	"github.com/charmbracelet/lipgloss"
 )
 
 // modelNameCells is the fixed budget every model name is abbreviated to in
@@ -226,4 +228,113 @@ func tooSmallNotice(w, h int) string {
 	}
 	rows := fitLines(lines, w, budget)
 	return strings.Join(rows, "\n")
+}
+
+// --- Game-over result card -------------------------------------------------
+//
+// main.go's old GameOver branch returned a bare two-line string, discarding
+// the board, score, wave, and cost at the exact moment a viewer most wants
+// them. gameOverView (main.go) replaces it with the frozen final board plus
+// this card spliced into the middle of it (board_viewport.go's
+// renderBoardWithCard) -- the board stays visible, the card just sits on top
+// of it, the same way a modal would.
+
+// gameOverCardNameCells is the shortName budget for the winner's model name
+// in the result card, so (per the task brief) the card's width never depends
+// on which two models happened to play -- the same guarantee modelNameCells
+// gives the stats table.
+const gameOverCardNameCells = 22
+
+// gameOverCardInnerWidth is the card's target CONTENT width (inside its
+// border+padding). It is clamped down to fit the board's actual interior
+// viewport (see buildGameOverCard's maxW parameter) -- the constant is a
+// starting point, not a hard requirement, so the card degrades gracefully
+// rather than overflowing on a narrower board than currently exists in the
+// layout's own size range.
+const gameOverCardInnerWidth = 40
+
+// gameOverCardBorder is a rounded box distinct from uiBorder's NormalBorder,
+// so the card reads visually as an overlay/modal rather than another board
+// pane.
+var gameOverCardBorder = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(0, 1)
+
+// buildGameOverCard renders the MATCH OVER result card as a fully bordered
+// lipgloss box (returned as its already-rendered []string lines, ready to
+// hand to renderBoardWithCard), sized to fit within an interior viewport of
+// maxW x maxH columns/rows -- the same vw/vh boardInteriorSize computes for
+// the board pane it will be spliced into.
+//
+// Winner, end reason, wave reached, and both players' scores are never
+// dropped: TestGameOverContentPresence (main_view_test.go) asserts they are
+// always present in the rendered output, at every terminal size the game can
+// legally reach. Cost and the keybar reminder are dropped first, in that
+// order, if the box would otherwise overflow maxH. If even the minimal card
+// (title plus the four essential lines) doesn't fit, this returns nil and
+// the caller falls back to the plain frozen board with no overlay --
+// graceful degradation rather than overflow.
+func buildGameOverCard(g *eng.Game, maxW, maxH int) []string {
+	if maxW < 8 || maxH < 3 {
+		return nil
+	}
+	result := g.BuildMatchResult()
+
+	winnerSide, winnerName := "--", "No one"
+	switch result.Winner {
+	case result.Defender:
+		winnerSide, winnerName = "DEF", shortName(result.WinnerModel, gameOverCardNameCells)
+	case result.Attacker:
+		winnerSide, winnerName = "ATT", shortName(result.WinnerModel, gameOverCardNameCells)
+	}
+
+	essential := []string{
+		fmt.Sprintf("Winner: %s (%s)", winnerName, winnerSide),
+		fmt.Sprintf("reason: %s", result.WinReason),
+		fmt.Sprintf("wave %d/%d · %d ticks", result.Waves, result.MaxWaves, result.Ticks),
+		fmt.Sprintf("score  %d / %d", result.Score[result.Defender], result.Score[result.Attacker]),
+	}
+	optional := []string{
+		fmt.Sprintf("cost   %s / %s", fmtCostMicros(result.CostMicros[result.Defender]), fmtCostMicros(result.CostMicros[result.Attacker])),
+		"q quit · r range · L logs",
+	}
+
+	innerW := gameOverCardInnerWidth
+	if innerW > maxW-4 {
+		innerW = maxW - 4
+	}
+	if innerW < 4 {
+		return nil
+	}
+	title := lipgloss.NewStyle().Bold(true).Width(innerW).Align(lipgloss.Center).Render("MATCH OVER")
+
+	for n := len(optional); n >= 0; n-- {
+		lines := append([]string{title}, essential...)
+		lines = append(lines, optional[:n]...)
+		content := fitLines(lines, innerW, len(lines))
+		box := gameOverCardBorder.Width(innerW).Render(strings.Join(content, "\n"))
+		if lipgloss.Height(box) <= maxH && lipgloss.Width(box) <= maxW {
+			return strings.Split(box, "\n")
+		}
+	}
+	return nil
+}
+
+// renderGameOverStatusText builds the game-over status row: the live status
+// bar's wave/tick/turn/speed summary no longer applies once the sim has
+// stopped, so this replaces it with a plain "match is over" marker plus the
+// same wave/tick figures for continuity with the live view above it.
+func renderGameOverStatusText(g *eng.Game) string {
+	return fmt.Sprintf("MATCH OVER · wave %d/%d · tick %d", g.Wave, g.MaxWaves, g.TickCount)
+}
+
+// renderGameOverKeyText builds the game-over key bar. Only the keys that
+// still do something once the match has ended are listed: r (range overlay)
+// and L (raw log pane) still act on the frozen board/side panel exactly as
+// they did live; space/+/-/a no longer have any effect (the sim has
+// stopped), so they're dropped rather than left in as dead hints.
+func renderGameOverKeyText(showLogs bool) string {
+	logStatus := "off"
+	if showLogs {
+		logStatus = "on"
+	}
+	return fmt.Sprintf("r range · L logs:%s · q quit", logStatus)
 }

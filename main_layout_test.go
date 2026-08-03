@@ -225,6 +225,93 @@ func TestFitLinesNeverSplitsAnAnsiEscapeSequence(t *testing.T) {
 	}
 }
 
+// --- fitLinesWithMoreIndicator ---------------------------------------------
+
+// TestFitLinesWithMoreIndicatorAlwaysReturnsBudgetRows checks the same
+// exact-budget contract fitLines has, across cases that do and don't need
+// truncation.
+func TestFitLinesWithMoreIndicatorAlwaysReturnsBudgetRows(t *testing.T) {
+	manyLines := make([]string, 50)
+	for i := range manyLines {
+		manyLines[i] = fmt.Sprintf("line %d", i)
+	}
+
+	cases := []struct {
+		name   string
+		lines  []string
+		width  int
+		budget int
+	}{
+		{"under_budget", []string{"a", "b"}, sidebarWidth, 5},
+		{"exact_budget", []string{"a", "b", "c"}, sidebarWidth, 3},
+		{"over_budget", manyLines, sidebarWidth, 5},
+		{"over_budget_budget_1", manyLines, sidebarWidth, 1},
+		{"zero_budget", manyLines, sidebarWidth, 0},
+		{"negative_budget", manyLines, sidebarWidth, -3},
+		{"empty_lines", nil, sidebarWidth, 4},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := fitLinesWithMoreIndicator(c.lines, c.width, c.budget)
+			want := c.budget
+			if want < 0 {
+				want = 0
+			}
+			if len(got) != want {
+				t.Fatalf("len = %d, want %d", len(got), want)
+			}
+		})
+	}
+}
+
+// TestFitLinesWithMoreIndicatorReportsHiddenCount checks the indicator's
+// actual content: when lines overflow budget, the LAST row must be a "+N
+// more lines" marker where N is exactly the number of wrapped rows that
+// didn't make it into the budget (not the number of INPUT lines, which can
+// differ once wrapping is involved).
+func TestFitLinesWithMoreIndicatorReportsHiddenCount(t *testing.T) {
+	lines := make([]string, 20)
+	for i := range lines {
+		lines[i] = fmt.Sprintf("entry %02d", i)
+	}
+	width, budget := 40, 5
+
+	all := wrapAllLines(lines, width)
+	wantHidden := len(all) - (budget - 1)
+
+	got := fitLinesWithMoreIndicator(lines, width, budget)
+	if len(got) != budget {
+		t.Fatalf("len = %d, want %d", len(got), budget)
+	}
+	last := strings.TrimRight(got[budget-1], " ")
+	wantSuffix := fmt.Sprintf("+%d more lines", wantHidden)
+	if !strings.HasSuffix(last, wantSuffix) {
+		t.Fatalf("last row = %q, want it to end with %q", last, wantSuffix)
+	}
+	// The rows before the indicator must be the untouched leading content.
+	for i := 0; i < budget-1; i++ {
+		if got[i] != all[i] {
+			t.Fatalf("row %d = %q, want %q", i, got[i], all[i])
+		}
+	}
+}
+
+// TestFitLinesWithMoreIndicatorNoIndicatorWhenContentFits checks the
+// no-truncation path returns the untouched content (via fitLines), with no
+// "+N more" marker anywhere.
+func TestFitLinesWithMoreIndicatorNoIndicatorWhenContentFits(t *testing.T) {
+	lines := []string{"short one", "short two"}
+	got := fitLinesWithMoreIndicator(lines, sidebarWidth, 5)
+	for i, row := range got {
+		if strings.Contains(row, "more lines") {
+			t.Fatalf("row %d = %q, unexpected indicator when content fits within budget", i, row)
+		}
+	}
+	if strings.TrimRight(got[0], " ") != "short one" || strings.TrimRight(got[1], " ") != "short two" {
+		t.Fatalf("got = %q, want untouched content", got)
+	}
+}
+
 // --- shortName ------------------------------------------------------------
 
 // realModelNames are the model identifiers this project actually configures

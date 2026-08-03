@@ -328,11 +328,7 @@ func (m model) View() string {
 	}
 
 	if m.game.GameOver {
-		winnerName := m.game.ModelNames[m.game.Winner]
-		if m.game.Winner == "none" {
-			winnerName = "No one"
-		}
-		return fmt.Sprintf("Game Over! Winner: %s\nPress q to quit.", winnerName)
+		return m.gameOverView(lyt)
 	}
 
 	statusRow := padCells(renderStatusText(m.game, m.tickDur, m.paused), lyt.w)
@@ -342,24 +338,62 @@ func (m model) View() string {
 	panX := autoFollowPanX(m.game, viewportW)
 	boardRows := renderBoard(m.game, lyt.board, panX, m.showRange)
 	statsRows := renderStats(m.game, lyt.stats)
+	sideRows := m.buildSideRows(lyt)
 
-	var sideRows []string
-	if m.showLogs {
-		sideRows = fitLines(selectLogWindow(m.game.Logs, lyt.moves.h, m.logScroll), lyt.moves.w, lyt.moves.h)
-	} else {
-		sideRows = renderMoveFeed(buildMoveFeed(m.game.ReplayEvents), lyt.moves.w, lyt.moves.h)
-	}
-
-	var body []string
-	if lyt.mode == layoutWide {
-		left := vstack(boardRows, statsRows)
-		body = hjoin(left, lyt.board.w, sideRows, lyt.moves.w)
-	} else {
-		body = vstack(boardRows, statsRows, sideRows)
-	}
-
+	body := composeBody(lyt, boardRows, statsRows, sideRows)
 	all := vstack([]string{statusRow}, body, []string{keybarRow})
 	return strings.Join(all, "\n")
+}
+
+// gameOverView renders the match-over screen: the frozen final board (the
+// same state the live view would already be showing, since Update() stops
+// calling UpdateGameState once GameOver is true -- nothing here recomputes
+// anything) with a centered MATCH OVER result card spliced into it, plus the
+// same stats pane and move feed/log pane the live view renders. This
+// replaces the old bare "Game Over! Winner: %s\nPress q to quit." string,
+// which discarded the board, score, wave, and cost at the exact moment they
+// matter most (see main_view_test.go's TestGameOverContentPresence for the
+// regression test that catches a return to that behavior -- the fit
+// invariant alone cannot, since a two-line string fits every terminal).
+func (m model) gameOverView(lyt layout) string {
+	statusRow := padCells(renderGameOverStatusText(m.game), lyt.w)
+	keybarRow := padCells(renderGameOverKeyText(m.showLogs), lyt.w)
+
+	viewportW := boardViewportWidth(m.game.MapWidth, lyt.board.w)
+	panX := autoFollowPanX(m.game, viewportW)
+	cardMaxW, cardMaxH := boardInteriorSize(m.game, lyt.board)
+	card := buildGameOverCard(m.game, cardMaxW, cardMaxH)
+	boardRows := renderBoardWithCard(m.game, lyt.board, panX, m.showRange, card)
+	statsRows := renderStats(m.game, lyt.stats)
+	sideRows := m.buildSideRows(lyt)
+
+	body := composeBody(lyt, boardRows, statsRows, sideRows)
+	all := vstack([]string{statusRow}, body, []string{keybarRow})
+	return strings.Join(all, "\n")
+}
+
+// buildSideRows selects the live view's right-hand/lower pane content: the
+// move feed by default, or the raw log window when 'L' has toggled it on.
+// Shared by View() and gameOverView() so the two paths can't drift in how
+// they build this pane -- only the board and status/key text differ between
+// them.
+func (m model) buildSideRows(lyt layout) []string {
+	if m.showLogs {
+		return fitLines(selectLogWindow(m.game.Logs, lyt.moves.h, m.logScroll), lyt.moves.w, lyt.moves.h)
+	}
+	return renderMoveFeed(buildMoveFeed(m.game.ReplayEvents), lyt.moves.w, lyt.moves.h)
+}
+
+// composeBody assembles the board/stats/move-feed panes into the final body
+// rows for a given layout: wide mode joins the board+stats left column
+// beside the full-height move feed; compact/stacked modes stack all three
+// vertically. Shared by the live view and the game-over view.
+func composeBody(lyt layout, boardRows, statsRows, sideRows []string) []string {
+	if lyt.mode == layoutWide {
+		left := vstack(boardRows, statsRows)
+		return hjoin(left, lyt.board.w, sideRows, lyt.moves.w)
+	}
+	return vstack(boardRows, statsRows, sideRows)
 }
 
 // waveProgressBar renders wave progress as a compact bar for the sidebar.
@@ -490,7 +524,7 @@ func (m model) replayView() string {
 	detailLines = append(detailLines, snap.SummaryLines()...)
 	detailLines = append(detailLines, "", "Event details:")
 	detailLines = append(detailLines, strings.Split(details, "\n")...)
-	detailRows := fitLines(detailLines, detailWidth, detailBudget)
+	detailRows := fitLinesWithMoreIndicator(detailLines, detailWidth, detailBudget)
 
 	var body []string
 	if lyt.mode == layoutWide {
