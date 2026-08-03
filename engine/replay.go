@@ -68,6 +68,12 @@ type MatchResult struct {
 	CostMicros         map[string]int64   `json:"cost_micros"`
 	DurationMillis     int64              `json:"duration_millis"`
 	ReplayEvents       int                `json:"replay_events"`
+	// Strata records what the match actually turned out to be -- realised
+	// lane count, map type, and balance version -- as opposed to what a
+	// ruleset requested. A ruleset with map_type: "" tells you nothing about
+	// how many lanes were generated; Strata["lanes"] does. Sweep tooling
+	// should report per-stratum using these values, never blend across them.
+	Strata map[string]string `json:"strata,omitempty"`
 }
 
 func (g *Game) recordReplayEvent(event ReplayEvent) {

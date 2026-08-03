@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"strconv"
 	"strings"
 	"time"
 )
@@ -73,6 +74,7 @@ func (g *Game) BuildMatchResult() MatchResult {
 		CostMicros:        copyInt64Map(g.ProviderCostMicros),
 		DurationMillis:    duration.Milliseconds(),
 		ReplayEvents:      len(g.ReplayEvents),
+		Strata:            g.matchStrata(),
 	}
 	result.ModelAuthoredShare = map[string]float64{}
 	for _, p := range []string{g.Player1, g.Player2} {
@@ -81,6 +83,24 @@ func (g *Game) BuildMatchResult() MatchResult {
 		}
 	}
 	return result
+}
+
+// matchStrata records what the match actually turned out to be -- realised
+// lane count, map type, and balance version -- as read off live game state,
+// not off the ruleset that requested it. A ruleset's map_type can be "" (the
+// seeded-random generator, which rolls 1 or 2 lanes at runtime) so the only
+// way to know how many lanes a given match got is to count g.Paths after
+// generation. The returned map is a fresh copy; it shares nothing with g.
+func (g *Game) matchStrata() map[string]string {
+	mapType := g.MapType
+	if mapType == "" {
+		mapType = "random"
+	}
+	return map[string]string{
+		"lanes":    strconv.Itoa(len(g.Paths)),
+		"map_type": mapType,
+		"balance":  g.Balance.Version,
+	}
 }
 
 // ModelAuthored reports the share of playerID's recorded decisions that came
