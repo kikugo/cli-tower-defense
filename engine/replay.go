@@ -50,13 +50,24 @@ type MatchResult struct {
 	ScoreBreakdown  map[string]ScoreBreakdown `json:"score_breakdown"`
 	ActionCounters  map[string]int            `json:"action_counters"`
 	RejectedActions map[string]int            `json:"rejected_actions"`
-	ProviderErrors  map[string]int            `json:"provider_errors"`
-	ProviderCalls   map[string]int            `json:"provider_calls"`
-	ProviderLatency map[string]float64        `json:"provider_latency_ms_avg"`
-	TokenUsage      map[string]int            `json:"token_usage"`
-	CostMicros      map[string]int64          `json:"cost_micros"`
-	DurationMillis  int64                     `json:"duration_millis"`
-	ReplayEvents    int                       `json:"replay_events"`
+	// DecisionSources, ModelAuthoredShare and ProvenanceVersion record who
+	// actually made each decision -- a model, or one of the engine's own
+	// substitutions (parser fallback, provider failure, normalizer default).
+	// ProvenanceVersion is 0 (its Go zero value) on every MatchResult built
+	// before this field existed, including every pre-existing replay and
+	// manifest on disk. That is deliberate: see ModelAuthored, whose (float64,
+	// bool) return distinguishes "0% authored" from "not measured" specifically
+	// so an old, provenance-less result is never silently read as authored.
+	DecisionSources    map[string]int     `json:"decision_sources,omitempty"`
+	ModelAuthoredShare map[string]float64 `json:"model_authored_share,omitempty"`
+	ProvenanceVersion  int                `json:"provenance_version,omitempty"`
+	ProviderErrors     map[string]int     `json:"provider_errors"`
+	ProviderCalls      map[string]int     `json:"provider_calls"`
+	ProviderLatency    map[string]float64 `json:"provider_latency_ms_avg"`
+	TokenUsage         map[string]int     `json:"token_usage"`
+	CostMicros         map[string]int64   `json:"cost_micros"`
+	DurationMillis     int64              `json:"duration_millis"`
+	ReplayEvents       int                `json:"replay_events"`
 }
 
 func (g *Game) recordReplayEvent(event ReplayEvent) {

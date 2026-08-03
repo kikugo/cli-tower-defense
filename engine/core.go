@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -196,45 +195,6 @@ type OpenAIHandler struct {
 	APIKey string
 }
 
-func (h *OpenAIHandler) GetTowerDecision(gameState map[string]interface{}) (map[string]interface{}, error) {
-	prompt := h.createTowerPrompt(gameState)
-	reqBody := map[string]interface{}{
-		"model": "o3",
-		"messages": []map[string]interface{}{
-			{"role": "user", "content": prompt},
-		},
-		"temperature": 0.7,
-		"max_tokens":  300,
-	}
-	reqJSON, err := json.Marshal(reqBody)
-	if err != nil {
-		return nil, err
-	}
-	req, err := http.NewRequest("POST", "https://api.openai.com/v1/chat/completions", bytes.NewBuffer(reqJSON))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Authorization", "Bearer "+h.APIKey)
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := h.Client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("openai returned status %d", resp.StatusCode)
-	}
-	var result map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, err
-	}
-	content, ok := extractOpenAIChatContent(result)
-	if !ok {
-		return map[string]interface{}{"action": "none", "reason": "API response error"}, nil
-	}
-	return h.parseTowerResponse(content)
-}
-
 // formatAffordableActions renders the affordable_actions list for prompts.
 // When tower placement is affordable, the first legal cells are shown inline
 // so models pick a valid position instead of guessing.
@@ -359,9 +319,11 @@ func (h *OpenAIHandler) parseTowerResponse(response string) (map[string]interfac
 					towerType, hasTowerType := decision["tower_type"].(string)
 					if !hasTowerType || towerType == "" {
 						decision["tower_type"] = "basic"
+						markDecisionSource(decision, SourceParserUnparseable)
 					}
 					if _, hasPos := decision["position"].([]interface{}); !hasPos {
 						decision["position"] = []interface{}{float64(10), float64(10)}
+						markDecisionSource(decision, SourceParserUnparseable)
 					}
 					return decision, nil
 				}
@@ -369,55 +331,19 @@ func (h *OpenAIHandler) parseTowerResponse(response string) (map[string]interfac
 			}
 		}
 	}
-	return map[string]interface{}{
+	fallback := map[string]interface{}{
 		"action":     "place",
 		"tower_type": "basic",
 		"position":   []interface{}{float64(10), float64(10)},
 		"reason":     "Default fallback",
-	}, nil
+	}
+	markDecisionSource(fallback, SourceParserUnparseable)
+	return fallback, nil
 }
 
 type GeminiHandler struct {
 	*AIHandler
 	APIKey string
-}
-
-func (h *GeminiHandler) GetEnemyDecision(gameState map[string]interface{}) (map[string]interface{}, error) {
-	prompt := h.createEnemyPrompt(gameState)
-	reqBody := map[string]interface{}{
-		"contents":         []map[string]interface{}{{"parts": []map[string]interface{}{{"text": prompt}}}},
-		// 150 starves reasoning models: they spend the budget on hidden reasoning and
-		// return empty content, which silently drops the turn to a fallback. The
-		// defender path already allowed 300, so this was also a role asymmetry.
-		"generationConfig": map[string]interface{}{"temperature": 0.7, "maxOutputTokens": 400},
-	}
-	reqJSON, err := json.Marshal(reqBody)
-	if err != nil {
-		return getFallbackEnemyDecision(100), nil
-	}
-	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=%s", h.APIKey)
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(reqJSON))
-	if err != nil {
-		return getFallbackEnemyDecision(100), nil
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := h.Client.Do(req)
-	if err != nil {
-		return getFallbackEnemyDecision(100), nil
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return getFallbackEnemyDecision(100), nil
-	}
-	var result map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return getFallbackEnemyDecision(100), nil
-	}
-	text, ok := extractGeminiContentText(result)
-	if !ok {
-		return getFallbackEnemyDecision(100), nil
-	}
-	return h.parseEnemyResponse(text)
 }
 
 func (h *GeminiHandler) createEnemyPrompt(gameState map[string]interface{}) string {
@@ -464,7 +390,9 @@ func (h *GeminiHandler) createEnemyPrompt(gameState map[string]interface{}) stri
 
 func (h *GeminiHandler) parseEnemyResponse(response string) (map[string]interface{}, error) {
 	if response == "" {
-		return map[string]interface{}{"action": "spawn", "enemy_type": "basic", "reason": "Empty response"}, nil
+		decision := map[string]interface{}{"action": "spawn", "enemy_type": "basic", "reason": "Empty response"}
+		markDecisionSource(decision, SourceParserEmpty)
+		return decision, nil
 	}
 	re := regexp.MustCompile(`\{.*\}`)
 	match := re.FindString(response)
@@ -477,6 +405,7 @@ func (h *GeminiHandler) parseEnemyResponse(response string) (map[string]interfac
 					enemyType, hasEnemyType := decision["enemy_type"].(string)
 					if !hasEnemyType || enemyType == "" {
 						decision["enemy_type"] = "basic"
+						markDecisionSource(decision, SourceParserUnparseable)
 					}
 					return decision, nil
 				}
@@ -484,20 +413,9 @@ func (h *GeminiHandler) parseEnemyResponse(response string) (map[string]interfac
 			}
 		}
 	}
-	return map[string]interface{}{"action": "spawn", "enemy_type": "basic", "reason": "Default fallback"}, nil
-}
-
-func getFallbackEnemyDecision(resources int) map[string]interface{} {
-	if resources >= 200 {
-		return map[string]interface{}{"action": "wave", "reason": "Fallback: High resources"}
-	} else if resources >= 50 {
-		return map[string]interface{}{"action": "spawn", "enemy_type": "tank", "reason": "Fallback: Tank"}
-	} else if resources >= 30 {
-		return map[string]interface{}{"action": "spawn", "enemy_type": "fast", "reason": "Fallback: Fast"}
-	} else if resources >= 20 {
-		return map[string]interface{}{"action": "spawn", "enemy_type": "basic", "reason": "Fallback: Basic"}
-	}
-	return map[string]interface{}{"action": "save", "reason": "Fallback: Saving"}
+	fallback := map[string]interface{}{"action": "spawn", "enemy_type": "basic", "reason": "Default fallback"}
+	markDecisionSource(fallback, SourceParserUnparseable)
+	return fallback, nil
 }
 
 type SlowZone struct {
@@ -566,6 +484,7 @@ type Game struct {
 	MaxReplayEvents     int
 	ActionCounters      map[string]int
 	RejectedActions     map[string]int
+	DecisionSources     map[string]int
 	ProviderErrors      map[string]int
 	ProviderCalls       map[string]int
 	ProviderLatencyMS   map[string]int64
@@ -655,7 +574,7 @@ func NewGameFromResolvedConfig(resolved ResolvedMatchConfig) *Game {
 		GameSpeed:      0.1, AIDecisionInterval: map[string]int{p1: 2, p2: 2},
 		LastAIDecision: map[string]time.Time{p1: time.Now(), p2: time.Now()},
 		CurrentTurn:    p1, LastActionTime: time.Now(), StartedAt: time.Now(), MaxResources: 800, MaxWaves: 30, TurnTimeout: 45 * time.Second,
-		PauseBetweenTurns: true, PauseDuration: 1 * time.Second, lastStatePrintTime: time.Now(), rng: rng, Logs: make([]string, 0), MaxLogs: 250, MaxWaveQueue: 200, ReplayEvents: make([]ReplayEvent, 0), MaxReplayEvents: 10000, ActionCounters: map[string]int{}, RejectedActions: map[string]int{}, ProviderErrors: map[string]int{}, ProviderCalls: map[string]int{}, ProviderLatencyMS: map[string]int64{}, ProviderTokenUsage: map[string]int{}, ProviderCostMicros: map[string]int64{}, TokenPricing: map[string]tokenPricing{p1: pricingFromConfig(resolved.Player1), p2: pricingFromConfig(resolved.Player2)}, LastActionStatus: map[string]string{p1: "none", p2: "none"}, LastRejectedReason: map[string]string{p1: "", p2: ""}, NoopStreak: map[string]int{p1: 0, p2: 0}, RejectionStreak: map[string]int{p1: 0, p2: 0}, LastRejectedAction: map[string]string{p1: "", p2: ""}, AutoWaveMinResource: 260, AutoDefendMinStreak: 2, FogOfWar: true, DefenderVisionRange: 8, BaseVisionRange: 6, ResearchLevels: map[string]int{"economy": 0, "range": 0, "control": 0}, AbilityCooldowns: map[string]int{"surge": 0, "shield_burst": 0, "reinforce_wave": 0},
+		PauseBetweenTurns: true, PauseDuration: 1 * time.Second, lastStatePrintTime: time.Now(), rng: rng, Logs: make([]string, 0), MaxLogs: 250, MaxWaveQueue: 200, ReplayEvents: make([]ReplayEvent, 0), MaxReplayEvents: 10000, ActionCounters: map[string]int{}, RejectedActions: map[string]int{}, DecisionSources: map[string]int{}, ProviderErrors: map[string]int{}, ProviderCalls: map[string]int{}, ProviderLatencyMS: map[string]int64{}, ProviderTokenUsage: map[string]int{}, ProviderCostMicros: map[string]int64{}, TokenPricing: map[string]tokenPricing{p1: pricingFromConfig(resolved.Player1), p2: pricingFromConfig(resolved.Player2)}, LastActionStatus: map[string]string{p1: "none", p2: "none"}, LastRejectedReason: map[string]string{p1: "", p2: ""}, NoopStreak: map[string]int{p1: 0, p2: 0}, RejectionStreak: map[string]int{p1: 0, p2: 0}, LastRejectedAction: map[string]string{p1: "", p2: ""}, AutoWaveMinResource: 260, AutoDefendMinStreak: 2, FogOfWar: true, DefenderVisionRange: 8, BaseVisionRange: 6, ResearchLevels: map[string]int{"economy": 0, "range": 0, "control": 0}, AbilityCooldowns: map[string]int{"surge": 0, "shield_burst": 0, "reinforce_wave": 0},
 		PathTileSet: make(map[string]struct{}), EnemyTileIndex: make(map[string][]*Enemy), ObstacleTileSet: make(map[string]struct{}), pendingTurnResults: make(chan turnResult, 8),
 	}
 	game.Paths = game.generatePaths()
@@ -922,7 +841,17 @@ func (g *Game) handlePlayerTurn(playerID, role string, gameState map[string]inte
 }
 
 func (g *Game) applyDecision(playerID, role string, decision map[string]interface{}) {
+	// Provenance must be read off the raw decision BEFORE normalizeDecision
+	// runs: normalizeDecision builds a brand new map, so a tag stamped by a
+	// parser or provider (SourceParserUnparseable, SourceProviderFailure, ...)
+	// would otherwise be lost. First writer wins: only adopt the normalizer's
+	// own tag when nothing upstream already substituted this decision, so a
+	// provider failure is never hidden behind a lesser "normalizer_default".
+	source := takeDecisionSource(decision)
 	decision = normalizeDecision(role, decision)
+	if s := takeDecisionSource(decision); source == SourceModel {
+		source = s
+	}
 	action, _ := decision["action"].(string)
 	originalAction := action
 	reason, _ := decision["reason"].(string)
@@ -937,13 +866,14 @@ func (g *Game) applyDecision(playerID, role string, decision map[string]interfac
 	}
 	modelName := g.ModelNames[playerID]
 	g.logf("%s (%s) decided to: %s", modelName, role, action)
+	g.DecisionSources[playerID+":"+string(source)]++
 	g.recordReplayEvent(ReplayEvent{
 		Type:     ReplayDecision,
 		PlayerID: playerID,
 		Role:     role,
 		Action:   action,
 		Reason:   reason,
-		Details:  map[string]interface{}{"decision": decision},
+		Details:  map[string]interface{}{"decision": decision, "source": string(source)},
 	})
 	applied := false
 	outcome := "rejected"
@@ -1075,6 +1005,16 @@ func (g *Game) applyDecision(playerID, role string, decision map[string]interfac
 			outcome = "applied_primary"
 		}
 	}
+	// baseOutcome is what actually happened in the game (applied/rejected and
+	// why); outcome is what gets recorded and shown to the model. A decision
+	// the engine substituted must never be indistinguishable from one the
+	// model made, so a non-model source is folded into the recorded outcome
+	// here -- after this point "applied_primary" can only mean the model's
+	// own decision was applied as-is.
+	baseOutcome := outcome
+	if source != SourceModel {
+		outcome = "substituted:" + string(source) + ":" + outcome
+	}
 	g.ActionCounters[actionCounterKey(playerID, action, entityType)]++
 	if applied {
 		g.RejectionStreak[playerID] = 0
@@ -1102,7 +1042,10 @@ func (g *Game) applyDecision(playerID, role string, decision map[string]interfac
 			"quality": classifyActionOutcome(outcome),
 		},
 	})
-	if applied && originalAction == "save" && outcome == "applied_primary" {
+	// NoopStreak only tracks a model genuinely choosing to save; a
+	// substituted "save" (e.g. a provider failure normalized to save) must
+	// not trip shouldAutoDefendAfterSave on the model's behalf.
+	if applied && source == SourceModel && originalAction == "save" && baseOutcome == "applied_primary" {
 		g.NoopStreak[playerID]++
 	} else if applied {
 		g.NoopStreak[playerID] = 0
@@ -1125,6 +1068,10 @@ func actionCounterKey(playerID, action, entityType string) string {
 
 func classifyActionOutcome(outcome string) string {
 	switch {
+	// Checked first: a substituted decision must never classify as
+	// "primary", no matter what it was substituted for downstream.
+	case strings.HasPrefix(outcome, "substituted:"):
+		return "substituted"
 	case strings.HasPrefix(outcome, "applied_primary"):
 		return "primary"
 	case strings.HasPrefix(outcome, "applied_fallback"):
@@ -1199,13 +1146,27 @@ func (g *Game) processPendingTurnResults() bool {
 				continue
 			}
 			if result.err != nil {
+				// A provider error means no decision was produced at all --
+				// the turn is skipped, not substituted, per AUDIT-FOLLOWUP.md
+				// Task 1. Still record provenance: this was a decision
+				// *attempt* that failed, and it must count in the denominator
+				// of ModelAuthored so a run of pure provider failures reads
+				// as "0% authored", not "not measured".
+				source := takeDecisionSource(result.decision)
+				if source == SourceModel {
+					// The provider didn't tag its own fallback (or there was
+					// no decision at all, e.g. a turn-worker panic) -- still
+					// an engine substitution, never the model's doing.
+					source = SourceProviderFailure
+				}
+				g.DecisionSources[result.playerID+":"+string(source)]++
 				g.ProviderErrors[result.playerID+":"+providerErrorLabel(result.err)]++
 				g.recordReplayEvent(ReplayEvent{
 					Type:     ReplayProviderErr,
 					PlayerID: result.playerID,
 					Role:     result.role,
 					Reason:   providerErrorLabel(result.err),
-					Details:  map[string]interface{}{"error": result.err.Error()},
+					Details:  map[string]interface{}{"error": result.err.Error(), "source": string(source)},
 				})
 				g.logf("%s API error: %v", g.ModelNames[result.playerID], result.err)
 				g.switchTurn()

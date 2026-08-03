@@ -1,6 +1,9 @@
 package engine
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 func (r MatchResult) Player1() string {
 	if _, ok := r.Models["p1"]; ok {
@@ -36,7 +39,7 @@ func (g *Game) BuildMatchResult() MatchResult {
 	p1Breakdown := BuildScoreBreakdown(baseForScoring, g.Player1)
 	p2Breakdown := BuildScoreBreakdown(baseForScoring, g.Player2)
 
-	return MatchResult{
+	result := MatchResult{
 		Winner:      g.Winner,
 		WinnerModel: g.ModelNames[g.Winner],
 		WinReason:   g.inferWinReason(),
@@ -58,14 +61,56 @@ func (g *Game) BuildMatchResult() MatchResult {
 		},
 		ActionCounters:  copyIntMap(g.ActionCounters),
 		RejectedActions: copyIntMap(g.RejectedActions),
-		ProviderErrors:  copyIntMap(g.ProviderErrors),
-		ProviderCalls:   copyIntMap(g.ProviderCalls),
-		ProviderLatency: averageLatencyByPlayer(g.ProviderLatencyMS, g.ProviderCalls),
-		TokenUsage:      copyIntMap(g.ProviderTokenUsage),
-		CostMicros:      copyInt64Map(g.ProviderCostMicros),
-		DurationMillis:  duration.Milliseconds(),
-		ReplayEvents:    len(g.ReplayEvents),
+		// ProvenanceVersion 1 marks every match built by this code as having
+		// decision-source tracking, however few or many substitutions it
+		// contains -- see ModelAuthored for why that matters.
+		DecisionSources:   copyIntMap(g.DecisionSources),
+		ProvenanceVersion: 1,
+		ProviderErrors:    copyIntMap(g.ProviderErrors),
+		ProviderCalls:     copyIntMap(g.ProviderCalls),
+		ProviderLatency:   averageLatencyByPlayer(g.ProviderLatencyMS, g.ProviderCalls),
+		TokenUsage:        copyIntMap(g.ProviderTokenUsage),
+		CostMicros:        copyInt64Map(g.ProviderCostMicros),
+		DurationMillis:    duration.Milliseconds(),
+		ReplayEvents:      len(g.ReplayEvents),
 	}
+	result.ModelAuthoredShare = map[string]float64{}
+	for _, p := range []string{g.Player1, g.Player2} {
+		if share, ok := result.ModelAuthored(p); ok {
+			result.ModelAuthoredShare[p] = share
+		}
+	}
+	return result
+}
+
+// ModelAuthored reports the share of playerID's recorded decisions that came
+// directly from a model response, as opposed to one the engine substituted
+// on the model's behalf (a parser fallback, a provider failure, or a
+// normalizer default). The bool return exists specifically to distinguish
+// "0% authored" from "not measured": a MatchResult built before decision
+// provenance was recorded -- ProvenanceVersion's Go zero value is 0, which is
+// what every pre-existing replay and manifest on disk has -- always returns
+// (0, false), never (0, true) and never (1, true). Absence of provenance is
+// never evidence of authorship.
+func (r MatchResult) ModelAuthored(playerID string) (float64, bool) {
+	if r.ProvenanceVersion == 0 {
+		return 0, false
+	}
+	prefix := playerID + ":"
+	total, modelCount := 0, 0
+	for key, count := range r.DecisionSources {
+		if key != playerID && !strings.HasPrefix(key, prefix) {
+			continue
+		}
+		total += count
+		if key == prefix+string(SourceModel) {
+			modelCount += count
+		}
+	}
+	if total == 0 {
+		return 0, false
+	}
+	return float64(modelCount) / float64(total), true
 }
 
 // DefenderHeld reports whether the defense succeeded: either an outright

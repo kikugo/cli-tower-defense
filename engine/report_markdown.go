@@ -25,16 +25,17 @@ func (r MatchResult) MarkdownReport() string {
 	fmt.Fprintf(&b, "- **Replay events:** %d\n\n", r.ReplayEvents)
 
 	fmt.Fprintf(&b, "## Players\n\n")
-	fmt.Fprintf(&b, "| Player | Role | Model | Lives | Score | Norm | Calls | Avg latency | Tokens | Est. cost | Rejected | Errors |\n")
-	fmt.Fprintf(&b, "|---|---|---|---|---|---|---|---|---|---|---|---|\n")
+	fmt.Fprintf(&b, "| Player | Role | Model | Lives | Score | Norm | Authored | Calls | Avg latency | Tokens | Est. cost | Rejected | Errors |\n")
+	fmt.Fprintf(&b, "|---|---|---|---|---|---|---|---|---|---|---|---|---|\n")
 	for _, p := range orderedPlayers(r) {
-		fmt.Fprintf(&b, "| %s | %s | %s | %d | %d | %.3f | %d | %s | %d | %s | %d | %d |\n",
+		fmt.Fprintf(&b, "| %s | %s | %s | %d | %d | %.3f | %s | %d | %s | %d | %s | %d | %d |\n",
 			p,
 			roleForPlayer(r, p),
 			r.Models[p],
 			r.Lives[p],
 			r.Score[p],
 			r.NormalizedScore[p],
+			formatModelAuthored(r, p),
 			r.ProviderCalls[p],
 			formatLatency(r.ProviderLatency[p]),
 			r.TokenUsage[p],
@@ -46,6 +47,17 @@ func (r MatchResult) MarkdownReport() string {
 	b.WriteString("\n")
 
 	return b.String()
+}
+
+// formatModelAuthored renders MatchResult.ModelAuthored for the report
+// table. "not measured" -- never "0%" -- is what a pre-provenance result (or
+// a player with no recorded decisions at all) renders as; see ModelAuthored.
+func formatModelAuthored(r MatchResult, playerID string) string {
+	share, ok := r.ModelAuthored(playerID)
+	if !ok {
+		return "not measured"
+	}
+	return fmt.Sprintf("%.0f%%", share*100)
 }
 
 // orderedPlayers returns player IDs in a stable order: defender then attacker,

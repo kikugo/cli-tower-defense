@@ -32,7 +32,14 @@ func (p *OpenAICompatibleProvider) GetTowerDecision(gameState map[string]interfa
 	prompt := (&OpenAIHandler{}).createTowerPrompt(gameState)
 	content, usage, err := p.getChatCompletion(prompt)
 	if err != nil {
-		return map[string]interface{}{"action": "none", "reason": "provider request failed"}, nil
+		// A network error must not become a gameplay action: no resource-
+		// derived fallback, just "save" tagged as an engine substitution, and
+		// -- unlike before -- the real error is returned. processPendingTurnResults
+		// takes the error branch on a non-nil error and skips the turn
+		// entirely rather than applying this decision.
+		decision := map[string]interface{}{"action": "save", "reason": "provider request failed"}
+		markDecisionSource(decision, SourceProviderFailure)
+		return decision, err
 	}
 	decision, decErr := (&OpenAIHandler{}).parseTowerResponse(content)
 	attachTokenUsage(decision, usage)
@@ -43,7 +50,13 @@ func (p *OpenAICompatibleProvider) GetEnemyDecision(gameState map[string]interfa
 	prompt := (&GeminiHandler{}).createEnemyPrompt(gameState)
 	content, usage, err := p.getChatCompletion(prompt)
 	if err != nil {
-		return getFallbackEnemyDecision(100), nil
+		// Was getFallbackEnemyDecision(100), which -- since 100 >= 50 --
+		// always produced "spawn tank" regardless of game state. A network
+		// error is not a tactical choice; "save" is the only action with no
+		// strategic content. See ARENA-AUDIT.md A1 / AUDIT-FOLLOWUP.md P1.5.
+		decision := map[string]interface{}{"action": "save", "reason": "provider request failed"}
+		markDecisionSource(decision, SourceProviderFailure)
+		return decision, err
 	}
 	decision, decErr := (&GeminiHandler{}).parseEnemyResponse(content)
 	attachTokenUsage(decision, usage)

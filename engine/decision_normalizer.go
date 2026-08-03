@@ -19,15 +19,24 @@ func normalizeDecision(role string, decision map[string]interface{}) map[string]
 
 	switch role {
 	case "defender":
-		normalized["action"] = normalizeDefenderAction(action)
+		defenderAction, actionDefaulted := normalizeDefenderAction(action)
+		normalized["action"] = defenderAction
+		if actionDefaulted {
+			markDecisionSource(normalized, SourceNormalizerDefault)
+		}
 		switch normalized["action"] {
 		case "place":
 			towerType, _ := decision["tower_type"].(string)
 			if !isValidTowerType(towerType) {
 				towerType = "basic"
+				markDecisionSource(normalized, SourceNormalizerDefault)
 			}
 			normalized["tower_type"] = towerType
-			normalized["position"] = normalizePosition(decision["position"], 2, 2)
+			pos, posDefaulted := normalizePosition(decision["position"], 2, 2)
+			normalized["position"] = pos
+			if posDefaulted {
+				markDecisionSource(normalized, SourceNormalizerDefault)
+			}
 		case "upgrade":
 			if id, ok := toIntFromAny(decision["tower_id"]); ok {
 				normalized["tower_id"] = id
@@ -35,27 +44,38 @@ func normalizeDecision(role string, decision map[string]interface{}) map[string]
 				normalized["tower_id"] = -1
 			}
 		case "place_slow_zone":
-			normalized["position"] = normalizePosition(decision["position"], -1, -1)
+			pos, posDefaulted := normalizePosition(decision["position"], -1, -1)
+			normalized["position"] = pos
+			if posDefaulted {
+				markDecisionSource(normalized, SourceNormalizerDefault)
+			}
 		case "research":
 			tech, _ := decision["tech"].(string)
 			if !isValidResearchTech(tech) {
 				tech = "economy"
+				markDecisionSource(normalized, SourceNormalizerDefault)
 			}
 			normalized["tech"] = tech
 		}
 	default:
-		normalized["action"] = normalizeAttackerAction(action)
+		attackerAction, actionDefaulted := normalizeAttackerAction(action)
+		normalized["action"] = attackerAction
+		if actionDefaulted {
+			markDecisionSource(normalized, SourceNormalizerDefault)
+		}
 		switch normalized["action"] {
 		case "spawn":
 			enemyType, _ := decision["enemy_type"].(string)
 			if !isValidEnemyType(enemyType) {
 				enemyType = "basic"
+				markDecisionSource(normalized, SourceNormalizerDefault)
 			}
 			normalized["enemy_type"] = enemyType
 		case "ability":
 			ability, _ := decision["ability"].(string)
 			if !isValidAttackerAbility(ability) {
 				ability = "surge"
+				markDecisionSource(normalized, SourceNormalizerDefault)
 			}
 			normalized["ability"] = ability
 		}
@@ -64,27 +84,50 @@ func normalizeDecision(role string, decision map[string]interface{}) map[string]
 	return normalized
 }
 
-func normalizeDefenderAction(action string) string {
+// normalizeDefenderAction returns the validated action and whether the
+// input had to be replaced with the "save" default. "save" itself is a
+// legitimate, explicit choice -- not the default -- so it must be listed
+// here too, or a model genuinely choosing to save would be wrongly tagged
+// as a substitution.
+func normalizeDefenderAction(action string) (string, bool) {
 	switch action {
-	case "place", "upgrade", "place_slow_zone", "research", "invest":
-		return action
+	case "place", "upgrade", "place_slow_zone", "research", "invest", "save":
+		return action, false
 	default:
-		return "save"
+		return "save", true
 	}
 }
 
-func normalizeAttackerAction(action string) string {
+// normalizeAttackerAction returns the validated action and whether the
+// input had to be replaced with the "save" default. Same reasoning as
+// normalizeDefenderAction: "save" is explicit, not a default.
+func normalizeAttackerAction(action string) (string, bool) {
 	switch action {
-	case "spawn", "wave", "ability", "invest":
-		return action
+	case "spawn", "wave", "ability", "invest", "save":
+		return action, false
 	default:
-		return "save"
+		return "save", true
 	}
 }
 
-func normalizePosition(raw interface{}, defaultY, defaultX int) []interface{} {
+// normalizePosition returns the resolved position and whether raw had to be
+// replaced with (defaultY, defaultX) because it was missing or malformed.
+func normalizePosition(raw interface{}, defaultY, defaultX int) ([]interface{}, bool) {
 	y, x := parseDecisionPosition(raw, defaultY, defaultX)
-	return []interface{}{float64(y), float64(x)}
+	return []interface{}{float64(y), float64(x)}, !positionProvided(raw)
+}
+
+// positionProvided reports whether raw is a usable two-element position,
+// without applying any default. Used only to detect (for provenance) when
+// normalizePosition had to substitute its own value.
+func positionProvided(raw interface{}) bool {
+	pos, ok := raw.([]interface{})
+	if !ok || len(pos) < 2 {
+		return false
+	}
+	_, okY := toIntFromAny(pos[0])
+	_, okX := toIntFromAny(pos[1])
+	return okY && okX
 }
 
 func isValidTowerType(t string) bool {
