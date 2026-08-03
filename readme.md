@@ -235,6 +235,22 @@ So it is not the health and not the cost. It is `damage /= (shield + 1)`, intege
 
 Shielded is a dominant attacker strategy, it has never been exercised by any balance measurement, and the prompt describes the mechanic to every attacker in plain language. Nothing has been retuned on the strength of this — it is a measurement, and the fix belongs with a rethink of how shields interact with the shot-count thresholds the whole balance sits on.
 
+### Tank is overpriced, not weak
+
+The same substitution applied to the remaining unmeasured units. It is faithful for `tank`, whose behaviour is entirely its stat line, and only partly faithful for `healer` — the heal is keyed on the unit's type name (`actions.go`), not on a stat, so restatting gives you a healer's body without its ability.
+
+| the attacker's staple unit is… | defender held |
+|---|---|
+| `basic` as shipped | 25/40 = 62% |
+| `tank`'s full profile — 300hp, 0.5 speed, cost 50 | 36/40 = **90%** |
+| `tank`'s health only — 300hp at basic's speed and 20 cost | **0/40 = 0%** |
+| `tank`'s speed only — 0.5 speed at basic's health and cost | 26/40 = 65% |
+| `healer`'s body only — 80hp, cost 30 (no heal) | 27/40 = 68% |
+
+Tank's health is devastating and its price more than cancels it. Three hundred health at 20 resources ends every match; the same unit at its real 50 makes the attacker *worse off than spawning basics*, because half speed doubles the time spent inside tower range, so 3× the health buys only about 1.5× the survivability for 2.5× the price. Speed on its own barely moves anything. Tank is not weak content, it is mispriced content — and nothing had ever measured it either way.
+
+The healer's actual ability remains untested. Testing it needs a unit of that type genuinely on the board, which the scripted attacker cannot currently produce.
+
 ### Whose decision was it?
 
 When a model's response cannot be parsed, or its provider call fails, the engine used to substitute a decision of its own — a tower at (10,10), a `basic` spawn, a `save` — and record it as though the model had chosen it. Seven of nine substitution points serialized identically to a genuine decision.
