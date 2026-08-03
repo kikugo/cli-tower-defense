@@ -84,6 +84,17 @@ func TestLayoutForSize(t *testing.T) {
 	}
 }
 
+// NOTE: this test verifies visibleLogCount's arithmetic in isolation, but
+// that arithmetic is the wrong unit. visibleLogCount returns a count of Logs
+// SLICE ENTRIES, while every caller spends the result as a budget of screen
+// ROWS -- and one entry does not cost one row (plain lines wrap, and the
+// "=== Game State ===" block from engine/core.go:840 is a single entry that
+// costs ~12 rows on its own). This test staying green is not evidence the
+// sidebar fits the terminal; see TestViewNeverExceedsTerminal in
+// main_view_test.go, which renders real frames and measures actual rows
+// against actual terminal height, and fails. Do not "fix" TestViewNever
+// ExceedsTerminal by making visibleLogCount return something that makes this
+// test happy instead -- a later phase deletes visibleLogCount entirely.
 func TestVisibleLogCount(t *testing.T) {
 	if got := visibleLogCount(0); got != 10 {
 		t.Fatalf("unknown height should default to 10, got %d", got)
