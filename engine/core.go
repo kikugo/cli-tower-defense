@@ -551,6 +551,7 @@ type Game struct {
 	TurnTimeout         time.Duration
 	PauseBetweenTurns   bool
 	PauseDuration       time.Duration
+	pauseDeadline       time.Time
 	lastStatePrintTime  time.Time
 	lastEnemyCount      int
 	lastTowerCount      int
@@ -836,6 +837,14 @@ func (g *Game) HandleAIDecisions() {
 		return
 	}
 	currentTime := time.Now()
+	if currentTime.Before(g.pauseDeadline) {
+		// Between-turn pause (set by switchTurn) is still outstanding. Return
+		// without dispatching the next player's decision; a later call to
+		// HandleAIDecisions (the next tick) will re-check the deadline. This
+		// keeps the watchability pause without ever blocking the caller, which
+		// used to be a synchronous time.Sleep(PauseDuration) right here.
+		return
+	}
 	if currentTime.Sub(g.lastStatePrintTime) > 10*time.Second {
 		g.logf("\n=== Game State ===\nWave: %d\nCurrent Turn: %s (%s)\n%s (Def) - Lives: %d, Res: %d\n%s (Att) - Res: %d\nActive Towers: %d, Enemies: %d\n==================\n",
 			g.Wave, g.CurrentTurn, g.ModelNames[g.CurrentTurn], g.ModelNames[g.Defender], g.Lives[g.Defender], g.Resources[g.Defender],
@@ -870,7 +879,14 @@ func (g *Game) switchTurn() {
 	}
 	g.LastActionTime = time.Now()
 	if g.PauseBetweenTurns {
-		time.Sleep(g.PauseDuration)
+		// Schedule the pause instead of blocking synchronously. switchTurn runs
+		// inside HandleAIDecisions, which the Bubble Tea Update loop calls
+		// directly (main.go), so a blocking time.Sleep(PauseDuration) here used
+		// to stall the whole TUI (input, repaints, everything) for PauseDuration
+		// on every turn switch. HandleAIDecisions now checks pauseDeadline on
+		// each call and defers dispatch until it has passed, so this returns
+		// immediately and the pacing is enforced without blocking.
+		g.pauseDeadline = time.Now().Add(g.PauseDuration)
 	}
 }
 
