@@ -947,9 +947,11 @@ func (g *Game) applyDecision(playerID, role string, decision map[string]interfac
 	})
 	applied := false
 	outcome := "rejected"
+	entityType := ""
 	if role == "defender" {
 		if action == "place" {
 			towerType, _ := decision["tower_type"].(string)
+			entityType = towerType
 			y, x := parseDecisionPosition(decision["position"], 2, 2)
 			if g.placeTower(y, x, towerType) {
 				g.LastDecisions[playerID] = fmt.Sprintf("Placed %s tower at [%d,%d]", towerType, y, x)
@@ -1008,6 +1010,7 @@ func (g *Game) applyDecision(playerID, role string, decision map[string]interfac
 				if y, x, ok := g.findNearestTowerPlacement(g.MapHeight/2, g.MapWidth/3, 10); ok && g.placeTower(y, x, "basic") {
 					g.LastDecisions[playerID] = fmt.Sprintf("Placed basic tower after repeated saves at [%d,%d]", y, x)
 					action = "place"
+					entityType = "basic"
 					applied = true
 					outcome = "applied_auto_defense"
 				}
@@ -1031,6 +1034,7 @@ func (g *Game) applyDecision(playerID, role string, decision map[string]interfac
 		}
 		if action == "spawn" {
 			enemyType, _ := decision["enemy_type"].(string)
+			entityType = enemyType
 			if g.spawnEnemy(enemyType, nil) {
 				g.LastDecisions[playerID] = fmt.Sprintf("Spawned %s enemy", enemyType)
 				applied = true
@@ -1071,7 +1075,7 @@ func (g *Game) applyDecision(playerID, role string, decision map[string]interfac
 			outcome = "applied_primary"
 		}
 	}
-	g.ActionCounters[playerID+":"+action]++
+	g.ActionCounters[actionCounterKey(playerID, action, entityType)]++
 	if applied {
 		g.RejectionStreak[playerID] = 0
 	} else {
@@ -1104,6 +1108,19 @@ func (g *Game) applyDecision(playerID, role string, decision map[string]interfac
 		g.NoopStreak[playerID] = 0
 	}
 	g.LastActionStatus[playerID] = outcome
+}
+
+// actionCounterKey builds the ActionCounters map key. entityType (the
+// tower/enemy type for "place"/"spawn") is appended as a third segment so
+// per-content usage can be read directly off a match result instead of
+// mined from ReplayEvents; when entityType is empty (every other action)
+// the key stays "playerID:action" so existing consumers are unaffected.
+func actionCounterKey(playerID, action, entityType string) string {
+	key := playerID + ":" + action
+	if entityType != "" {
+		key += ":" + entityType
+	}
+	return key
 }
 
 func classifyActionOutcome(outcome string) string {
