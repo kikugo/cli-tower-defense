@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -62,8 +63,10 @@ func runBalanceSweep(path string) error {
 		return err
 	}
 	var cfg balanceSweepConfig
-	if err := json.Unmarshal(raw, &cfg); err != nil {
-		return err
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&cfg); err != nil {
+		return fmt.Errorf("parse balance sweep config %s: %w", path, err)
 	}
 	if len(cfg.Seeds) == 0 {
 		cfg.Seeds = []int64{1, 2, 3, 4, 5, 6, 7, 8}

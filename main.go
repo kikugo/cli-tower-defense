@@ -58,7 +58,7 @@ func initialModel() model {
 	maxTicks := flag.Int("max-ticks", 3000, "maximum ticks to run in headless mode")
 	seed := flag.Int64("seed", 0, "deterministic random seed (0 uses time-based seed)")
 	maxWaves := flag.Int("max-waves", 0, "override max waves (0 keeps default)")
-	mapType := flag.String("map-type", "", "map archetype: straight, forked, choke, zigzag, open-field")
+	mapType := flag.String("map-type", "", "map archetype: straight, forked, choke, zigzag, open-field, switchback, perimeter")
 	rulesetPreset := flag.String("ruleset-preset", "", "arena ruleset preset: default, fast, marathon")
 	rulesetPath := flag.String("ruleset", "", "path to arena ruleset JSON")
 	profilesPath := flag.String("profiles", "", "path to model profile catalog JSON")
@@ -579,7 +579,8 @@ func runHeadless(m model) {
 	if m.game.GameOver {
 		result = "completed"
 	}
-	fmt.Printf("headless run %s | ticks=%d | wave=%d | winner=%s | defender_lives=%d | logs=%d | rejected_def=%d | rejected_att=%d | provider_err_def=%d | provider_err_att=%d\n",
+	matchResult := m.game.BuildMatchResult()
+	fmt.Printf("headless run %s | ticks=%d | wave=%d | winner=%s | defender_lives=%d | logs=%d | rejected_def=%d | rejected_att=%d | provider_err_def=%d | provider_err_att=%d | authored_def=%s | authored_att=%s\n",
 		result,
 		ticks,
 		m.game.Wave,
@@ -590,10 +591,12 @@ func runHeadless(m model) {
 		m.game.TotalRejectedActionsForPlayer(m.game.Attacker),
 		m.game.TotalProviderErrorsForPlayer(m.game.Defender),
 		m.game.TotalProviderErrorsForPlayer(m.game.Attacker),
+		formatModelAuthoredShare(matchResult, m.game.Defender),
+		formatModelAuthoredShare(matchResult, m.game.Attacker),
 	)
 
 	if m.resultJSON != "" {
-		if err := writeJSONFile(m.resultJSON, m.game.BuildMatchResult()); err != nil {
+		if err := writeJSONFile(m.resultJSON, matchResult); err != nil {
 			log.Printf("write result json: %v", err)
 		}
 	}
@@ -609,10 +612,23 @@ func runHeadless(m model) {
 		}
 	}
 	if m.reportMD != "" {
-		if err := os.WriteFile(m.reportMD, []byte(m.game.BuildMatchResult().MarkdownReport()), 0600); err != nil {
+		if err := os.WriteFile(m.reportMD, []byte(matchResult.MarkdownReport()), 0600); err != nil {
 			log.Printf("write report markdown: %v", err)
 		}
 	}
+}
+
+// formatModelAuthoredShare renders MatchResult.ModelAuthored for the headless
+// summary line, reusing the same "not measured" convention as
+// engine.formatModelAuthored (engine/report_markdown.go): ModelAuthored
+// returns (0, false) when provenance was not recorded, and that must never
+// print as "0%".
+func formatModelAuthoredShare(r eng.MatchResult, playerID string) string {
+	share, ok := r.ModelAuthored(playerID)
+	if !ok {
+		return "not measured"
+	}
+	return fmt.Sprintf("%.0f%%", share*100)
 }
 
 func runHeadlessSimulation(g *eng.Game, limit int) int {
