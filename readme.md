@@ -177,7 +177,16 @@ Per archetype, 40 seeds each:
 | open-field | 3 | 7/40 = 18% |
 | forked | 2 | 0/40 = 0% |
 
-Stratifying also overturned an earlier conclusion of my own. Aggregated, tower range looked like the one smooth tuning axis — 60%, 62%, 72%, 100% at range 4 through 7. Stratified, it is a mixture: the single-lane subset is pinned at 100% for *every* range from 1 to 7, and all the movement comes from the two-lane subset. And a 40–60% band that earlier work concluded "does not exist on any knob axis" does exist — `forked` at tower range 6 measures **45%** (18/40). It was invisible because the single-lane majority pins any aggregate above 58%. `[re-measure]`
+Stratifying also overturned an earlier conclusion of my own. Aggregated, tower range looked like the one smooth tuning axis — 60%, 62%, 72%, 100% at range 4 through 7. Stratified, it is a mixture: the single-lane subset is pinned at 100% for *every* range from 1 to 7, and all the movement comes from the two-lane subset. And a 40–60% band that earlier work concluded "does not exist on any knob axis" does exist — `forked` at tower range 6 measures **45%** (18/40). It was invisible because the single-lane majority pins any aggregate above 58%.
+
+The sweep now reports per stratum and will not print an unlabelled aggregate. The combined row is called `MIXTURE`, carries its composition inline, refuses to show a rate for a stratum with fewer than ten matches, and is suppressed entirely when one stratum exceeds 90% of the design:
+
+```
+candidate                | stratum   | n   | def wins | rate          | avg ticks | avg def score
+defaults                 | lanes=1   |  24 | 24/24    | 100%          |     400.0 | 760.0
+defaults                 | lanes=2   |  16 |  1/16    | 6%            |     188.4 | 498.8
+defaults                 | MIXTURE   |  40 | 25/40    | 62%           |     315.4 | 655.5   [lanes=1:60% lanes=2:40%]
+```
 
 ### What the balance harness actually exercises
 
@@ -188,7 +197,43 @@ Less than it looks like. Across 40 scripted duels, counting every entity the eng
 
 Two independent causes. The scripted measuring-stick players hardcode `basic`, and wave composition gates the remaining enemy types behind wave 6 and wave 16 while the wave counter never exceeds 2 — raising the wave cap to 20 or 30 does not change that.
 
-So the balance numbers describe a **one-tower, two-enemy game**. Deliberately absurd overrides confirm the harness is blind to the rest: making `sniper` cost 10, giving `splash` 200 damage at range 9, making `buffer` free, or removing `shielded`'s shield entirely all produce byte-identical results. Six of ten unit types have no regression protection at all. `[re-measure]`
+So the balance numbers describe a **one-tower, two-enemy game**. Deliberately absurd overrides confirm the harness is blind to the rest: making `sniper` cost 10, giving `splash` 200 damage at range 9, making `buffer` free, or removing `shielded`'s shield entirely all produce byte-identical results. Six of ten unit types have no regression protection at all.
+
+Two measurements of that unexercised content follow. Both were run twice: the first attempt got a confounded answer, and the confound was in the experiment design, not the engine.
+
+### The towers are not close
+
+Scripted defenders that commit to a single tower type, on `forked` (two lanes), 40 seeds. The first attempt gave every non-basic tower 0% and looked conclusive, but it wasn't measuring what it claimed: with a 300 starting bank, `basic` buys three towers and `sniper` buys one, so it compared a tower against a tower-plus-idle-capital. At a matched 600 budget each script spends roughly all of it — six basics, three splash, two snipers, two buffers.
+
+Hold rate has no resolution on `forked` (every script loses), so the metric is defender score, which on this engine is the sum of the rewards of everything it killed:
+
+| defender builds | avg defender score, 600 budget |
+|---|---|
+| `basic` | **842.6** |
+| `sniper` | 103.4 |
+| `splash` | 0.0 |
+| `buffer` | 0.0 |
+
+Eight to one against the sniper, and the other two never register a kill. This matches the arithmetic: per 100 resources, `basic` delivers 11.3 damage/tick, `splash` 3.8, `sniper` 1.3 and `buffer` none. `basic` is not the balanced starter tower, it is the only economical one.
+
+One caveat: starting resources are a per-ruleset value applied to both players, so the 300 and 600 blocks are not comparable *to each other* — only the four scripts within a block are.
+
+### The shield mechanic breaks the game
+
+The attacker side got the same treatment. Rather than add a script that spawns `shielded` — the first attempt did that, and since it never launched a wave it measured spawn tempo instead of unit quality — the unit `attacker_baseline` already spawns was restatted, leaving its wave logic untouched. 40 seeds, default generator:
+
+| the attacker's staple unit is… | defender held | lanes=1 | lanes=2 |
+|---|---|---|---|
+| A — `basic` as shipped | 25/40 = 62% | 24/24 | 1/16 |
+| B — given `shielded`'s full profile (150hp, 0.8 speed, shield 2, cost 40) | **0/40 = 0%** | **0/24** | 0/16 |
+| C — shield 2 only, everything else unchanged | **0/40 = 0%** | **0/24** | 0/16 |
+| D — `shielded`'s body and price but **no** shield | 29/40 = 72% | 24/24 | 5/16 |
+
+Read C against D. Giving the attacker's basic unit a shield and changing nothing else — same health, same speed, same 20 cost — takes the defender from 62% to **zero**, and does it on the single-lane maps that are otherwise 100% defender wins at every tower range from 1 to 7. Giving it the shielded unit's larger body and higher price *without* the shield makes things *easier* for the defender, at 72%.
+
+So it is not the health and not the cost. It is `damage /= (shield + 1)`, integer division: a basic tower's 34 becomes 11, and a 150-health unit that took three shots now takes fourteen.
+
+Shielded is a dominant attacker strategy, it has never been exercised by any balance measurement, and the prompt describes the mechanic to every attacker in plain language. Nothing has been retuned on the strength of this — it is a measurement, and the fix belongs with a rethink of how shields interact with the shot-count thresholds the whole balance sits on.
 
 ### Whose decision was it?
 
@@ -214,8 +259,7 @@ Matches now record this. Every applied decision is tagged with its source, a pro
 - That the scripted duel proxy predicts model behaviour. It does not currently agree with it: the scripted attacker launches waves, and across a 12-match live tournament no model launched a single one.
 - That Elo separates models here. Under a systematic seat advantage with role swap, every pairing goes 1–1 and ratings return to where they started.
 - That two runs with the same manifest produce the same match. They do when the seed alone selects the map; they do **not** when `-map-type` is set, because map generation currently depends on the order flags are applied. See Known Issues.
-
-Sections marked `[re-measure]` are measured but describe forward-looking balance work that is still in progress.
+- That the shipped balance survives contact with the content it has never measured. On the evidence above, it does not.
 
 ## Arena workflow
 
