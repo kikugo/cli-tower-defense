@@ -277,14 +277,6 @@ var (
 	}
 )
 
-// wrapText is a simple helper to wrap text to a certain width
-func wrapText(text string, width int) string {
-	if len(text) <= width {
-		return text
-	}
-	return text[:width-3] + "..."
-}
-
 func (m model) View() string {
 	if m.replayMode {
 		return m.replayView()
@@ -473,10 +465,10 @@ func (m model) View() string {
 	p2ID := m.game.Player2
 	p1Name := m.game.ModelNames[p1ID]
 	p2Name := m.game.ModelNames[p2ID]
-	p1Reason := wrapText(m.game.LastReasoning[p1ID], 30)
-	p2Reason := wrapText(m.game.LastReasoning[p2ID], 30)
-	p1Taunt := wrapText(m.game.LastTaunt[p1ID], 30)
-	p2Taunt := wrapText(m.game.LastTaunt[p2ID], 30)
+	p1Reason := truncateCells(m.game.LastReasoning[p1ID], 30)
+	p2Reason := truncateCells(m.game.LastReasoning[p2ID], 30)
+	p1Taunt := truncateCells(m.game.LastTaunt[p1ID], 30)
+	p2Taunt := truncateCells(m.game.LastTaunt[p2ID], 30)
 
 	infoLines := []string{
 		sectionTitle("Match"),
@@ -501,8 +493,8 @@ func (m model) View() string {
 		sectionTitle("Decisions"),
 		fmt.Sprintf("Last status: %s=%s", p1Name, m.game.LastActionStatus[p1ID]),
 		fmt.Sprintf("Last status: %s=%s", p2Name, m.game.LastActionStatus[p2ID]),
-		fmt.Sprintf("Last reject: %s=%s", p1Name, wrapText(m.game.LastRejectedReason[p1ID], 20)),
-		fmt.Sprintf("Last reject: %s=%s", p2Name, wrapText(m.game.LastRejectedReason[p2ID], 20)),
+		fmt.Sprintf("Last reject: %s=%s", p1Name, truncateCells(m.game.LastRejectedReason[p1ID], 20)),
+		fmt.Sprintf("Last reject: %s=%s", p2Name, truncateCells(m.game.LastRejectedReason[p2ID], 20)),
 		fmt.Sprintf("%s: %s", p1Name, p1Reason),
 		fmt.Sprintf("%s: %s", p2Name, p2Reason),
 		fmt.Sprintf("%s: \"%s\"", p1Name, p1Taunt),
@@ -677,7 +669,7 @@ func (m model) replayView() string {
 		fmt.Sprintf("Player: %s", ev.PlayerID),
 		fmt.Sprintf("Role: %s", ev.Role),
 		fmt.Sprintf("Action: %s", ev.Action),
-		fmt.Sprintf("Reason: %s", wrapText(ev.Reason, 58)),
+		fmt.Sprintf("Reason: %s", truncateCells(ev.Reason, 58)),
 		"",
 		"Controls:",
 		"space pause/resume auto-play",
