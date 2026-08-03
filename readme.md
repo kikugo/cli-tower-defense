@@ -1,6 +1,6 @@
 # LLM vs LLM Tower Defense
 
-A terminal-based tower defense game written in Go where any two configured LLMs can compete in real-time.
+A terminal tower defense game written in Go where any two configured LLMs compete in real time — and, more to the point, a small arena for measuring how they play.
 
 ![Two models playing a match](docs/demo.gif)
 
@@ -8,92 +8,47 @@ A real match, not a scripted one: `gemini-3-flash-preview` defending against `ge
 
 ## Game Overview
 
-In this tower defense game, two configured models battle it out:
+Two configured models play opposite sides of the same board:
 
-- **Defender**: Places towers and slow zones, upgrades defenses, invests in economy
-- **Attacker**: Spawns enemies, launches waves, and invests in economy
+- **Defender**: places and upgrades towers, lays slow zones, researches tech, invests in economy
+- **Attacker**: spawns enemies, launches waves, uses abilities, invests in economy
 
-The game runs in your terminal with a text-based interface, while the AI models make strategic decisions through API calls.
-
-## Screenshots
-
-```
-ChatGPT vs Gemini Tower Defense
-                                                   
-Path: ···········································
-Tower: ^                                     Enemy: o
-                                                   
-                                                   
-                                                   
-                                                   
-                                                   
-                                                   
-                                                   
-                                                   
-ChatGPT: Lives: 20 | Resources: 250 | Score: 150    🤔
-Gemini:  Resources: 200 | Score: 50 | Wave: 2        
-
-ChatGPT decision: Placed basic tower
-Gemini decision: Spawned fast enemy
-
-[Q]uit [A]I: ON [+/-] Speed: 1.0x
-Tower types: basic (^) sniper (⌖) splash (⊕) | Enemy types: basic (o) fast (>) tank (□)
-```
+Turns alternate strictly. Each turn the engine renders the game state into a prompt, asks that player's model for exactly one JSON action, and applies it. Everything else — combat, pathing, economy — is deterministic given a seed.
 
 ## Features
 
-- **Pure Go implementation** with no external language dependencies
-- **Terminal-based interface** with simple text output
-- **Real-time battles** between actual AI models via API calls
-- **Multiple tower types**:
-  - Basic Tower (^): Balanced damage and range
-  - Sniper Tower (⌖): High damage, long range, slow fire rate
-  - Splash Tower (⊕): Area damage affecting multiple enemies
-- **Multiple enemy types**:
-  - Basic Enemy (o): Balanced health and speed
-  - Fast Enemy (>): Quick but fragile
-  - Tank Enemy (□): Slow but high health
-- **Resource management** for both AI players
-- **Wave system** with increasing difficulty
-- **AI decision-making** with configurable intervals
-- **Game speed control** to speed up or slow down gameplay
+- **Pure Go**, no external language dependencies
+- **Provider-agnostic**: OpenAI-compatible endpoints, Gemini native, or scripted players for offline testing
+- **Four tower types**: basic (`^`), sniper (`⌖`), splash (`⊕`), buffer (`B`)
+- **Five enemy types**: basic (`o`), fast (`>`), tank (`□`), shielded (`S`), healer (`H`)
+- **Bounded terminal layout** — the board, stats and move feed each get a row budget, so nothing scrolls off screen
+- **Seeded, reproducible runs** with replay export and a timeline viewer
+- **Tournaments** with role swap, ranked standings, and persistent Elo-style ratings
+- **Balance sweeps** — scripted duels across seeds, so combat and economy changes can be measured without spending a token
+- **Decision provenance**: every applied action records whether the model chose it or the engine substituted a fallback
 
 ## Installation
 
 ### Prerequisites
 
 - Go 1.21 or higher
-- API keys for the two providers/models you configure
+- API keys for the two providers you configure
 
 ### Steps
 
-1. Clone the repository:
+1. Clone and build:
+
    ```bash
-   git clone https://github.com/yourusername/chatgpt-vs-gemini-td.git
-   cd chatgpt-vs-gemini-td
+   git clone https://github.com/kikugo/cli-tower-defense.git
+   cd cli-tower-defense
+   go build -o tower_defense
    ```
 
-2. Install dependencies:
-   ```bash
-   go mod download
-   go mod tidy
-   ```
+2. Configure a matchup. There is no default pairing — you must define one, via either:
+   - `MODEL_MATCH_CONFIG` (inline JSON in `.env`)
+   - `MODEL_MATCH_CONFIG_PATH` (path to a JSON file)
 
-3. Set up model matchup:
-
-   You can run with defaults (`OpenAI o3` vs `Gemini 2.5 Pro`) using:
-
-   ```env
-   OPENAI_API_KEY=your_openai_api_key_here
-   GOOGLE_API_KEY=your_google_api_key_here
-   ```
-
-   Or define a custom matchup using either:
-   - `MODEL_MATCH_CONFIG` (inline JSON)
-   - `MODEL_MATCH_CONFIG_PATH` (path to JSON file)
-
-   Example JSON:
-   ```
+   ```json
    {
      "player1": {
        "provider": "openai_compatible",
@@ -118,153 +73,74 @@ Tower types: basic (^) sniper (⌖) splash (⊕) | Enemy types: basic (o) fast (
    }
    ```
 
-   The optional `price_input_per_million` and `price_output_per_million` fields
-   set USD pricing per one million tokens. When present, headless match results
-   include an estimated cost derived from parsed provider token usage. The same
-   fields work inside a `-profiles` catalog entry.
+   The optional `price_input_per_million` / `price_output_per_million` fields set USD pricing per million tokens. When present, match results carry an estimated cost derived from parsed provider token usage. The same fields work inside a `-profiles` catalog entry.
 
-4. Run the game:
+3. Run:
 
-   You can either run the game directly:
    ```bash
-   go run main.go
-   ```
-
-   Or build and run an executable:
-   ```bash
-   go build -o tower_defense
    ./tower_defense
    ```
-   
-   On Windows, use:
-   ```
-   tower_defense.exe
-   ```
 
-5. Verify API keys:
-
-   If you're having issues with API connectivity, you can test your API keys:
-   ```bash
-   go run check_api.go
-   ```
+   No API key is needed to try the offline paths — `provider: "scripted"` players, `-balance-sweep`, `-tournament` with scripted matchups, and the replay viewer all run without one.
 
 ## Controls
 
-- `Q`: Quit the game
-- `A`: Toggle AI (on/off)
-- `+` / `-`: Increase/decrease game speed
-- `Space`: Pause/resume
-- `R`: Toggle tower range preview
-- `↑` / `↓` (or `K` / `J`): Scroll battle logs
+| key | action |
+|---|---|
+| `q` | quit |
+| `space` | pause / resume |
+| `+` / `-` | faster / slower |
+| `a` | toggle AI |
+| `r` | tower range overlay |
+| `L` | toggle the raw log pane |
+| `↑` `↓` (or `k` `j`) | scroll the move feed |
 
-### Replay viewer controls
+### Replay viewer
 
-When you open a replay with `-replay-input`, the timeline supports:
+Open a recorded match with `-replay-input`:
 
-- `Space`: Pause/resume auto-play
-- `n` / `→` and `b` / `←`: Step one event forward or back
-- `]` / `[`: Jump 10 events forward or back
-- `g` / `G`: Jump to the first or last event
-- `e`: Jump to the game-end event
+| key | action |
+|---|---|
+| `space` | pause / resume auto-play |
+| `n` `→` / `b` `←` | step one event forward / back |
+| `]` / `[` | jump ±10 events |
+| `g` / `G` | first / last event |
+| `e` | jump to the game-end event |
 
-The sidebar shows the board reconstructed from the event stream at the current point: towers on the field, enemies spawned, kills, breaches, and the running result.
+The viewer reconstructs the board from the event stream: path, obstacles, towers, breach markers, and the position of the current event. Replays recorded before the `map_init` event was introduced fall back to a text summary.
 
-Replays recorded after the `map_init` event was introduced also draw the
-board itself: path, obstacles, towers, breach markers, and the position of
-the current event. Older replay files fall back to the text summary.
+### Terminal sizes
 
-## Providers
+The layout is computed from the terminal, not assumed:
 
-Provider types:
-- `openai_compatible`: OpenAI-style Chat Completions endpoints (OpenAI, OpenRouter, Groq-style integrations, etc.)
-- `gemini_native`: Gemini `generateContent` endpoint
+| width | layout |
+|---|---|
+| ≥ 116 | board and stats on the left, move feed in a full-height right column |
+| 84–115 | board, stats and feed stacked |
+| 60–83 | compact — the board renders a viewport into the fixed 80×14 map |
+| < 60, or height < 15 | a size notice |
 
-This lets you pitch any two configured models against each other without changing engine code.
+The simulation map stays 80×14 at every terminal size. Map dimensions affect path length and therefore balance, so the *viewport* is responsive and the *map* is not.
 
-## How It Works
+## How it works
 
-1. The game creates a zigzag path across the screen
-2. ChatGPT's AI makes decisions about tower placement and upgrades
-3. Gemini's AI decides when to spawn enemies or launch waves
-4. Both AIs receive the current game state and make decisions via API calls
-5. The game continues until ChatGPT runs out of lives or you quit
+1. The engine generates a seeded map — one or two lanes, with obstacles.
+2. Each turn it builds a prompt for the player to move: current resources, the board, and the JSON templates for the actions that player can currently afford.
+3. The model returns one JSON object. The engine parses, validates and applies it, or records a rejection.
+4. Combat, movement and income resolve on a fixed tick.
+5. The match ends when the defender's lives reach zero, the wave cap is cleared, or the tick budget runs out.
 
-## Technical Details
+Provider calls are asynchronous — network latency never blocks the event loop, and a provider failure is recovered and logged rather than crashing the match.
 
-- Written entirely in Go with minimal dependencies
-- Uses goroutines for non-blocking API calls
-- Communicates with OpenAI and Google APIs for AI decisions
-- Game state updates at configurable intervals
+## Measuring the arena
 
-## Configuration
+This is a benchmark before it is a game, so what follows is what has actually been measured, how, and where the numbers stop being trustworthy.
 
-You can adjust game parameters from CLI flags:
-
-- `-swap`: Swap defender/attacker roles
-- `-def-int`: Defender decision interval in seconds
-- `-att-int`: Attacker decision interval in seconds
-- `-headless`: Run non-interactive simulation
-- `-max-ticks`: Maximum ticks in headless mode
-- `-seed`: Deterministic seed for reproducible runs
-- `-max-waves`: Override max waves for short checks
-- `-map-type`: Map archetype (`straight`, `forked`, `choke`, `zigzag`, `open-field`)
-- `-result-json`: Write headless match summary JSON
-- `-replay-json`: Write replay event stream JSON
-- `-manifest-json`: Write run manifest JSON (reproducibility metadata)
-- `-report-md`: Write the headless match summary as a markdown report
-- `-replay-input`: Load replay JSON and open replay viewer mode
-- `-ruleset-preset`: Arena ruleset preset (`default`, `fast`, `marathon`, `fair`)
-- The `fair` preset disables engine assists (auto-wave, auto-defend, adaptive pressure) so results measure pure model decisions; any ruleset JSON can set `"disable_assists": true`
-- `-ruleset`: Path to an arena ruleset JSON
-- `-profiles`, `-player1-profile`, `-player2-profile`: Reusable model profile catalog + matchup selection
-- `-tournament`: Run tournament config JSON (headless batch)
-- `-tournament-csv`: Write ranked tournament standings as CSV
-- `-tournament-md`: Write a tournament markdown report (standings + per-match results)
-- `-balance-sweep`: Run a balance sweep config JSON (scripted duels across seeds) and print a defender win-rate table
-- `-ratings-json`: Read/write persistent Elo-like model ratings across tournament runs
-
-- `GameSpeed`: Controls how fast the game runs
-- `AIDecisionInterval`: How often each AI makes decisions
-- Tower and enemy attributes can be modified in their respective constructors
-
-## Gameplay Check Guide
-
-Automated smoke check:
-
-```bash
-go test ./...
-go test -race ./...
-go vet ./...
-go run main.go -headless -seed=42 -max-ticks=2500 -max-waves=10
-```
-
-Replay + result export:
-
-```bash
-go run main.go -headless -seed=42 -max-ticks=1200 -result-json=match.json -replay-json=replay.json -report-md=match.md
-go run main.go -replay-input=replay.json
-```
-
-`match.md` is a markdown summary: winner, win reason, wave progress, and a
-per-player table of score, provider calls, average latency, token usage,
-estimated cost, rejected actions, and errors.
-
-Tournament run:
-
-```bash
-go run main.go -tournament=tournament.json -ratings-json=ratings.json -tournament-csv=standings.csv -tournament-md=tournament.md
-```
-
-`standings.csv` holds the standings ranked best-first (win rate, then average
-normalized score), one row per model. `tournament.md` is a markdown report with
-the same ranked standings plus a per-match results table. The JSON report on
-stdout carries the full per-run results, manifests, and ratings.
-
-## Balance: the defender used to win 92% of the time
+### The defender used to win 92% of the time
 
 When I started running matches between two models, the defender won every one. Ten in a row across six seeds, with the roles swapped halfway through, so whichever model defended won. The arena was measuring which seat you sat in, not which model was better.
 
-The cause was economic. When a tower killed an enemy the defender received that enemy's reward as **spendable resources**, while the attacker earned resources only when a unit reached the end of the path. So the attacker paid 50 to send a tank, the defender collected 50 when it died, and nothing came back the other way unless something got through. That compounds: kills fund towers, towers produce kills, and eventually the attacker cannot afford to spawn at all. In one match the attacker finished 415 to 0 having never breached once, and 130 of its turns were spent proposing spawns it could not pay for.
+The cause was economic. When a tower killed an enemy the defender received that enemy's reward as **spendable resources**, while the attacker earned resources only when a unit reached the end of the path. The attacker paid 50 to send a tank, the defender collected 50 when it died, and nothing came back the other way unless something got through. That compounds: kills fund towers, towers produce kills, and eventually the attacker cannot afford to spawn at all. In one match the attacker finished 415 to 0 having never breached once, and 130 of its turns were spent proposing spawns it could not pay for.
 
 The fix is one line. A kill now awards score and not resources, so both sides fund themselves from income alone.
 
@@ -275,58 +151,144 @@ Measured with the built-in balance sweep, scripted players on both sides so no m
 | Kills award resources | 37/40 | 92% | 1403 ticks |
 | Kills award score only | 26/40 | 65% | 1065 ticks |
 
-Reproduce with `-balance-sweep`. Matches also got shorter, which is what you would expect once the attacker can afford to keep pressure on.
+That comparison is sound — both arms ran on the same map generator, so everything below is common to them and cancels in the difference. The fix stays.
 
-65% is still a defender edge and I have not tried to tune it to even. A tower defence game leaning slightly toward the defender seems reasonable, and I would rather publish the number than quietly chase 50%.
+A later measurement put a number on how big a lever it was: kills were worth about 2.07 resources/tick against a base income of 5.00. Real, but small. It is not worth revisiting.
 
-## Arena Workflow
+### The residual 62% is not a balance property
+
+The shipped defaults now measure **25/40 = 62.5%** across the default generator (40 seeds, 400 ticks, scripted players). It is tempting to read that as "the game leans slightly toward the defender." It is not what the number means.
+
+Stratifying the same 40 seeds by how many lanes the generator produced:
+
+| lanes | seeds | defender held |
+|---|---|---|
+| 1 | 24 (60%) | **24/24 = 100%** |
+| 2 | 16 (40%) | **1/16 = 6%** |
+| — | 40 | 25/40 = 62.5% |
+
+`generatePaths` picks one lane unless a random draw exceeds 0.6, so `P(1 lane) ≈ 0.60`, and `0.60 × 100% + 0.40 × 6% = 62.4%`. **The headline number is, to within rounding, the probability of the RNG rolling a single lane.** It is stable at both 400 and 3000 tick caps because the lane count decides the match long before the cap does.
+
+Per archetype, 40 seeds each:
+
+| map | lanes | defender held |
+|---|---|---|
+| straight, choke, zigzag, switchback, perimeter | 1 | 40/40 = 100% |
+| open-field | 3 | 7/40 = 18% |
+| forked | 2 | 0/40 = 0% |
+
+Stratifying also overturned an earlier conclusion of my own. Aggregated, tower range looked like the one smooth tuning axis — 60%, 62%, 72%, 100% at range 4 through 7. Stratified, it is a mixture: the single-lane subset is pinned at 100% for *every* range from 1 to 7, and all the movement comes from the two-lane subset. And a 40–60% band that earlier work concluded "does not exist on any knob axis" does exist — `forked` at tower range 6 measures **45%** (18/40). It was invisible because the single-lane majority pins any aggregate above 58%. `[re-measure]`
+
+### What the balance harness actually exercises
+
+Less than it looks like. Across 40 scripted duels, counting every entity the engine actually instantiated:
+
+- **towers built: `basic` only.** `sniper`, `splash` and `buffer` never appear.
+- **enemies spawned: `basic` and `fast` only.** `tank`, `shielded` and `healer` never appear.
+
+Two independent causes. The scripted measuring-stick players hardcode `basic`, and wave composition gates the remaining enemy types behind wave 6 and wave 16 while the wave counter never exceeds 2 — raising the wave cap to 20 or 30 does not change that.
+
+So the balance numbers describe a **one-tower, two-enemy game**. Deliberately absurd overrides confirm the harness is blind to the rest: making `sniper` cost 10, giving `splash` 200 damage at range 9, making `buffer` free, or removing `shielded`'s shield entirely all produce byte-identical results. Six of ten unit types have no regression protection at all. `[re-measure]`
+
+### Whose decision was it?
+
+When a model's response cannot be parsed, or its provider call fails, the engine used to substitute a decision of its own — a tower at (10,10), a `basic` spawn, a `save` — and record it as though the model had chosen it. Seven of nine substitution points serialized identically to a genuine decision.
+
+The consequence is visible in this repository's own captured reference match, `live_fair_replay.json`. It contains 90 decision events and **three distinct decision objects**, all engine literals:
+
+```
+45x  {"action":"spawn","enemy_type":"basic","reason":"Default fallback"}
+37x  {"action":"place","position":[10,10],"tower_type":"basic","reason":"Default fallback"}
+ 8x  {"action":"save","reason":"provider request failed"}
+```
+
+Not one decision in that match came from a model, and nothing in the recorded output said so — the provider-error counter read zero despite eight known failures, because both HTTP providers returned a nil error. Thirty-two of the forty-eight rejections in that match are the parser's hardcoded `[10,10]` colliding with itself, turn after turn.
+
+Matches now record this. Every applied decision is tagged with its source, a provider failure skips the turn instead of substituting, provider errors are counted for the first time, and `MatchResult` carries a per-player `model_authored_share`. Artifacts written before provenance existed report *"not measured"* rather than defaulting to "100% model" — the distinction is the whole point.
+
+**No live match recorded before this change can be shown to have measured a model rather than the engine.** Conclusions drawn from those runs carry an uncertainty nobody can now quantify.
+
+### What is not claimed
+
+- That the balance is tuned for anything beyond `basic`-vs-`basic` play.
+- That the scripted duel proxy predicts model behaviour. It does not currently agree with it: the scripted attacker launches waves, and across a 12-match live tournament no model launched a single one.
+- That Elo separates models here. Under a systematic seat advantage with role swap, every pairing goes 1–1 and ratings return to where they started.
+- That two runs with the same manifest produce the same match. They do when the seed alone selects the map; they do **not** when `-map-type` is set, because map generation currently depends on the order flags are applied. See Known Issues.
+
+Sections marked `[re-measure]` are measured but describe forward-looking balance work that is still in progress.
+
+## Arena workflow
 
 The end-to-end loop for comparing two models:
 
-1. Define the matchup (env `MODEL_MATCH_CONFIG`, a `-profiles` catalog, or a
-   `-tournament` config) and optionally a ruleset (`-ruleset-preset` or
-   `-ruleset`).
-2. Run reproducibly with a fixed `-seed`; export results with `-result-json`,
-   `-replay-json`, `-manifest-json`, and `-report-md`.
-3. Inspect a match after the fact with `-replay-input`, stepping and seeking
-   through the timeline to see the reconstructed board at any point.
-4. Run many seeds and role swaps with `-tournament`, persisting ratings with
-   `-ratings-json` and exporting rankings with `-tournament-csv`.
+1. Define the matchup (`MODEL_MATCH_CONFIG`, a `-profiles` catalog, or a `-tournament` config) and optionally a ruleset (`-ruleset-preset` or `-ruleset`).
+2. Run with a fixed `-seed`; export with `-result-json`, `-replay-json`, `-manifest-json` and `-report-md`.
+3. Inspect the match afterwards with `-replay-input`, stepping through the timeline.
+4. Run many seeds and role swaps with `-tournament`, persisting ratings with `-ratings-json`.
 
-All of these come from the same seeded run, so the result, replay, report, and
-standings describe the same match. Fix the seed and you get the same outcome
-every time.
-
-Combat and economy numbers live in one config (`engine/balance.go`), and run
-manifests record a `balance_version` so results from different eras aren't
-compared by accident. To test a balance change, describe candidates in a sweep
-JSON and run `go run . -balance-sweep=sweep.json`; each candidate plays
-scripted duels across seeds and the table reports how often the baseline
-defense held. A regression test pins the shipped defaults to that measurement.
-
-Manual TUI check:
+Combat and economy numbers live in one config (`engine/balance.go`) and run manifests record a `balance_version`. To test a balance change, describe candidates in a sweep JSON and run `-balance-sweep`; each candidate plays scripted duels across seeds and the table reports how often the baseline defense held. A regression test pins the shipped defaults to that measurement.
 
 ```bash
-go run main.go -seed=42 -def-int=2 -att-int=2
+# offline, no API key needed
+./tower_defense -balance-sweep sweep.json
+./tower_defense -headless -seed 42 -max-ticks 1200 \
+    -result-json match.json -replay-json replay.json -report-md match.md
+./tower_defense -replay-input replay.json
+
+# a tournament
+./tower_defense -tournament tournament.json -ratings-json ratings.json \
+    -tournament-csv standings.csv -tournament-md tournament.md
 ```
 
-During manual check, watch:
-- turn cadence and queue growth
-- provider error counters
-- rejected action counters
-- winner/wave progress
+`match.md` is a markdown summary: winner, win reason, wave progress, and a per-player table of score, provider calls, average latency, token usage, estimated cost, authored share, rejected actions and errors.
+
+## Configuration
+
+```
+-swap                  swap defender/attacker roles
+-def-int  -att-int     decision interval per side, seconds
+-headless -max-ticks   non-interactive simulation and its tick budget
+-seed                  deterministic seed
+-max-waves             override the wave cap
+-map-type              straight, forked, choke, zigzag, open-field, switchback, perimeter
+-ruleset-preset        default, fast, marathon, fair
+-ruleset               path to an arena ruleset JSON
+-profiles -player1-profile -player2-profile
+-result-json -replay-json -manifest-json -report-md
+-replay-input          open a recorded replay
+-tournament -tournament-csv -tournament-md -ratings-json
+-balance-sweep         run a sweep config and print the win-rate table
+```
+
+The `fair` preset disables engine assists (auto-wave, auto-defend, adaptive pressure) so results measure model decisions only. Any ruleset JSON can set `"disable_assists": true`.
+
+## Development
+
+```bash
+export GOPATH=$PWD/.gomodcache GOCACHE=$PWD/.gocache GOFLAGS=-mod=mod
+go build ./...
+go vet ./...
+go test ./...
+go test -race ./...
+```
+
+Dependencies are vendored in-repo, so the build needs no network.
 
 ## Known Issues
 
-- Terminals narrower than 84 columns show a resize notice; between 84 and 119 columns the sidebar stacks below the map
-- Some Unicode characters might not display correctly in all terminals
-- API rate limiting may affect gameplay if decision intervals are too short
+- **Map generation depends on the order flags are applied, not only on the seed.** `-seed 11 -map-type choke` through the TUI/headless path and the same seed and map type through the tournament runner produce different maps — 10 obstacles versus 4 — with identical manifests. Seed-only runs are unaffected.
+- **`balance_version` cannot detect balance drift.** It is a hand-written string, so retuning the numbers without editing it leaves two different games both labelled `v2`.
+- **Replay event streams are capped at 10,000 events and trimmed from the front.** A run at the shipped defaults (3000 ticks, 30 waves) reaches the cap exactly, and reconstruction from a trimmed stream is silently wrong.
+- **`tank` and `healer` never appear in a scripted duel.** They are gated behind wave 6 and wave 16, and the wave counter does not get there under the measurement wave cap.
+- **The inter-turn pause does not scale with the speed control.** `+`/`-` change the tick rate but not the turn pause, so at high speed you still wait a full second per turn.
+- **A decision is requested every tick**, whether or not anything changed. With income 5/tick and a cheapest action of 100, roughly nineteen of twenty calls exist only to be told nothing is affordable — which inflates token spend and makes action-frequency statistics a statement about the tick rate.
+- Some Unicode glyphs may not render in every terminal.
 
 ## License
 
-MIT License
+MIT
 
 ## Acknowledgments
 
-- OpenAI and Google for their AI APIs
-- The Go community for excellent libraries
+- The Charm team for Bubble Tea and Lip Gloss
+- The Go community
