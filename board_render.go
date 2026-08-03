@@ -66,33 +66,99 @@ func buildSnapshotGrid(snap eng.ReplaySnapshot, highlight *eng.Position) [][]run
 	return grid
 }
 
-// renderSnapshotBoard styles the grid rows for the replay viewer.
+// styleSnapshotGridRow renders columns [colStart, colStart+cols) of grid row
+// y using the same per-glyph switch renderSnapshotBoard applies to a whole
+// row -- factored out so both the legacy whole-board render and the
+// viewport-bounded renderReplayBoard share one styling definition.
+func styleSnapshotGridRow(grid [][]rune, y, colStart, cols int) string {
+	var b strings.Builder
+	row := grid[y]
+	end := colStart + cols
+	if end > len(row) {
+		end = len(row)
+	}
+	for x := colStart; x < end; x++ {
+		r := row[x]
+		switch r {
+		case '·':
+			b.WriteString(pathStyle.Render(string(r)))
+		case '⬡':
+			b.WriteString(obstacleStyle.Render(string(r)))
+		case '^', '⊕', '⌖', 'B':
+			b.WriteString(towerColor[towerGlyphType[r]].Render(string(r)))
+		case '✗':
+			b.WriteString(breachStyle.Render(string(r)))
+		case '◉':
+			b.WriteString(highlightStyle.Render(string(r)))
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+// renderSnapshotBoard styles the grid rows for the replay viewer at full
+// width, with no viewport/panning. Kept for reference and for any caller
+// that wants the whole board regardless of terminal size; the live replay
+// view uses the budget-bounded renderReplayBoard below instead.
 func renderSnapshotBoard(snap eng.ReplaySnapshot, highlight *eng.Position) string {
 	grid := buildSnapshotGrid(snap, highlight)
 	if grid == nil {
 		return ""
 	}
 	rows := make([]string, len(grid))
-	for y, row := range grid {
-		var b strings.Builder
-		for _, r := range row {
-			switch r {
-			case '·':
-				b.WriteString(pathStyle.Render(string(r)))
-			case '⬡':
-				b.WriteString(obstacleStyle.Render(string(r)))
-			case '^', '⊕', '⌖', 'B':
-				glyphType := map[rune]string{'^': "basic", '⊕': "splash", '⌖': "sniper", 'B': "buffer"}[r]
-				b.WriteString(towerColor[glyphType].Render(string(r)))
-			case '✗':
-				b.WriteString(breachStyle.Render(string(r)))
-			case '◉':
-				b.WriteString(highlightStyle.Render(string(r)))
-			default:
-				b.WriteRune(r)
-			}
-		}
-		rows[y] = b.String()
+	for y := range grid {
+		rows[y] = styleSnapshotGridRow(grid, y, 0, len(grid[y]))
 	}
 	return uiBorder.Render(strings.Join(rows, "\n"))
+}
+
+// renderReplayBoard renders a reconstructed replay snapshot's board into
+// exactly rc.h rows of exactly rc.w columns, the same viewport/pad contract
+// renderBoard (board_viewport.go) applies to the live board. It pans to
+// center the event's highlighted position (if any) so the pane always shows
+// the tile the current event is about, and degrades to blank padded rows
+// when the snapshot carries no map (early replay events, before map_init).
+func renderReplayBoard(snap eng.ReplaySnapshot, highlight *eng.Position, rc rect) []string {
+	grid := buildSnapshotGrid(snap, highlight)
+	if grid == nil || rc.h <= 0 || rc.w <= 0 {
+		return blankRows(rc.h, rc.w)
+	}
+
+	mapH := len(grid)
+	mapW := 0
+	if mapH > 0 {
+		mapW = len(grid[0])
+	}
+
+	vw := boardViewportWidth(mapW, rc.w)
+	vh := rc.h - 2
+	if vh > mapH {
+		vh = mapH
+	}
+	if vh < 0 {
+		vh = 0
+	}
+
+	panX := 0
+	if highlight != nil {
+		panX = clampPan(highlight.X-vw/2, mapW, vw)
+	}
+
+	rows := make([]string, vh)
+	for y := 0; y < vh; y++ {
+		rows[y] = styleSnapshotGridRow(grid, y, panX, vw)
+	}
+	bordered := uiBorder.Render(strings.Join(rows, "\n"))
+	out := strings.Split(bordered, "\n")
+
+	final := make([]string, rc.h)
+	for i := 0; i < rc.h; i++ {
+		if i < len(out) {
+			final[i] = padCells(out[i], rc.w)
+		} else {
+			final[i] = padCells("", rc.w)
+		}
+	}
+	return final
 }

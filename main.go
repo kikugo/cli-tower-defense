@@ -5,7 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"math"
 	"os"
 	"strings"
 	"time"
@@ -29,6 +28,7 @@ type model struct {
 	height        int
 	paused        bool
 	logScroll     int // how many lines from the bottom we offset when viewing logs
+	showLogs      bool
 	tickDur       time.Duration
 	showRange     bool
 	headless      bool
@@ -214,6 +214,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "r":
 			m.showRange = !m.showRange
+		case "L":
+			m.showLogs = !m.showLogs
 		case "n", "right", "l":
 			if m.replayMode {
 				m.replayIdx = clampReplayIdx(m.replayIdx+1, len(m.replay))
@@ -249,9 +251,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // ---- lipgloss styles ----
 var (
-	pathStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("240")) // grey
-	uiBorder     = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).Padding(0, 1)
-	sidebarStyle = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).Width(35).Padding(0, 1)
+	pathStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240")) // grey
+	uiBorder  = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).Padding(0, 1)
 
 	towerColor = map[string]lipgloss.Style{
 		"basic":  lipgloss.NewStyle().Foreground(lipgloss.Color("219")), // magenta
@@ -277,6 +278,42 @@ var (
 	}
 )
 
+// selectLogWindow picks the slice of raw g.Logs entries the 'L' debug pane
+// shows: the most recent `budget` entries, offset by scroll (the up/down
+// keys' existing m.logScroll semantics, unchanged from before this rewrite).
+// This is the ONLY place raw log entries reach the screen now -- the move
+// feed (renderMoveFeed) replaced them as the default pane, so a single
+// multi-line g.Logs entry like the "=== Game State ===" block can no longer
+// enter the layout uncounted: it goes through fitLines just like everything
+// else, which forces it to exactly `budget` rows.
+func selectLogWindow(logs []string, budget, scroll int) []string {
+	if budget <= 0 || len(logs) == 0 {
+		return nil
+	}
+	n := budget
+	if n > len(logs) {
+		n = len(logs)
+	}
+	start := len(logs) - n - scroll
+	if start < 0 {
+		start = 0
+	}
+	end := start + n
+	if end > len(logs) {
+		end = len(logs)
+	}
+	return logs[start:end]
+}
+
+// View renders the live match onto computeLayout's pane rects. Every pane is
+// built to its exact rect (renderBoard/renderStats/renderMoveFeed all
+// guarantee exact row counts; padCells guarantees exact column counts), then
+// composed by plain []string concatenation (vstack) or side-by-side merge
+// (hjoin) -- never by handing an unbounded string to Bubble Tea and hoping
+// it fits. That is the direct fix for the defect main_view_test.go
+// documents: Bubble Tea 0.26.1 clips to the last `height` lines rather than
+// scrolling, so anything this function doesn't already fit is gone, not
+// just off-screen.
 func (m model) View() string {
 	if m.replayMode {
 		return m.replayView()
@@ -284,9 +321,12 @@ func (m model) View() string {
 	if m.game == nil {
 		return "loading..."
 	}
-	if layoutForSize(m.width) == layoutTooSmall {
-		return "terminal too small (need at least 84 columns)\npress q to quit"
+
+	lyt := computeLayout(m.width, m.height)
+	if lyt.mode == layoutTooSmall {
+		return tooSmallNotice(m.width, m.height)
 	}
+
 	if m.game.GameOver {
 		winnerName := m.game.ModelNames[m.game.Winner]
 		if m.game.Winner == "none" {
@@ -295,287 +335,31 @@ func (m model) View() string {
 		return fmt.Sprintf("Game Over! Winner: %s\nPress q to quit.", winnerName)
 	}
 
-	// --- Build rune grid ---
-	grid := make([][]rune, m.game.MapHeight)
-	for y := 0; y < m.game.MapHeight; y++ {
-		grid[y] = make([]rune, m.game.MapWidth)
-		for x := range grid[y] {
-			grid[y][x] = ' '
-		}
-	}
+	statusRow := padCells(renderStatusText(m.game, m.tickDur, m.paused), lyt.w)
+	keybarRow := padCells(renderKeyText(m.paused, m.game.AIEnabled, m.showLogs), lyt.w)
 
-	// Path glyphs with box drawing
-	for _, path := range m.game.Paths {
-		for i, pos := range path {
-			if pos.Y >= 0 && pos.Y < len(grid) && pos.X >= 0 && pos.X < m.game.MapWidth {
-				char := '·'
-				if i > 0 && i < len(path)-1 {
-					prev := path[i-1]
-					next := path[i+1]
-					if prev.Y == next.Y {
-						char = '─'
-					} else if prev.X == next.X {
-						char = '│'
-					} else {
-						char = '┼'
-					}
-				}
-				// Check for slow zone
-				for _, sz := range m.game.SlowZones {
-					if sz.Pos.Y == pos.Y && sz.Pos.X == pos.X {
-						char = '≋'
-						break
-					}
-				}
-				grid[pos.Y][pos.X] = char
-			}
-		}
-	}
+	viewportW := boardViewportWidth(m.game.MapWidth, lyt.board.w)
+	panX := autoFollowPanX(m.game, viewportW)
+	boardRows := renderBoard(m.game, lyt.board, panX, m.showRange)
+	statsRows := renderStats(m.game, lyt.stats)
 
-	// Obstacles
-	for _, obs := range m.game.Obstacles {
-		if obs.Y >= 0 && obs.Y < len(grid) && obs.X >= 0 && obs.X < m.game.MapWidth {
-			grid[obs.Y][obs.X] = '⬡'
-		}
-	}
-
-	// Tower glyphs by type (shared with the replay board renderer)
-	towerAt := make(map[string]*eng.Tower)
-	for _, t := range m.game.Towers {
-		glyph, ok := towerGlyphs[t.TowerType]
-		if !ok {
-			glyph = '^'
-		}
-		y, x := t.Pos.Y, t.Pos.X
-		if y >= 0 && y < len(grid) && x >= 0 && x < m.game.MapWidth {
-			grid[y][x] = glyph
-			key := fmt.Sprintf("%d,%d", y, x)
-			towerAt[key] = t
-		}
-	}
-
-	// Pre-compute enemy position map for health colouring
-	enemyAt := make(map[string]*eng.Enemy, len(m.game.Enemies))
-	for _, e := range m.game.Enemies {
-		key := fmt.Sprintf("%d,%d", e.Pos.Y, e.Pos.X)
-		enemyAt[key] = e
-		if e.Pos.Y >= 0 && e.Pos.Y < len(grid) && e.Pos.X >= 0 && e.Pos.X < m.game.MapWidth {
-			grid[e.Pos.Y][e.Pos.X] = e.Char
-		}
-	}
-
-	// Particles
-	for _, p := range m.game.Particles {
-		if p.Pos.Y >= 0 && p.Pos.Y < len(grid) && p.Pos.X >= 0 && p.Pos.X < m.game.MapWidth {
-			grid[p.Pos.Y][p.Pos.X] = p.Char
-		}
-	}
-
-	// If range preview enabled, overlay range markers
-	if m.showRange {
-		for _, t := range m.game.Towers {
-			for y2 := 0; y2 < m.game.MapHeight; y2++ {
-				for x2 := 0; x2 < m.game.MapWidth; x2++ {
-					dy := y2 - t.Pos.Y
-					dx := x2 - t.Pos.X
-					if dx*dx+dy*dy <= t.Range*t.Range {
-						if grid[y2][x2] == ' ' {
-							grid[y2][x2] = '•'
-						}
-					}
-				}
-			}
-		}
-	}
-
-	// Pre-compute particle map
-	particleAt := make(map[string]*eng.Particle)
-	for _, p := range m.game.Particles {
-		key := fmt.Sprintf("%d,%d", p.Pos.Y, p.Pos.X)
-		particleAt[key] = p
-	}
-
-	rows := make([]string, m.game.MapHeight)
-	for y := 0; y < m.game.MapHeight; y++ {
-		var b strings.Builder
-		for x, r := range grid[y] {
-			// Check for particle first to render on top
-			key := fmt.Sprintf("%d,%d", y, x)
-			if p, ok := particleAt[key]; ok {
-				b.WriteString(particleStyle[p.Color].Render(string(p.Char)))
-				continue
-			}
-
-			switch r {
-			case '·', '─', '│', '┼':
-				b.WriteString(pathStyle.Render(string(r)))
-			case '≋':
-				b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("39")).Render(string(r)))
-			case '⬡':
-				b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Render(string(r)))
-			case '^', '⊕', '⌖', 'B':
-				glyphType := map[rune]string{'^': "basic", '⊕': "splash", '⌖': "sniper", 'B': "buffer"}[r]
-				style := towerColor[glyphType]
-				twKey := fmt.Sprintf("%d,%d", y, x)
-				if t, ok := towerAt[twKey]; ok && t.Level > 0 {
-					style = style.Copy().Bold(true).Underline(true)
-				}
-				b.WriteString(style.Render(string(r)))
-			case 'o', '>', '□', 'S', 'H':
-				enKey := fmt.Sprintf("%d,%d", y, x)
-				e := enemyAt[enKey]
-				style := enemyColorByType["basic"]
-				if e != nil {
-					style = enemyColorByType[e.EnemyType]
-					// Health ratio using MaxHealth
-					ratio := 1.0
-					if e.MaxHealth > 0 {
-						ratio = float64(e.Health) / float64(e.MaxHealth)
-					}
-					if ratio > 0.7 {
-						style = enemyColorGreen
-					} else if ratio > 0.3 {
-						style = enemyColorYellow
-					} else {
-						style = enemyColorRed
-					}
-				}
-				b.WriteString(style.Render(string(r)))
-			case '•':
-				b.WriteString(pathStyle.Render("•"))
-			default:
-				b.WriteRune(r)
-			}
-		}
-		rows[y] = b.String()
-	}
-
-	mapView := uiBorder.Render(strings.Join(rows, "\n"))
-
-	// Sidebar with stats and logs
-	turnStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("34")).Bold(true)
-
-	defID := m.game.Defender
-	attID := m.game.Attacker
-	defName := m.game.ModelNames[defID]
-	attName := m.game.ModelNames[attID]
-	curName := m.game.ModelNames[m.game.CurrentTurn]
-
-	p1ID := m.game.Player1
-	p2ID := m.game.Player2
-	p1Name := m.game.ModelNames[p1ID]
-	p2Name := m.game.ModelNames[p2ID]
-	p1Reason := truncateCells(m.game.LastReasoning[p1ID], 30)
-	p2Reason := truncateCells(m.game.LastReasoning[p2ID], 30)
-	p1Taunt := truncateCells(m.game.LastTaunt[p1ID], 30)
-	p2Taunt := truncateCells(m.game.LastTaunt[p2ID], 30)
-
-	infoLines := []string{
-		sectionTitle("Match"),
-		turnStyle.Render(fmt.Sprintf("Turn: %s", curName)),
-		waveProgressBar(m.game.Wave, m.game.MaxWaves, 14),
-		fmt.Sprintf("Tick: %d", m.game.TickCount),
-		fmt.Sprintf("Queue: %d | Enemies: %d | Towers: %d", len(m.game.WaveQueue), len(m.game.Enemies), len(m.game.Towers)),
-		"",
-		sectionTitle("Economy"),
-		fmt.Sprintf("Lives (%s): %d", defName, m.game.Lives[defID]),
-		fmt.Sprintf("Resources (%s): %d (inc: %d)", defName, m.game.Resources[defID], m.game.Income[defID]),
-		fmt.Sprintf("Resources (%s): %d (inc: %d)", attName, m.game.Resources[attID], m.game.Income[attID]),
-		"",
-		sectionTitle("Telemetry"),
-		fmt.Sprintf("Provider calls: %s=%d %s=%d", p1Name, m.game.ProviderCalls[p1ID], p2Name, m.game.ProviderCalls[p2ID]),
-		fmt.Sprintf("Tokens: %s=%d %s=%d", p1Name, m.game.ProviderTokenUsage[p1ID], p2Name, m.game.ProviderTokenUsage[p2ID]),
-		fmt.Sprintf("Est cost: %s=%s %s=%s", p1Name, fmtCostMicros(m.game.ProviderCostMicros[p1ID]), p2Name, fmtCostMicros(m.game.ProviderCostMicros[p2ID])),
-		fmt.Sprintf("Provider errors: %s=%d %s=%d", p1Name, m.game.TotalProviderErrorsForPlayer(p1ID), p2Name, m.game.TotalProviderErrorsForPlayer(p2ID)),
-		fmt.Sprintf("Rejected actions: %s=%d %s=%d", p1Name, m.game.TotalRejectedActionsForPlayer(p1ID), p2Name, m.game.TotalRejectedActionsForPlayer(p2ID)),
-		fmt.Sprintf("Noop streak: %s=%d %s=%d", p1Name, m.game.NoopStreak[p1ID], p2Name, m.game.NoopStreak[p2ID]),
-		"",
-		sectionTitle("Decisions"),
-		fmt.Sprintf("Last status: %s=%s", p1Name, m.game.LastActionStatus[p1ID]),
-		fmt.Sprintf("Last status: %s=%s", p2Name, m.game.LastActionStatus[p2ID]),
-		fmt.Sprintf("Last reject: %s=%s", p1Name, truncateCells(m.game.LastRejectedReason[p1ID], 20)),
-		fmt.Sprintf("Last reject: %s=%s", p2Name, truncateCells(m.game.LastRejectedReason[p2ID], 20)),
-		fmt.Sprintf("%s: %s", p1Name, p1Reason),
-		fmt.Sprintf("%s: %s", p2Name, p2Reason),
-		fmt.Sprintf("%s: \"%s\"", p1Name, p1Taunt),
-		fmt.Sprintf("%s: \"%s\"", p2Name, p2Taunt),
-		"",
-		sectionTitle("Logs (↑/↓)"),
-	}
-
-	maxLogs := visibleLogCount(m.height)
-	if len(m.game.Logs) < maxLogs {
-		maxLogs = len(m.game.Logs)
-	}
-
-	start := len(m.game.Logs) - maxLogs - m.logScroll
-	if start < 0 {
-		start = 0
-	}
-	end := start + maxLogs
-	if end > len(m.game.Logs) {
-		end = len(m.game.Logs)
-	}
-	logsToShow := m.game.Logs[start:end]
-	infoLines = append(infoLines, logsToShow...)
-
-	sidebar := sidebarStyle.Render(strings.Join(infoLines, "\n"))
-
-	var ui string
-	if layoutForSize(m.width) == layoutStacked {
-		ui = lipgloss.JoinVertical(lipgloss.Left, mapView, sidebar)
+	var sideRows []string
+	if m.showLogs {
+		sideRows = fitLines(selectLogWindow(m.game.Logs, lyt.moves.h, m.logScroll), lyt.moves.w, lyt.moves.h)
 	} else {
-		ui = lipgloss.JoinHorizontal(lipgloss.Top, mapView, sidebar)
+		sideRows = renderMoveFeed(buildMoveFeed(m.game.ReplayEvents), lyt.moves.w, lyt.moves.h)
 	}
 
-	speed := math.Round((100.0/float64(m.tickDur/time.Millisecond))*10) / 10
-	aiStatus := "on"
-	if !m.game.AIEnabled {
-		aiStatus = "off"
+	var body []string
+	if lyt.mode == layoutWide {
+		left := vstack(boardRows, statsRows)
+		body = hjoin(left, lyt.board.w, sideRows, lyt.moves.w)
+	} else {
+		body = vstack(boardRows, statsRows, sideRows)
 	}
-	footer := fmt.Sprintf("speed %.1fx | ai %s | (space) pause/resume, +/- adjust, a toggle ai, q quit", speed, aiStatus)
-	if m.paused {
-		footer = "PAUSED | " + footer
-	}
-	return lipgloss.JoinVertical(lipgloss.Left, ui, footer)
-}
 
-type layoutMode int
-
-const (
-	layoutWide layoutMode = iota
-	layoutStacked
-	layoutTooSmall
-)
-
-// layoutForSize picks the view arrangement for the current terminal width.
-// Zero/negative means the first WindowSizeMsg has not arrived yet.
-func layoutForSize(width int) layoutMode {
-	switch {
-	case width <= 0:
-		return layoutWide
-	case width < 84:
-		return layoutTooSmall
-	case width < 120:
-		return layoutStacked
-	default:
-		return layoutWide
-	}
-}
-
-// visibleLogCount fits the log tail to the terminal height.
-func visibleLogCount(height int) int {
-	if height <= 0 {
-		return 10
-	}
-	n := height - 30 // map + chrome overhead
-	if n < 3 {
-		return 3
-	}
-	if n > 15 {
-		return 15
-	}
-	return n
+	all := vstack([]string{statusRow}, body, []string{keybarRow})
+	return strings.Join(all, "\n")
 }
 
 // waveProgressBar renders wave progress as a compact bar for the sidebar.
@@ -590,10 +374,6 @@ func waveProgressBar(wave, maxWaves, width int) string {
 	return fmt.Sprintf("Wave %d/%d [%s%s]", wave, maxWaves,
 		strings.Repeat("█", filled), strings.Repeat("─", width-filled))
 }
-
-var sectionTitleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("39"))
-
-func sectionTitle(s string) string { return sectionTitleStyle.Render(s) }
 
 // fmtCostMicros renders a USD-millionths cost as a dollar figure, or "-" when
 // no cost has accrued (for example when no pricing is configured).
@@ -648,36 +428,51 @@ func progressBar(idx, total, width int) string {
 	return b.String()
 }
 
+// replayView renders the replay viewer onto the same computeLayout budgets
+// the live view uses. It replaces the pre-rewrite version, which built its
+// right-hand panel by json.MarshalIndent-ing an event's ENTIRE Details map
+// with no size bound -- for the map_init event that's the full paths array,
+// measured at 396 rendered rows regardless of terminal size (finding 1.4).
+// Here the same detail text is run through fitLines like everything else,
+// so it is capped to its pane's budget no matter how large the underlying
+// JSON is; nothing bypasses the layout.
 func (m model) replayView() string {
-	total := len(m.replay)
-	if total == 0 {
-		return "Replay mode: no events loaded\nPress q to quit."
+	w, h := m.width, m.height
+	if w == 0 || h == 0 {
+		w, h = 80, 24
 	}
-	if m.replayIdx < 0 {
-		m.replayIdx = 0
-	}
-	if m.replayIdx >= total {
-		m.replayIdx = total - 1
+	if w < 60 || h < 15 {
+		return tooSmallNotice(m.width, m.height)
 	}
 
-	ev := m.replay[m.replayIdx]
-	left := uiBorder.Render(strings.Join([]string{
-		"Replay Timeline",
-		fmt.Sprintf("Event %d/%d", m.replayIdx+1, total),
-		progressBar(m.replayIdx, total, 40),
-		fmt.Sprintf("Type: %s", ev.Type),
-		fmt.Sprintf("Player: %s", ev.PlayerID),
-		fmt.Sprintf("Role: %s", ev.Role),
-		fmt.Sprintf("Action: %s", ev.Action),
-		fmt.Sprintf("Reason: %s", truncateCells(ev.Reason, 58)),
-		"",
-		"Controls:",
-		"space pause/resume auto-play",
-		"n/right step forward, b/left step back",
-		"]/[ jump +/-10 events",
-		"g/G start/end, e jump to game end",
-		"q quit",
-	}, "\n"))
+	total := len(m.replay)
+	if total == 0 {
+		rows := fitLines([]string{"Replay mode: no events loaded", "Press q to quit."}, w, 2)
+		return strings.Join(rows, "\n")
+	}
+	idx := clampReplayIdx(m.replayIdx, total)
+	ev := m.replay[idx]
+
+	lyt := computeLayout(w, h)
+
+	statusText := fmt.Sprintf("Replay %d/%d %s · %s", idx+1, total, progressBar(idx, total, 24), ev.Type)
+	statusRow := padCells(statusText, lyt.w)
+
+	keyText := "space pause/resume · n/b step · [/] ±10 · g/G start/end · e game end · q quit"
+	if m.paused {
+		keyText = "PAUSED · " + keyText
+	}
+	keybarRow := padCells(keyText, lyt.w)
+
+	snap := eng.ReconstructSnapshot(m.replay, idx+1)
+	boardRows := renderReplayBoard(snap, ev.Position, lyt.board)
+
+	detailWidth := lyt.w
+	detailBudget := lyt.stats.h + lyt.moves.h
+	if lyt.mode == layoutWide {
+		detailWidth = lyt.moves.w
+		detailBudget = lyt.moves.h
+	}
 
 	details := "{}"
 	if len(ev.Details) > 0 {
@@ -685,22 +480,27 @@ func (m model) replayView() string {
 			details = string(data)
 		}
 	}
-
-	// Reconstruct the board/state at this point in the timeline.
-	snap := eng.ReconstructSnapshot(m.replay, m.replayIdx+1)
-	stateLines := append([]string{"Board State (reconstructed)"}, snap.SummaryLines()...)
-	stateLines = append(stateLines, "", "Event Details:", details)
-	right := sidebarStyle.Render(strings.Join(stateLines, "\n"))
-
-	ui := lipgloss.JoinHorizontal(lipgloss.Top, left, right)
-	if board := renderSnapshotBoard(snap, ev.Position); board != "" {
-		ui = lipgloss.JoinVertical(lipgloss.Left, board, ui)
+	detailLines := []string{
+		fmt.Sprintf("Player: %s  Role: %s", ev.PlayerID, ev.Role),
+		fmt.Sprintf("Action: %s", ev.Action),
+		fmt.Sprintf("Reason: %s", ev.Reason),
+		"",
+		"Board state (reconstructed)",
 	}
-	status := "running"
-	if m.paused {
-		status = "paused"
+	detailLines = append(detailLines, snap.SummaryLines()...)
+	detailLines = append(detailLines, "", "Event details:")
+	detailLines = append(detailLines, strings.Split(details, "\n")...)
+	detailRows := fitLines(detailLines, detailWidth, detailBudget)
+
+	var body []string
+	if lyt.mode == layoutWide {
+		body = hjoin(boardRows, lyt.board.w, detailRows, lyt.moves.w)
+	} else {
+		body = vstack(boardRows, detailRows)
 	}
-	return lipgloss.JoinVertical(lipgloss.Left, ui, fmt.Sprintf("replay %s | +/- speed | q quit", status))
+
+	all := vstack([]string{statusRow}, body, []string{keybarRow})
+	return strings.Join(all, "\n")
 }
 
 func main() {

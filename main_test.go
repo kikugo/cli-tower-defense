@@ -66,50 +66,11 @@ func TestApplyBalanceOverride(t *testing.T) {
 	}
 }
 
-func TestLayoutForSize(t *testing.T) {
-	cases := []struct {
-		width int
-		want  layoutMode
-	}{
-		{0, layoutWide}, // size unknown before first WindowSizeMsg
-		{200, layoutWide},
-		{119, layoutStacked},
-		{84, layoutStacked},
-		{83, layoutTooSmall},
-	}
-	for _, c := range cases {
-		if got := layoutForSize(c.width); got != c.want {
-			t.Fatalf("layoutForSize(%d)=%v want %v", c.width, got, c.want)
-		}
-	}
-}
-
-// NOTE: this test verifies visibleLogCount's arithmetic in isolation, but
-// that arithmetic is the wrong unit. visibleLogCount returns a count of Logs
-// SLICE ENTRIES, while every caller spends the result as a budget of screen
-// ROWS -- and one entry does not cost one row (plain lines wrap, and the
-// "=== Game State ===" block from engine/core.go:840 is a single entry that
-// costs ~12 rows on its own). This test staying green is not evidence the
-// sidebar fits the terminal; see TestViewNeverExceedsTerminal in
-// main_view_test.go, which renders real frames and measures actual rows
-// against actual terminal height, and fails. Do not "fix" TestViewNever
-// ExceedsTerminal by making visibleLogCount return something that makes this
-// test happy instead -- a later phase deletes visibleLogCount entirely.
-func TestVisibleLogCount(t *testing.T) {
-	if got := visibleLogCount(0); got != 10 {
-		t.Fatalf("unknown height should default to 10, got %d", got)
-	}
-	if got := visibleLogCount(24); got != 3 {
-		t.Fatalf("short terminal should clamp to 3, got %d", got)
-	}
-	if got := visibleLogCount(100); got != 15 {
-		t.Fatalf("tall terminal should clamp to 15, got %d", got)
-	}
-	if got := visibleLogCount(38); got != 8 {
-		t.Fatalf("expected 8 for height 38, got %d", got)
-	}
-}
-
+// TestLayoutForSize and TestVisibleLogCount were deleted here: Phase 2
+// (the layout-engine rewrite, see main_layout.go's computeLayout) deletes
+// layoutForSize, visibleLogCount, and sidebarStyle outright, per the task
+// brief's explicit sequencing note. computeLayout's own property test lives
+// in main_layout_test.go.
 func TestWaveProgressBar(t *testing.T) {
 	got := waveProgressBar(3, 10, 10)
 	if got != "Wave 3/10 [███───────]" {

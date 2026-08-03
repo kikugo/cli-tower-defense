@@ -1,0 +1,50 @@
+Wave 2/5 [████────────] · tick 117 · turn ▸ATT · 1.0x · ▶                                                                                                       
+┌──────────────────────────────────────────────────────────────────────────────────┐   95 │ DEF │ REJECT plac │ rejected:                                       
+│                                                                                  │   96 │ ATT │ spawn       │                                                 
+│                                                                     ⬡            │   96 │ ATT │ spawn       │ 9,0                                             
+│                    ┼─┼  ─ ┼──┼  ┼────────┼    ┼─────────┼                        │   97 │ ATT │ breach      │ 10,79                                           
+│ ^^           ┼─┼  ┼   ┼┼ ─    ┼┼          ┼  ┼           ┼─┼    ─                │   97 │ DEF │ place       │                                                 
+│ ·───────────┼   ┼┼    ┼──┼  ─              ┼┼               ┼──┼ ┼     ┼───────· │   97 │ DEF │ REJECT plac │ rejected:                                       
+│ ^                    o    ┼o o                                    ┼   ┼          │   98 │ ATT │ spawn       │                                                 
+│              o o  ┼─┼         ┼o─────┼ ┼─┼                         ┼─┼           │   98 │ ATT │ spawn       │ 4,0                                             
+│          ┼─o┼ ─ ┼┼                    ─   ┼──────┼                               │   99 │ DEF │ place       │                                                 
+│         ┼                      ⬡                  ┼──────┼                       │   99 │ DEF │ REJECT plac │ rejected:                                       
+│ ·──────┼                                                  ┼┼        ┼─┼          │  100 │ ATT │ spawn       │                                                 
+│                                                             ┼o o┼ ┼┼ ⬡ ┼─o─────· │  100 │ ATT │ spawn       │ 4,0                                             
+│                                                               ─  ─               │  101 │ ATT │ breach      │ 10,79                                           
+│                   ⬡                                                              │  101 │ DEF │ place       │                                                 
+│                                                                                  │  101 │ DEF │ REJECT plac │ rejected:                                       
+└──────────────────────────────────────────────────────────────────────────────────┘  102 │ ATT │ spawn       │                                                 
+             DEFENDER          ATTACKER                                               102 │ ATT │ spawn       │ 9,0                                             
+             o3                gpt-4                                                  103 │ ATT │ breach      │ 10,79                                           
+lives/res    7 ♥ 55 ⛁+5        0 ⛁+5                                                  103 │ DEF │ place       │                                                 
+board        3 towers          10 enemies · wave 2/5                                  103 │ DEF │ REJECT plac │ rejected:                                       
+calls/cost   59 · 0 · -        58 · 0 · -                                             104 │ ATT │ spawn       │                                                 
+                                                                                      104 │ ATT │ spawn       │ 9,0                                             
+                                                                                      105 │ DEF │ place       │                                                 
+                                                                                      105 │ DEF │ REJECT plac │ rejected:                                       
+                                                                                      106 │ ATT │ spawn       │                                                 
+                                                                                      106 │ ATT │ spawn       │ 9,0                                             
+                                                                                      107 │ DEF │ place       │                                                 
+                                                                                      107 │ DEF │ REJECT plac │ rejected:                                       
+                                                                                      108 │ ATT │ spawn       │                                                 
+                                                                                      108 │ ATT │ spawn       │ 4,0                                             
+                                                                                      109 │ DEF │ place       │                                                 
+                                                                                      109 │ DEF │ REJECT plac │ rejected:                                       
+                                                                                      110 │ ATT │ spawn       │                                                 
+                                                                                      110 │ ATT │ spawn       │ 4,0                                             
+                                                                                      111 │ DEF │ place       │                                                 
+                                                                                      111 │ DEF │ REJECT plac │ rejected:                                       
+                                                                                      112 │ ATT │ spawn       │                                                 
+                                                                                      112 │ ATT │ REJECT spaw │ rejected:invalid_or_unaf                        
+                                                                                      113 │ DEF │ place       │                                                 
+                                                                                      113 │ DEF │ REJECT plac │ rejected:                                       
+                                                                                      114 │ ATT │ spawn       │                                                 
+                                                                                      114 │ ATT │ REJECT spaw │ rejected:invalid_or_unaf                        
+                                                                                      115 │ DEF │ place       │                                                 
+                                                                                      115 │ DEF │ REJECT plac │ rejected:                                       
+                                                                                      116 │ ATT │ spawn       │                                                 
+                                                                                      116 │ ATT │ REJECT spaw │ rejected:invalid_or_unaf                        
+                                                                                      117 │ DEF │ place       │                                                 
+                                                                                      117 │ DEF │ REJECT plac │ rejected:                                       
+space pause · +/- speed · a ai:on · r range · L logs:off · q quit                                                                                               
