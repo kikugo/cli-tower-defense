@@ -251,7 +251,7 @@ The same substitution applied to the remaining unmeasured units. It is faithful 
 
 Tank's health is devastating and its price more than cancels it. Three hundred health at 20 resources ends every match; the same unit at its real 50 makes the attacker *worse off than spawning basics*, because half speed doubles the time spent inside tower range, so 3× the health buys only about 1.5× the survivability for 2.5× the price. Speed on its own barely moves anything. Tank is not weak content, it is mispriced content — and nothing had ever measured it either way.
 
-The healer's actual ability remains untested. Testing it needs a unit of that type genuinely on the board, which the scripted attacker cannot currently produce.
+The healer's ability needed a different method. It keys on the unit's *type name* rather than on a stat, so a restatted `basic` gets a healer's body and never heals — which is what the 68% above measures. A dedicated scripted attacker that spawns real `healer` units, identical to the baseline in every other respect including its wave logic, gives **26/40 (65%)** against the body-only 27/40 (68%). A one-match swing across 40 seeds: the ability is worth nothing measurable. Of the four units the harness never exercises, one is decisive, one is mispriced, and two are inert.
 
 ### Whose decision was it?
 
@@ -287,7 +287,9 @@ The end-to-end loop for comparing two models:
 3. Inspect the match afterwards with `-replay-input`, stepping through the timeline.
 4. Run many seeds and role swaps with `-tournament`, persisting ratings with `-ratings-json`.
 
-Combat and economy numbers live in one config (`engine/balance.go`) and run manifests record a `balance_version`. To test a balance change, describe candidates in a sweep JSON and run `-balance-sweep`; each candidate plays scripted duels across seeds and the table reports how often the baseline defense held. A regression test pins the shipped defaults to that measurement.
+Combat and economy numbers live in one config (`engine/balance.go`). Run manifests record a `balance_version` label and a `balance_hash` derived from the numbers themselves — the label is for humans and does not change when a sweep retunes a stat, so the hash is what actually detects drift. Manifests also record the resolved provider configuration, including the temperature that produced the result (it defaults to 0.7, so live comparisons carry sampling noise whether or not anyone chose it). API keys are never recorded.
+
+To test a balance change, describe candidates in a sweep JSON and run `-balance-sweep`; each candidate plays scripted duels across seeds and the table reports how often the baseline defense held. A regression test pins the shipped defaults to that measurement.
 
 ```bash
 # offline, no API key needed
@@ -337,9 +339,8 @@ Dependencies are vendored in-repo, so the build needs no network.
 
 ## Known Issues
 
-- **`balance_version` cannot detect balance drift.** It is a hand-written string, so retuning the numbers without editing it leaves two different games both labelled `v2`.
-- **Replay event streams are capped at 10,000 events and trimmed from the front.** A run at the shipped defaults (3000 ticks, 30 waves) reaches the cap exactly, and reconstruction from a trimmed stream is silently wrong.
-- **`tank` and `healer` never appear in a scripted duel.** They are gated behind wave 6 and wave 16, and the wave counter does not get there under the measurement wave cap. Their stats can be measured by restatting the unit the scripted attacker already spawns (see above), but the healer's ability cannot, because it keys on the unit's type name rather than on a stat.
+- **Replay event streams are capped at 10,000 events and trimmed from the front.** A run at the shipped defaults (3000 ticks, 30 waves) reaches the cap exactly — measured, 858 events discarded, including four tower placements. The data is genuinely gone; what is fixed is that it is no longer *silently* gone. The stream carries a truncation marker, `ReconstructSnapshot` flags the reconstruction as untrustworthy, and the replay viewer shows a warning above the board. A reconstruction of a window entirely before the gap is still exact and is not flagged.
+- **`tank` and `healer` never appear in a scripted duel.** They are gated behind wave 6 and wave 16, and the wave counter does not get there under the measurement wave cap. Both have since been measured anyway — see above — by restatting the unit the scripted attacker spawns, and for the healer's ability, by a dedicated scripted attacker, since that ability keys on the unit's type name rather than on a stat.
 - **A decision is still requested every tick by default**, whether or not anything changed — see `skip_forced_save_turns` below for why that default is deliberate.
 - Some Unicode glyphs may not render in every terminal.
 
