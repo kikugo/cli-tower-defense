@@ -3,8 +3,11 @@ package main
 import (
 	"strings"
 	"testing"
+	"time"
 
 	eng "tower-defense/engine"
+
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 func TestClampReplayIdx(t *testing.T) {
@@ -93,6 +96,49 @@ func TestFmtCostMicros(t *testing.T) {
 	}
 	if got := fmtCostMicros(8000); got != "$0.0080" {
 		t.Fatalf("expected $0.0080, got %q", got)
+	}
+}
+
+// TestSpeedControlScalesTurnPause proves the +/- speed control keeps
+// eng.Game.PauseDuration in lockstep with tickDur (at ratio turnPauseRatio),
+// so the between-turn pause set by switchTurn actually speeds up/slows down
+// along with the tick rate instead of staying fixed at 1s regardless of
+// speed.
+func TestSpeedControlScalesTurnPause(t *testing.T) {
+	g := eng.NewGame("", "")
+	m := model{game: g, tickDur: 100 * time.Millisecond}
+	m.syncPauseDuration()
+	if want := m.tickDur * turnPauseRatio; g.PauseDuration != want {
+		t.Fatalf("initial sync: PauseDuration = %v, want %v", g.PauseDuration, want)
+	}
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("+")})
+	m2, ok := updated.(model)
+	if !ok {
+		t.Fatalf("Update did not return a model")
+	}
+	if want := m2.tickDur * turnPauseRatio; g.PauseDuration != want {
+		t.Fatalf("after '+': PauseDuration = %v, want %v (tickDur=%v)", g.PauseDuration, want, m2.tickDur)
+	}
+
+	updated, _ = m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("-")})
+	m3, ok := updated.(model)
+	if !ok {
+		t.Fatalf("Update did not return a model")
+	}
+	if want := m3.tickDur * turnPauseRatio; g.PauseDuration != want {
+		t.Fatalf("after '-': PauseDuration = %v, want %v (tickDur=%v)", g.PauseDuration, want, m3.tickDur)
+	}
+
+	// Replay mode has m.game == nil; the +/- handlers must not panic.
+	nilGameModel := model{game: nil, tickDur: 100 * time.Millisecond}
+	updated, _ = nilGameModel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("+")})
+	if _, ok := updated.(model); !ok {
+		t.Fatalf("'+' with nil game did not return a model")
+	}
+	updated, _ = nilGameModel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("-")})
+	if _, ok := updated.(model); !ok {
+		t.Fatalf("'-' with nil game did not return a model")
 	}
 }
 

@@ -22,6 +22,23 @@ func tickCmd(d time.Duration) tea.Cmd {
 	return tea.Tick(d, func(t time.Time) tea.Msg { return tickMsg(t) })
 }
 
+// turnPauseRatio is how many tick intervals the between-turn pause
+// (eng.Game.PauseDuration) spans. The defaults (tickDur=100ms,
+// PauseDuration=1s) are 10 tick-intervals apart; keeping that ratio as the
+// speed control changes tickDur means the whole simulation's pacing scales
+// together instead of just the tick rate. At the fastest setting (20ms/tick)
+// the pause becomes 200ms; at the slowest (500ms/tick) it becomes 5s.
+const turnPauseRatio = 10
+
+// syncPauseDuration scales the engine's between-turn pause to match the
+// current tick interval, preserving turnPauseRatio. It is a no-op when
+// m.game is nil (replay mode has no engine.Game).
+func (m *model) syncPauseDuration() {
+	if m.game != nil {
+		m.game.PauseDuration = m.tickDur * turnPauseRatio
+	}
+}
+
 type model struct {
 	game          *eng.Game
 	width         int
@@ -151,6 +168,7 @@ func initialModel() model {
 		}
 	}
 	m := model{game: g, tickDur: 100 * time.Millisecond, headless: *headless, maxTicks: *maxTicks, resultJSON: *resultJSON, replayJSON: *replayJSON, manifestJSON: *manifestJSON, reportMD: *reportMD, tournament: *tournament, tournamentCSV: *tournamentCSV, tournamentMD: *tournamentMD, balanceSweep: *balanceSweep, ratingsJSON: *ratingsJSON, replayIn: *replayIn, seed: *seed, ruleset: appliedRuleset}
+	m.syncPauseDuration()
 	if *replayIn != "" {
 		var events []eng.ReplayEvent
 		raw, err := os.ReadFile(*replayIn)
@@ -196,10 +214,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.tickDur > 20*time.Millisecond {
 				m.tickDur = time.Duration(float64(m.tickDur) * 0.8)
 			}
+			m.syncPauseDuration()
 		case "-":
 			if m.tickDur < 500*time.Millisecond {
 				m.tickDur = time.Duration(float64(m.tickDur) * 1.25)
 			}
+			m.syncPauseDuration()
 		case "a":
 			if m.game != nil {
 				m.game.AIEnabled = !m.game.AIEnabled
