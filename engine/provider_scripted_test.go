@@ -2,6 +2,7 @@ package engine
 
 import (
 	"fmt"
+	"math"
 	"testing"
 )
 
@@ -747,5 +748,201 @@ func TestApplyAdaptivePressureReinforceWaveDoesNotIncrementActionCounters(t *tes
 	after := g.ActionCounters[counterKey]
 	if after != before {
 		t.Fatalf("CONFOUND CHANGED: engine-fired reinforce_wave via applyAdaptivePressure used to bypass g.ActionCounters (before=%d after=%d); if this now increments, applyAdaptivePressure started routing through applyDecision and the ActionCounters-undercounts-reinforce_wave caveat documented on scriptedAttackerAbility no longer holds", before, after)
+	}
+}
+
+// TestScriptedProviderDefenderBasicBufferNeverProposesBufferWithFewerThanTwoTowers
+// exercises defender_basic_buffer's first precondition: even with
+// "place:buffer" affordable and a candidate that would sit in range of the
+// lone existing tower, fewer than 2 non-buffer towers on the board means it
+// must fall through to exactly scriptedDefenderBuild's basic-tower placement,
+// never propose a buffer. Checked at both 0 and 1 existing non-buffer towers.
+func TestScriptedProviderDefenderBasicBufferNeverProposesBufferWithFewerThanTwoTowers(t *testing.T) {
+	baseState := func(towers []interface{}) map[string]interface{} {
+		return map[string]interface{}{
+			"affordable_actions":     []string{"save", "place:basic", "place:buffer"},
+			"valid_tower_candidates": [][]int{{5, 5}, {5, 6}},
+			"towers":                 towers,
+		}
+	}
+
+	cases := []struct {
+		name   string
+		towers []interface{}
+	}{
+		{"zero existing towers", []interface{}{}},
+		{"one existing non-buffer tower", []interface{}{
+			map[string]interface{}{"type": "basic", "position": []int{5, 4}, "range": 5},
+		}},
+	}
+
+	for _, tc := range cases {
+		p := NewScriptedProvider(ResolvedPlayerModelConfig{
+			PlayerModelConfig: PlayerModelConfig{Provider: ProviderScripted, Model: "defender_basic_buffer"},
+		})
+		decision, err := p.GetTowerDecision(baseState(tc.towers))
+		if err != nil {
+			t.Fatalf("%s: unexpected error: %v", tc.name, err)
+		}
+		if decision["action"] == "place" && decision["tower_type"] == "buffer" {
+			t.Fatalf("%s: expected no buffer proposal with fewer than 2 non-buffer towers, got %v", tc.name, decision)
+		}
+		if decision["action"] != "place" || decision["tower_type"] != "basic" {
+			t.Fatalf("%s: expected fallback to basic build-coverage placement, got %v", tc.name, decision)
+		}
+	}
+}
+
+// TestScriptedProviderDefenderBasicBufferCoversAtLeastTwoExistingTowers
+// checks the core placement rule: with 2 existing non-buffer towers and
+// place:buffer affordable, the proposed position must actually sit within
+// the buffer's range (bufferDefaultRange, since no buffer exists yet to read
+// a range from) of at least 2 of them. The candidate list includes two decoy
+// positions that each cover only 1 tower, so a script that ignored coverage
+// entirely (e.g. always picking the first or last candidate) would fail this.
+func TestScriptedProviderDefenderBasicBufferCoversAtLeastTwoExistingTowers(t *testing.T) {
+	p := NewScriptedProvider(ResolvedPlayerModelConfig{
+		PlayerModelConfig: PlayerModelConfig{Provider: ProviderScripted, Model: "defender_basic_buffer"},
+	})
+	state := map[string]interface{}{
+		"affordable_actions": []string{"save", "place:basic", "place:buffer"},
+		"towers": []interface{}{
+			map[string]interface{}{"type": "basic", "position": []int{5, 5}},
+			map[string]interface{}{"type": "sniper", "position": []int{5, 7}},
+		},
+		// [1,1] covers neither tower; [9,9] covers neither; [5,6] sits
+		// distance 1 from both (5,5) and (5,7), within bufferDefaultRange
+		// (2), so it is the only candidate that qualifies.
+		"valid_tower_candidates": [][]int{{1, 1}, {9, 9}, {5, 6}},
+	}
+	decision, err := p.GetTowerDecision(state)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if decision["action"] != "place" || decision["tower_type"] != "buffer" {
+		t.Fatalf("expected a buffer placement, got %v", decision)
+	}
+	pos, ok := decision["position"].([]interface{})
+	if !ok || len(pos) != 2 {
+		t.Fatalf("expected a 2-element position, got %v", decision["position"])
+	}
+	y, _ := toIntFromAny(pos[0])
+	x, _ := toIntFromAny(pos[1])
+	if y != 5 || x != 6 {
+		t.Fatalf("expected the only 2-tower-covering candidate [5,6], got [%d,%d]", y, x)
+	}
+
+	// Independently verify the coverage property itself (not just the
+	// specific coordinates above), the same way runTowerPhase (engine/
+	// actions.go) measures it: Euclidean distance <= range.
+	towerPositions := [][2]int{{5, 5}, {5, 7}}
+	covered := 0
+	for _, tp := range towerPositions {
+		dy := float64(y - tp[0])
+		dx := float64(x - tp[1])
+		if math.Sqrt(dy*dy+dx*dx) <= float64(bufferDefaultRange) {
+			covered++
+		}
+	}
+	if covered < 2 {
+		t.Fatalf("proposed buffer position [%d,%d] covers only %d of the 2 existing towers", y, x, covered)
+	}
+}
+
+// TestScriptedProviderDefenderBasicBufferIsDeterministic feeds
+// defender_basic_buffer the exact same game state repeatedly and requires
+// the exact same proposed position every time -- this script feeds a 40-seed
+// balance sweep whose output must be reproducible run to run, and Go
+// randomizes map iteration order, so any map-range-driven tie-break would
+// show up here as flakiness.
+func TestScriptedProviderDefenderBasicBufferIsDeterministic(t *testing.T) {
+	state := map[string]interface{}{
+		"affordable_actions": []string{"save", "place:basic", "place:buffer"},
+		"towers": []interface{}{
+			map[string]interface{}{"type": "basic", "position": []int{2, 2}},
+			map[string]interface{}{"type": "sniper", "position": []int{2, 4}},
+			map[string]interface{}{"type": "splash", "position": []int{8, 8}},
+		},
+		// [2,3] is the only candidate that covers 2 towers (the basic+sniper
+		// pair); [0,0] and [8,9] cover at most 1 each. The specific pick
+		// isn't what this test is checking -- repeatability across calls is.
+		"valid_tower_candidates": [][]int{{2, 3}, {0, 0}, {8, 9}},
+	}
+
+	var first map[string]interface{}
+	for i := 0; i < 20; i++ {
+		p := NewScriptedProvider(ResolvedPlayerModelConfig{
+			PlayerModelConfig: PlayerModelConfig{Provider: ProviderScripted, Model: "defender_basic_buffer"},
+		})
+		decision, err := p.GetTowerDecision(state)
+		if err != nil {
+			t.Fatalf("attempt %d: unexpected error: %v", i, err)
+		}
+		if first == nil {
+			first = decision
+			continue
+		}
+		if decision["action"] != first["action"] ||
+			decision["tower_type"] != first["tower_type"] ||
+			fmt.Sprint(decision["position"]) != fmt.Sprint(first["position"]) {
+			t.Fatalf("attempt %d: nondeterministic decision, first=%v got=%v", i, first, decision)
+		}
+	}
+}
+
+// TestScriptedProviderDefenderBasicBufferOnlyProposesValidCandidates checks
+// that every buffer position defender_basic_buffer proposes, across several
+// distinct game states, is one of gameState["valid_tower_candidates"] --
+// never an invented cell.
+func TestScriptedProviderDefenderBasicBufferOnlyProposesValidCandidates(t *testing.T) {
+	states := []map[string]interface{}{
+		{
+			"affordable_actions": []string{"save", "place:buffer"},
+			"towers": []interface{}{
+				map[string]interface{}{"type": "basic", "position": []int{3, 3}},
+				map[string]interface{}{"type": "basic", "position": []int{3, 5}},
+			},
+			"valid_tower_candidates": [][]int{{10, 10}, {3, 4}, {0, 0}},
+		},
+		{
+			"affordable_actions": []string{"save", "place:buffer"},
+			"towers": []interface{}{
+				map[string]interface{}{"type": "sniper", "position": []int{1, 1}},
+				map[string]interface{}{"type": "splash", "position": []int{1, 2}},
+				map[string]interface{}{"type": "basic", "position": []int{20, 20}},
+			},
+			"valid_tower_candidates": [][]int{{1, 3}, {1, 0}, {6, 6}},
+		},
+	}
+
+	for i, state := range states {
+		p := NewScriptedProvider(ResolvedPlayerModelConfig{
+			PlayerModelConfig: PlayerModelConfig{Provider: ProviderScripted, Model: "defender_basic_buffer"},
+		})
+		decision, err := p.GetTowerDecision(state)
+		if err != nil {
+			t.Fatalf("state %d: unexpected error: %v", i, err)
+		}
+		// Not every state here is guaranteed to produce a qualifying buffer
+		// candidate; when it doesn't, the fallback build-coverage placement
+		// must still only ever use a valid candidate -- checked below either
+		// way, regardless of which branch (buffer vs. basic) fired.
+		pos, ok := decision["position"].([]interface{})
+		if !ok || len(pos) != 2 {
+			t.Fatalf("state %d: expected a 2-element position, got %v", i, decision["position"])
+		}
+		y, _ := toIntFromAny(pos[0])
+		x, _ := toIntFromAny(pos[1])
+		candidates, _ := state["valid_tower_candidates"].([][]int)
+		found := false
+		for _, c := range candidates {
+			if len(c) == 2 && c[0] == y && c[1] == x {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("state %d: proposed position [%d,%d] is not among valid_tower_candidates %v", i, y, x, candidates)
+		}
 	}
 }

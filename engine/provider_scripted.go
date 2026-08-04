@@ -2,6 +2,7 @@ package engine
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 )
@@ -78,6 +79,15 @@ func (p *ScriptedProvider) GetTowerDecision(gameState map[string]interface{}) (m
 		// behaving exactly like defender_baseline -- see
 		// scriptedDefenderSlowZone.
 		return scriptedDefenderSlowZone(gameState), nil
+	case "defender_basic_buffer":
+		// Plays exactly defender_baseline, except it also builds buffer
+		// towers when doing so actually boosts existing damage towers -- see
+		// scriptedDefenderBasicBuffer. defender_buffer builds nothing but
+		// buffers, which deal zero damage themselves (see runTowerPhase in
+		// engine/actions.go), so that script can never measure the buffer's
+		// cost-efficiency: it always loses. This mixed script is the one
+		// that can.
+		return scriptedDefenderBasicBuffer(gameState), nil
 	default:
 		if candidates, ok := gameState["valid_tower_candidates"].([][]int); ok && len(candidates) > 0 {
 			return map[string]interface{}{
@@ -388,6 +398,129 @@ func scriptedSlowZoneTarget(gameState map[string]interface{}) (int, int, bool) {
 		return y, x, true
 	}
 	return 0, 0, false
+}
+
+// scriptedDefenderBasicBuffer commits to defender_baseline's build-coverage/
+// upgrade/save logic (scriptedDefenderBuild with the "basic" tower, exactly
+// as defender_baseline plays it) except for one addition: while
+// "place:buffer" is legal AND the defender already owns at least 2 non-buffer
+// towers AND a legal placement candidate sits within the buffer's range of at
+// least 2 of them, place a buffer there instead -- see scriptedBufferTarget
+// for how the position is chosen. Otherwise it falls straight through to
+// scriptedDefenderBuild, unchanged.
+func scriptedDefenderBasicBuffer(gameState map[string]interface{}) map[string]interface{} {
+	affordable, _ := gameState["affordable_actions"].([]string)
+	canPlaceBuffer := false
+	for _, action := range affordable {
+		if action == "place:buffer" {
+			canPlaceBuffer = true
+			break
+		}
+	}
+	if canPlaceBuffer {
+		if y, x, ok := scriptedBufferTarget(gameState); ok {
+			return map[string]interface{}{
+				"action": "place", "tower_type": "buffer",
+				"position": []interface{}{float64(y), float64(x)},
+				"reason":   "basic_buffer: place buffer covering existing towers",
+			}
+		}
+	}
+	return scriptedDefenderBuild(gameState, "basic", "basic_buffer")
+}
+
+// bufferDefaultRange is the buffer tower's range, hardcoded as a last-resort
+// fallback because it genuinely is not derivable from a game state that has
+// no buffer on the board yet: gameState["tower_costs"] (see getGameState in
+// engine/actions.go) carries only g.towerCost's int -- cost, nothing else --
+// for every placeable tower type, and no other gameState field exposes the
+// stats (range, damage, cooldown) of a tower type that doesn't exist on the
+// board yet. The value matches the buffer entry in DefaultBalanceConfig
+// (engine/balance.go) and the help text in engine/core.go ("adds +50% damage
+// to every OTHER tower within 2 tiles").
+const bufferDefaultRange = 2
+
+// scriptedBufferTarget names a legal buffer placement from
+// gameState["valid_tower_candidates"] that sits within the buffer's range of
+// at least 2 of the defender's existing non-buffer towers (read from
+// gameState["towers"]), or returns ok=false when fewer than 2 non-buffer
+// towers exist or no candidate reaches 2 of them.
+//
+// The buffer's range is read off an already-placed buffer tower in
+// gameState["towers"] when one exists, rather than assumed, because the
+// "range" research line can raise an existing tower's Range after placement
+// (see researchTech in engine/actions.go) -- an already-placed buffer's
+// current Range is the true number a newly placed buffer would also get.
+// Only falls back to bufferDefaultRange when no buffer is on the board yet.
+// Distance uses the same Euclidean metric runTowerPhase (engine/actions.go)
+// uses to decide the boost, so "covers" here means exactly what it will mean
+// once the tower is actually placed.
+//
+// Candidates are walked in gameState["valid_tower_candidates"] order --
+// never a map range, which Go randomizes -- and the first one reaching the
+// highest coverage count wins ties, so the same game state always yields the
+// same proposed position.
+func scriptedBufferTarget(gameState map[string]interface{}) (int, int, bool) {
+	towers, _ := gameState["towers"].([]interface{})
+	type towerPos struct{ y, x int }
+	var nonBuffers []towerPos
+	bufferRange := bufferDefaultRange
+	haveExistingBufferRange := false
+	for _, raw := range towers {
+		tower, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		y, x, ok := positionFromAny(tower["position"])
+		if !ok {
+			continue
+		}
+		towerType, _ := tower["type"].(string)
+		if towerType == "buffer" {
+			if !haveExistingBufferRange {
+				if r, ok := toIntFromAny(tower["range"]); ok {
+					bufferRange = r
+					haveExistingBufferRange = true
+				}
+			}
+			continue
+		}
+		nonBuffers = append(nonBuffers, towerPos{y, x})
+	}
+	if len(nonBuffers) < 2 {
+		return 0, 0, false
+	}
+
+	candidates, ok := gameState["valid_tower_candidates"].([][]int)
+	if !ok || len(candidates) == 0 {
+		return 0, 0, false
+	}
+
+	rangeF := float64(bufferRange)
+	bestCount := 0
+	bestY, bestX := 0, 0
+	for _, cand := range candidates {
+		if len(cand) != 2 {
+			continue
+		}
+		cy, cx := cand[0], cand[1]
+		count := 0
+		for _, t := range nonBuffers {
+			dy := float64(cy - t.y)
+			dx := float64(cx - t.x)
+			if math.Sqrt(dy*dy+dx*dx) <= rangeF {
+				count++
+			}
+		}
+		if count > bestCount {
+			bestCount = count
+			bestY, bestX = cy, cx
+		}
+	}
+	if bestCount < 2 {
+		return 0, 0, false
+	}
+	return bestY, bestX, true
 }
 
 // positionFromAny parses a [y, x] position out of either the []int shape
