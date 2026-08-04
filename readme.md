@@ -300,10 +300,34 @@ Matches now record this. Every applied decision is tagged with its source, a pro
 
 **No live match recorded before this change can be shown to have measured a model rather than the engine.** Conclusions drawn from those runs carry an uncertainty nobody can now quantify.
 
+### What happened when the provenance gate was pointed at a live model
+
+The first thing it did was fail, three times, for three different reasons. Every one of them had been invisible before, and every one produced a match that looked completely normal from the outside — a winner, a plausible score, no errors reported.
+
+A short match, `gemini-3-flash-preview` defending against `gemini-2.5-flash-lite`:
+
+| run | configuration | defender authored | attacker authored | cause |
+|---|---|---|---|---|
+| 1 | as shipped | **0%** | 75% | response truncated by the token budget |
+| 2 | `max_tokens` 1024 | 38% | 50% | still truncating; and multi-line JSON never parsed |
+| 3 | parser fixed, `max_tokens` 4096 | **0%** | 62% | 20s HTTP timeout, 8 provider errors |
+| 4 | + `timeout_seconds` 180 | **100%** | **100%** | — |
+
+**The token budget.** Gemini 3 Flash is a thinking model. On a realistic 635-token prompt it spends 1,000–3,000 tokens on hidden reasoning before emitting anything, and the shipped 300-token cap cut the JSON mid-string — `{"action": "place", "tower_type": "` — with `finishReason: MAX_TOKENS`. The default is now 4096, and the provider records a truncated response as its own provenance category instead of lumping it in with genuine garbage.
+
+**The parser.** `parseTowerResponse` and `parseEnemyResponse` both matched JSON with the regex `\{.*\}`. In Go, `.` does not match a newline, so **any model that pretty-printed its JSON failed to parse at all** — silently, into the (10,10) fallback. That is the bug behind the reference replay's 90 engine-authored decisions, and it had nothing to do with the models. Both parsers now share one extraction routine that scans for a balanced object, tolerating fenced blocks, surrounding prose and stray braces.
+
+**The timeout.** Raising the token budget let the thinking model run past the 20-second HTTP timeout configured for it, so it failed three retries per turn and every decision became a provider fallback. Those errors were *counted*, which is the only reason the third failure was distinguishable from the first two.
+
+Two of the three were code defects and are fixed. The third is configuration: a thinking model needs `"timeout_seconds": 180` in its matchup entry, because 23 seconds per decision is simply what it costs. That has a consequence for anyone planning a run — see below.
+
+**None of this was detectable before provenance existed.** All four runs produced a winner and a score. The difference between the first and the last is that three of them measured the engine talking to itself.
+
 ### What is not claimed
 
 - That the balance is tuned for anything beyond `basic`-vs-`basic` play.
-- That the scripted duel proxy predicts model behaviour. It does not currently agree with it: the scripted attacker launches waves, and across a 12-match live tournament no model launched a single one.
+- That the scripted duel proxy predicts model behaviour. It does not currently agree with it: the scripted attacker launches waves, and across a 12-match live tournament no model launched a single one. That comparison has still not been re-run under provenance, so it rests on matches that may have been the engine playing itself.
+- That a live match of useful length is cheap. Measured: 23 seconds per decision for `gemini-3-flash-preview` against 1.0 second for `gemini-2.5-flash-lite`, and a decision is requested every tick. A 400-tick match is therefore about 80 minutes of wall clock and a 1500-tick match around five hours. Balance work uses scripted players for exactly this reason; live comparisons have to be budgeted in hours.
 - That Elo separates models here. Under a systematic seat advantage with role swap, every pairing goes 1–1 and ratings return to where they started.
 - That the shipped balance survives contact with the content it has never measured. On the evidence above, it does not.
 
