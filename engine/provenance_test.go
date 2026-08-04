@@ -29,6 +29,55 @@ func TestMarkDecisionSourceFirstWriterWins(t *testing.T) {
 	}
 }
 
+// TestOverrideDecisionSourceReplacesFallback confirms overrideDecisionSource
+// does what markDecisionSource's first-writer-wins convention deliberately
+// cannot: relabel an existing fallback tag with a more specific one, for a
+// caller (the Gemini provider) that only learns the true cause after the
+// parser already ran and stamped something generic.
+func TestOverrideDecisionSourceReplacesFallback(t *testing.T) {
+	decision := map[string]interface{}{"action": "spawn"}
+	markDecisionSource(decision, SourceParserUnparseable)
+	overrideDecisionSource(decision, SourceParserFallbackTruncated)
+
+	if got := takeDecisionSource(decision); got != SourceParserFallbackTruncated {
+		t.Fatalf("expected overrideDecisionSource to replace the fallback tag, got %q", got)
+	}
+}
+
+// TestOverrideDecisionSourceNeverDowngradesModel is the fix for the flaw the
+// coordinator flagged: a response can finish a complete, valid JSON object
+// and then keep generating trailing prose until it hits the token cap.
+// finishReason MAX_TOKENS on its own does not mean the recorded decision was
+// truncated, so overrideDecisionSource must refuse to relabel a decision
+// that is already untagged (implicit SourceModel) or explicitly stamped
+// SourceModel -- calling it must be a no-op in both cases.
+func TestOverrideDecisionSourceNeverDowngradesModel(t *testing.T) {
+	untagged := map[string]interface{}{"action": "spawn"}
+	overrideDecisionSource(untagged, SourceParserFallbackTruncated)
+	if got := takeDecisionSource(untagged); got != SourceModel {
+		t.Fatalf("expected an untagged (SourceModel) decision to stay untagged, got %q", got)
+	}
+
+	explicitlyTagged := map[string]interface{}{"action": "spawn"}
+	markDecisionSource(explicitlyTagged, SourceModel)
+	overrideDecisionSource(explicitlyTagged, SourceParserFallbackTruncated)
+	if got := takeDecisionSource(explicitlyTagged); got != SourceModel {
+		t.Fatalf("expected an explicitly-SourceModel decision to stay SourceModel, got %q", got)
+	}
+}
+
+func TestPeekDecisionSourceDoesNotRemoveTheTag(t *testing.T) {
+	decision := map[string]interface{}{"action": "spawn"}
+	markDecisionSource(decision, SourceParserEmpty)
+
+	if got := peekDecisionSource(decision); got != SourceParserEmpty {
+		t.Fatalf("expected peekDecisionSource to read %q, got %q", SourceParserEmpty, got)
+	}
+	if _, exists := decision[decisionSourceKey]; !exists {
+		t.Fatalf("expected peekDecisionSource to leave the reserved key in place")
+	}
+}
+
 func TestTakeDecisionSourceDefaultsToModel(t *testing.T) {
 	if got := takeDecisionSource(map[string]interface{}{"action": "save"}); got != SourceModel {
 		t.Fatalf("expected an untagged decision to default to SourceModel, got %q", got)
