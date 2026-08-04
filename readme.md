@@ -211,6 +211,8 @@ Two measurements of that unexercised content follow. Both were run twice: the fi
 
 ### The towers are not close
 
+*(This section measures balance **v2**, the numbers as they shipped before the sniper was repriced. The sniper row is what motivated the v3 change described further down; everything else here still stands.)*
+
 Scripted defenders that commit to a single tower type, on `forked` (two lanes), 40 seeds. The first attempt gave every non-basic tower 0% and looked conclusive, but it wasn't measuring what it claimed: with a 300 starting bank, `basic` buys three towers and `sniper` buys one, so it compared a tower against a tower-plus-idle-capital. At a matched 600 budget each script spends roughly all of it — six basics, three splash, two snipers, two buffers.
 
 Hold rate has no resolution on `forked` (every script loses), so the metric is defender score, which on this engine is the sum of the rewards of everything it killed:
@@ -458,7 +460,7 @@ Nothing moved. Seed 7 ended at 169 ticks against 175, seed 8 held with 6 lives a
 
 ### Trying to make the dominated towers worth buying
 
-Three of the four towers are strictly worse buys than `basic`. Per 100 resources `basic` delivers 17.0 damage/tick, `splash` 5.0 at full three-target saturation, `sniper` 1.33 and `buffer` none — and `basic` out-ranges `splash` (5 against 3) while it is at it. The sharpest statement of it: a `splash` tower's entire three-target volley is 30 damage, less than one `basic` shot's 34, at twice the cost and 1.5× the cooldown.
+Three of the four towers were strictly worse buys than `basic`. At the v2 numbers this section starts from, per 100 resources `basic` delivered 17.0 damage/tick, `splash` 5.0 at full three-target saturation, `sniper` 1.33 and `buffer` none — and `basic` out-ranges `splash` (5 against 3) while it is at it. The sharpest statement of it: a `splash` tower's entire three-target volley is 30 damage, less than one `basic` shot's 34, at twice the cost and 1.5× the cooldown.
 
 The first thing the sweeps turned up is that this is not really a damage-curve problem. Passive income is +5 every 10 ticks, and a defender that dies at tick 101 has seen about 350 resources for the whole match. At that budget **only `basic` buys more than one tower.** `defender_sniper`, `defender_splash` and `defender_buffer` all place exactly one tower, then save for 49 straight turns and lose 0/40 at tick 101.0 with a score of 0. It is a granularity problem at a small fixed bank.
 
@@ -511,7 +513,11 @@ Drop it to `basic`'s price and it does get bought — and buying it costs a two-
 
 **All of the above was re-measured against `attacker_live_like`** and the tower conclusions held: the sniper inversion got stronger (12% → 69% on two-lane maps), splash's multi-target gained nothing at all rather than three points, and buffer went from slightly harmful to merely neutral. Of everything in this document, the tower findings travelled best.
 
-**These sweeps do not touch the gate.** `defender_baseline` only ever builds `basic`, so changing `sniper`, `splash` or `buffer` stats leaves the 40-seed baseline sweep bit-identical by construction. That makes the gate a safety check here, not a measurement; the measurement is the single-tower sweep above. **No balance change has been committed** — the numbers above are proposals with their evidence attached, and the shipped `v2` balance is untouched.
+**These sweeps do not touch the gate.** `defender_baseline` only ever builds `basic`, so changing `sniper`, `splash` or `buffer` stats leaves the 40-seed baseline sweep bit-identical by construction. That makes the gate a safety check here, not a measurement; the measurement is the single-tower sweep above.
+
+**The sniper change is now shipped as balance `v3`:** 50 damage / cooldown 5 / cost 100, from 50 / 15 / 250. It was applied only after the stratum inversion was re-confirmed against `attacker_live_like`, since it had originally been measured against the attacker that turned out to be unrepresentative. The gate is unmoved and `defender_sniper` on the shipped balance now reproduces the candidate numbers exactly: 8% / 62% / 30% against `attacker_baseline`, 0% / 69% / 28% against `attacker_live_like`.
+
+**`splash` and `buffer` were deliberately left alone.** Neither could be made situational, and making `splash` competitive means giving it `basic`'s range and damage, at which point it is `basic` with extra steps. An obviously bad tower is more honest than a duplicate one.
 
 ### What is not claimed
 
