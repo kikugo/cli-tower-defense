@@ -320,7 +320,7 @@ Combat and economy numbers live in one config (`engine/balance.go`) and run mani
 -balance-sweep         run a sweep config and print the win-rate table
 ```
 
-The `fair` preset disables engine assists (auto-wave, auto-defend, adaptive pressure) so results measure model decisions only. Any ruleset JSON can set `"disable_assists": true`.
+The `fair` preset disables engine assists (auto-wave, auto-defend, adaptive pressure) so results measure model decisions only. Any ruleset JSON can set `"disable_assists": true`, and `"skip_forced_save_turns": true` to stop asking the model on turns where saving is the only legal move — see below for what that costs.
 
 ## Development
 
@@ -339,10 +339,24 @@ Dependencies are vendored in-repo, so the build needs no network.
 - **Map generation depends on the order flags are applied, not only on the seed.** `-seed 11 -map-type choke` through the TUI/headless path and the same seed and map type through the tournament runner produce different maps — 10 obstacles versus 4 — with identical manifests. Seed-only runs are unaffected.
 - **`balance_version` cannot detect balance drift.** It is a hand-written string, so retuning the numbers without editing it leaves two different games both labelled `v2`.
 - **Replay event streams are capped at 10,000 events and trimmed from the front.** A run at the shipped defaults (3000 ticks, 30 waves) reaches the cap exactly, and reconstruction from a trimmed stream is silently wrong.
-- **`tank` and `healer` never appear in a scripted duel.** They are gated behind wave 6 and wave 16, and the wave counter does not get there under the measurement wave cap.
-- **The inter-turn pause does not scale with the speed control.** `+`/`-` change the tick rate but not the turn pause, so at high speed you still wait a full second per turn.
-- **A decision is requested every tick**, whether or not anything changed. With income 5/tick and a cheapest action of 100, roughly nineteen of twenty calls exist only to be told nothing is affordable — which inflates token spend and makes action-frequency statistics a statement about the tick rate.
+- **`tank` and `healer` never appear in a scripted duel.** They are gated behind wave 6 and wave 16, and the wave counter does not get there under the measurement wave cap. Their stats can be measured by restatting the unit the scripted attacker already spawns (see above), but the healer's ability cannot, because it keys on the unit's type name rather than on a stat.
+- **A decision is still requested every tick by default**, whether or not anything changed — see `skip_forced_save_turns` below for why that default is deliberate.
 - Some Unicode glyphs may not render in every terminal.
+
+## Asking the model less often
+
+With income at 5/tick and the cheapest action costing 100, a player that spends is broke for about twenty ticks afterwards. The engine asks for a decision every tick regardless, so roughly nineteen of every twenty provider calls exist only to be told that nothing is affordable. On a paid API that is twenty times the tokens and twenty times the latency for no information.
+
+The ruleset field `"skip_forced_save_turns": true` suppresses those calls: when a player's only legal action is `save`, the engine applies the save directly instead of asking. On one seed that took provider calls from 400 to 47.
+
+**It is off by default, and the reason is worth stating.** The turns it skips are exactly the ones where a broke model proposes something it cannot afford and gets rejected — and rejection rate is one of the metrics this arena exists to record. Measured on seed 11, same match outcome either way:
+
+| | rejected attacker actions | match result |
+|---|---|---|
+| default | 157 | identical |
+| `skip_forced_save_turns` | 0 | identical |
+
+The balance gate is unmoved in both modes, because a rejected action and a skipped one touch no shared game state. So the flag is free for pacing and costly for measurement, and which of those you want depends on whether you are running a demo or an experiment. Skipped turns are recorded with their own provenance source, excluded from both sides of the authored-share ratio, so they neither count as the model's work nor as an engine substitution.
 
 ## License
 
