@@ -444,7 +444,21 @@ I tested the obvious objection — that the scripted attacker simply does not cl
 
 That is where I stopped rather than pushing the numbers until something moved. Making `splash` competitive means giving it `basic`'s range and roughly `basic`'s damage, at which point it is a reskinned `basic` — which is a worse outcome than leaving it obviously bad.
 
-**These sweeps do not touch the gate.** `defender_baseline` only ever builds `basic`, so changing `sniper` or `splash` stats leaves the 40-seed baseline sweep bit-identical by construction. That makes the gate a safety check here, not a measurement; the measurement is the single-tower sweep above. **No balance change has been committed** — the numbers above are proposals with their evidence attached, and the shipped `v2` balance is untouched.
+**`buffer` needed a new instrument before it could be measured at all.** `defender_buffer` builds only buffers, which deal no damage, so it loses 0/40 at any price — that script cannot measure this tower even in principle. A mixed script, `defender_basic_buffer`, plays `defender_baseline` but drops in a buffer once it owns two damage towers and can afford one, positioned to cover as many of them as possible.
+
+| buffer variant | one lane | two lanes | mixture | ever placed? |
+|---|---|---|---|---|
+| 300 / range 2 (as shipped) | 100% | 6% | 62% | **no** |
+| 150 / range 3 | 100% | 6% | 62% | **no** |
+| 100 / range 3 | 100% | 0% | 60% | yes |
+| 100 / range 4 | 100% | 0% | 60% | yes |
+| 60 / range 4 | 100% | 0% | 60% | yes |
+
+The first two rows are bit-identical to `defender_baseline`'s own numbers, to the decimal, on every stratum — which is the proof that the buffer branch never fired in any of those 120 games. At its shipped 300, and at half that, the precondition never occurs: the defender needs two towers *and* the price spare at the same moment, and on a ~350 lifetime budget it never has both.
+
+Drop it to `basic`'s price and it does get bought — and buying it costs a two-lane win, 62% → 60%. Cost 60 and cost 100 give identical results because the script has exactly 100 spare after its second tower either way, so it buys at the same turn regardless. So `buffer` is unaffordable at its real price and a slight loss at any price low enough to reach: a +50% multiplier on two towers is worth less than a third tower. It would need to reliably reach four or more towers to break even, and the defender never owns four.
+
+**These sweeps do not touch the gate.** `defender_baseline` only ever builds `basic`, so changing `sniper`, `splash` or `buffer` stats leaves the 40-seed baseline sweep bit-identical by construction. That makes the gate a safety check here, not a measurement; the measurement is the single-tower sweep above. **No balance change has been committed** — the numbers above are proposals with their evidence attached, and the shipped `v2` balance is untouched.
 
 ### What is not claimed
 
