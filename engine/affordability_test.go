@@ -61,6 +61,29 @@ func TestPlayerGameStateIncludesAffordableActions(t *testing.T) {
 	}
 }
 
+// TestPlayerGameStateIncludesYourResources verifies getPlayerGameState adds
+// a your_resources key equal to that specific player's own balance, for both
+// the defender and attacker roles. This is what lets a scripted provider
+// (see engine/provider_scripted.go) decide off its own bank instead of
+// scanning gameState["resources"], the shared map over every player.
+func TestPlayerGameStateIncludesYourResources(t *testing.T) {
+	g := NewGame("test", "test")
+	g.Resources[g.Defender] = 123
+	g.Resources[g.Attacker] = 456
+
+	defState := g.getPlayerGameState(g.Defender, "defender")
+	got, ok := defState["your_resources"].(int)
+	if !ok || got != 123 {
+		t.Fatalf("defender: expected your_resources=123, got %#v", defState["your_resources"])
+	}
+
+	attState := g.getPlayerGameState(g.Attacker, "attacker")
+	got, ok = attState["your_resources"].(int)
+	if !ok || got != 456 {
+		t.Fatalf("attacker: expected your_resources=456, got %#v", attState["your_resources"])
+	}
+}
+
 func TestAffordableActionsExcludesPlaceWhenBoardSaturated(t *testing.T) {
 	g := NewGame("test", "test")
 	g.Resources[g.Defender] = 500

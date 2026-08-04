@@ -159,10 +159,13 @@ func TestScriptedProviderAttackerHealerFallsBackToBasicWhenUnaffordable(t *testi
 
 // TestScriptedProviderAttackerHealerLaunchesWaveSameConditionAsBaseline
 // verifies attacker_healer launches a wave under exactly the condition
-// attacker_baseline (the default branch) does -- including the known bug
-// where a wave triggers if ANY player's resources entry is >= 260, not just
-// the attacker's own. This is deliberately reproduced, not fixed, so a sweep
-// comparing the two scripts isolates the spawned unit and nothing else.
+// attacker_baseline (the default branch) does, now that both read only the
+// player's own balance (gameState["your_resources"]) rather than scanning
+// gameState["resources"], the shared map over every player that used to let
+// either script fire a wave off the opponent's bank. Each case sets
+// "resources" to a whole-game map whose OTHER entries would trip the old,
+// buggy >= 260 scan, to prove neither script reads that map for this
+// decision any more.
 func TestScriptedProviderAttackerHealerLaunchesWaveSameConditionAsBaseline(t *testing.T) {
 	baseline := NewScriptedProvider(ResolvedPlayerModelConfig{
 		PlayerModelConfig: PlayerModelConfig{Provider: ProviderScripted, Model: "attacker_baseline"},
@@ -171,13 +174,13 @@ func TestScriptedProviderAttackerHealerLaunchesWaveSameConditionAsBaseline(t *te
 		PlayerModelConfig: PlayerModelConfig{Provider: ProviderScripted, Model: "attacker_healer"},
 	})
 	states := []map[string]interface{}{
-		// Attacker's own resources trip the gate.
-		{"resources": map[string]interface{}{"p1": 100.0, "p2": 260.0}, "affordable_actions": []string{"save"}},
-		// Only the OPPONENT's resources trip the gate -- the latent bug,
-		// reproduced faithfully in both scripts.
-		{"resources": map[string]interface{}{"p1": 260.0, "p2": 50.0}, "affordable_actions": []string{"save"}},
+		// The attacker's own balance trips the gate.
+		{"your_resources": 260.0, "resources": map[string]interface{}{"p1": 100.0, "p2": 260.0}, "affordable_actions": []string{"save"}},
+		// Only the OPPONENT's balance is >= 260 (via the shared "resources"
+		// map) -- must NOT trip the gate now that the fix is in.
+		{"your_resources": 50.0, "resources": map[string]interface{}{"p1": 260.0, "p2": 50.0}, "affordable_actions": []string{"save"}},
 		// Neither trips the gate.
-		{"resources": map[string]interface{}{"p1": 100.0, "p2": 50.0}, "affordable_actions": []string{"save"}},
+		{"your_resources": 100.0, "resources": map[string]interface{}{"p1": 100.0, "p2": 50.0}, "affordable_actions": []string{"save"}},
 	}
 	for i, state := range states {
 		bd, err := baseline.GetEnemyDecision(state)
@@ -191,5 +194,49 @@ func TestScriptedProviderAttackerHealerLaunchesWaveSameConditionAsBaseline(t *te
 		if (bd["action"] == "wave") != (hd["action"] == "wave") {
 			t.Fatalf("case %d: wave-launch condition diverged: baseline=%v healer=%v", i, bd, hd)
 		}
+	}
+}
+
+// TestScriptedProviderAttackerBaselineLaunchesWaveOnOwnResources verifies the
+// default/attacker_baseline branch launches a wave once the player's OWN
+// balance (your_resources) reaches the 260 threshold.
+func TestScriptedProviderAttackerBaselineLaunchesWaveOnOwnResources(t *testing.T) {
+	p := NewScriptedProvider(ResolvedPlayerModelConfig{
+		PlayerModelConfig: PlayerModelConfig{Provider: ProviderScripted, Model: "attacker_baseline"},
+	})
+	state := map[string]interface{}{
+		"your_resources":     260.0,
+		"affordable_actions": []string{"save"},
+	}
+	decision, err := p.GetEnemyDecision(state)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if decision["action"] != "wave" {
+		t.Fatalf("expected wave when own resources hit the threshold, got %v", decision)
+	}
+}
+
+// TestScriptedProviderAttackerBaselineDoesNotLaunchWaveOnOpponentResources is
+// the regression test for the bug this change fixes: gameState["resources"]
+// is a map over ALL players (see getGameState in engine/actions.go), so the
+// old code launched a wave whenever ANY entry hit 260 -- including the
+// defender's bank. Here only the opponent (p1) is at/above the threshold;
+// the attacker's own balance (your_resources) is not, so no wave must fire.
+func TestScriptedProviderAttackerBaselineDoesNotLaunchWaveOnOpponentResources(t *testing.T) {
+	p := NewScriptedProvider(ResolvedPlayerModelConfig{
+		PlayerModelConfig: PlayerModelConfig{Provider: ProviderScripted, Model: "attacker_baseline"},
+	})
+	state := map[string]interface{}{
+		"your_resources":     50.0,
+		"resources":          map[string]interface{}{"p1": 300.0, "p2": 50.0},
+		"affordable_actions": []string{"save"},
+	}
+	decision, err := p.GetEnemyDecision(state)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if decision["action"] == "wave" {
+		t.Fatalf("expected no wave when only the opponent's resources are at/above the threshold, got %v", decision)
 	}
 }
