@@ -522,6 +522,9 @@ type Game struct {
 	Player2            string
 	pendingTurnResults chan turnResult
 	mapInitRecorded    bool
+	// ReplayTruncated is true once trimReplayEvents has discarded any real
+	// event to respect MaxReplayEvents. See replay.go.
+	ReplayTruncated bool
 	winReasonOverride  string
 }
 

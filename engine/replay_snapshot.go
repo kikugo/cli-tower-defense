@@ -37,6 +37,21 @@ type ReplaySnapshot struct {
 	MapPaths        [][]Position    `json:"map_paths,omitempty"`
 	MapObstacles    []Position      `json:"map_obstacles,omitempty"`
 	BreachPoints    []Position      `json:"breach_points,omitempty"`
+	// Truncated is true when the walk (events[0:index]) passed a
+	// ReplayTruncated marker -- i.e. the underlying stream is missing events
+	// that happened before this point because MaxReplayEvents forced them
+	// out. When true, every count and list above this comment (Towers,
+	// EnemiesSpawned, WavesLaunched, Breaches, Kills, Decisions, ...) is a
+	// floor, not a fact: the true values could be higher, and placements
+	// from the discarded window are simply gone. A caller MUST check this
+	// field before treating the snapshot as an accurate board -- it is the
+	// only signal that distinguishes a truly empty early game from an early
+	// game whose history was discarded.
+	Truncated bool `json:"truncated"`
+	// TruncatedEvents is the number of events known to have been discarded
+	// before the point this snapshot was reconstructed to. Only meaningful
+	// when Truncated is true.
+	TruncatedEvents int `json:"truncated_events,omitempty"`
 }
 
 // ReconstructSnapshot walks the first `index` replay events and derives the
@@ -103,6 +118,11 @@ func ReconstructSnapshot(events []ReplayEvent, index int) ReplaySnapshot {
 			snap.ProviderErrors++
 		case ReplayMapInit:
 			applyMapInit(&snap, ev.Details)
+		case ReplayTruncated:
+			snap.Truncated = true
+			if count, ok := toIntFromAny(ev.Details["discarded_events"]); ok {
+				snap.TruncatedEvents = count
+			}
 		case ReplayGameEnd:
 			snap.GameOver = true
 			if winner, ok := ev.Details["winner"].(string); ok && winner != "" {

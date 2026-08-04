@@ -18,6 +18,15 @@ const (
 	ReplayRejected    ReplayEventType = "rejected"
 	ReplayProviderErr ReplayEventType = "provider_error"
 	ReplayMapInit     ReplayEventType = "map_init"
+	// ReplayTruncated is a synthetic marker event. recordReplayEvent plants
+	// one the first time MaxReplayEvents forces it to discard events, and
+	// keeps updating it in place on every later trim. It carries no board
+	// state -- it exists purely so a consumer of the raw stream (chiefly
+	// ReconstructSnapshot) can tell a truncated stream from a complete one.
+	// Without it, a reconstruction that replays from the start of a
+	// truncated stream would silently produce a board missing whatever the
+	// discarded events described, with nothing anywhere saying so.
+	ReplayTruncated ReplayEventType = "truncated"
 )
 
 type ReplayEvent struct {
@@ -68,6 +77,12 @@ type MatchResult struct {
 	CostMicros         map[string]int64   `json:"cost_micros"`
 	DurationMillis     int64              `json:"duration_millis"`
 	ReplayEvents       int                `json:"replay_events"`
+	// ReplayTruncated is true when MaxReplayEvents forced the recorded event
+	// stream to drop events mid-match. The stream still carries a
+	// ReplayTruncated marker event in that case (see ReconstructSnapshot),
+	// so this field is a convenience for callers that only have the
+	// MatchResult and not the raw event slice.
+	ReplayTruncated bool `json:"replay_truncated,omitempty"`
 	// Strata records what the match actually turned out to be -- realised
 	// lane count, map type, and balance version -- as opposed to what a
 	// ruleset requested. A ruleset with map_type: "" tells you nothing about
@@ -89,14 +104,77 @@ func (g *Game) recordReplayEvent(event ReplayEvent) {
 	}
 	g.ReplayEvents = append(g.ReplayEvents, event)
 	if g.MaxReplayEvents > 0 && len(g.ReplayEvents) > g.MaxReplayEvents {
-		if g.ReplayEvents[0].Type == ReplayMapInit {
-			// Keep the map layout; trim the oldest events after it.
-			overflow := len(g.ReplayEvents) - g.MaxReplayEvents
-			g.ReplayEvents = append(g.ReplayEvents[:1], g.ReplayEvents[1+overflow:]...)
-		} else {
-			g.ReplayEvents = g.ReplayEvents[len(g.ReplayEvents)-g.MaxReplayEvents:]
+		g.trimReplayEvents()
+	}
+}
+
+// trimReplayEvents enforces MaxReplayEvents once the stream grows past the
+// cap. map_init (the board layout) is always preserved, exactly as before.
+//
+// What is new: whatever else gets discarded is folded into a ReplayTruncated
+// marker event kept right after map_init (or at the front, if map_init
+// hasn't been recorded yet), instead of just vanishing. The marker itself is
+// updated in place on every later trim rather than re-inserted, so this
+// stays O(1) per call no matter how long the match runs past the cap.
+// ReconstructSnapshot flags Truncated the moment it walks past the marker,
+// so a caller reconstructing a window that touches the gap always knows the
+// board it got back cannot be trusted -- see replay_snapshot.go.
+func (g *Game) trimReplayEvents() {
+	n := len(g.ReplayEvents)
+	if g.MaxReplayEvents <= 0 || n <= g.MaxReplayEvents {
+		return
+	}
+
+	prefixLen := 0
+	if g.ReplayEvents[0].Type == ReplayMapInit {
+		prefixLen = 1
+	}
+	haveMarker := prefixLen < n && g.ReplayEvents[prefixLen].Type == ReplayTruncated
+
+	firstVictim := prefixLen
+	if haveMarker {
+		firstVictim++
+	}
+
+	reserved := prefixLen + 1 // +1 for the marker itself
+	if reserved > g.MaxReplayEvents {
+		// MaxReplayEvents is too small to hold map_init plus a marker (not
+		// reachable with any realistic cap -- the default is 10000). Fall
+		// back to a plain trim so the cap is never violated; the discard
+		// signal is lost in this degenerate case only.
+		g.ReplayEvents = g.ReplayEvents[n-g.MaxReplayEvents:]
+		return
+	}
+
+	keepTail := g.MaxReplayEvents - reserved
+	victimEnd := n - keepTail
+	if victimEnd < firstVictim {
+		victimEnd = firstVictim
+	}
+
+	discardedNow := victimEnd - firstVictim
+	firstDroppedTick := g.ReplayEvents[firstVictim].Tick
+
+	marker := ReplayEvent{Type: ReplayTruncated, Tick: firstDroppedTick}
+	totalDiscarded := discardedNow
+	if haveMarker {
+		prevMarker := g.ReplayEvents[prefixLen]
+		marker.Tick = prevMarker.Tick
+		if prev, ok := toIntFromAny(prevMarker.Details["discarded_events"]); ok {
+			totalDiscarded += prev
 		}
 	}
+	marker.Details = map[string]interface{}{
+		"discarded_events": totalDiscarded,
+	}
+
+	rest := g.ReplayEvents[victimEnd:]
+	kept := make([]ReplayEvent, 0, prefixLen+1+len(rest))
+	kept = append(kept, g.ReplayEvents[:prefixLen]...)
+	kept = append(kept, marker)
+	kept = append(kept, rest...)
+	g.ReplayEvents = kept
+	g.ReplayTruncated = true
 }
 
 // recordMapInitEvent captures the board layout once so replays are

@@ -74,6 +74,7 @@ func (g *Game) BuildMatchResult() MatchResult {
 		CostMicros:        copyInt64Map(g.ProviderCostMicros),
 		DurationMillis:    duration.Milliseconds(),
 		ReplayEvents:      len(g.ReplayEvents),
+		ReplayTruncated:   g.ReplayTruncated,
 		Strata:            g.matchStrata(),
 	}
 	result.ModelAuthoredShare = map[string]float64{}
