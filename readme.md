@@ -4,9 +4,11 @@ A terminal tower defense game written in Go where any two configured LLMs compet
 
 ![Two models playing a match](docs/demo.gif)
 
-A real match, not a scripted one: `gemini-2.5-flash-lite` on both sides, seed 7 (a two-lane map), recorded 2026-08-04. Every one of the 11 applied actions came from a model — the run reports `authored_def=100% | authored_att=100%`, and that is the reason to believe the recording at all. The attacker wins on wave 5: the defender places two towers and one research level, saves three times, and runs out of lives.
+A real match, not a scripted one: `gemini-2.5-flash-lite` on both sides, seed 7 (a two-lane map), recorded 2026-08-04. All 18 applied actions came from a model — the run reports `authored_def=100% | authored_att=100%` — and **engine assists are off**, so all five waves were launched by the attacker rather than corrected into existence by the engine. The attacker wins on wave 5: it commits to `shielded`, and the defender places three towers and a research level before running out of lives.
 
-Earlier recordings of this demo could not make that claim. Until the decision parser was fixed (see [Known Issues](#known-issues) and the provenance section below), a model that pretty-printed its JSON was silently replaced by an engine fallback, so a "real match" could be the engine playing itself and look no different.
+It took two attempts to earn that caption. The first re-recording was 100% model-authored and still not honest: it ran at the interactive default, with assists on, and **four of its five waves were `applied_auto_wave`** — the model's decision, rewritten by the engine into a wave. Provenance said "the model chose this" while the engine chose the outcome. The two are different questions and only the first was being recorded.
+
+Earlier recordings could not make either claim. Until the decision parser was fixed (see [Known Issues](#known-issues) and the provenance section below), a model that pretty-printed its JSON was silently replaced by an engine fallback, so a "real match" could be the engine playing itself and look no different.
 
 ## Game Overview
 
@@ -378,13 +380,51 @@ So the **60.8% headline describes a matchup no live model plays.** What it measu
 
 Two things this does *not* overturn. The shielded result is **confirmed, not refuted** — the balance work predicted 62% → 0% when the attacker commits to shielded, and that is what a live attacker does to a live defender without being told to. And the defender-side conclusions, which are most of the balance work above, rest on a proxy that just passed a direct test.
 
-Engine assists are not the explanation: `applied_auto_wave` fired at most twice in any match, against 30+ player-launched waves.
+**Correction: engine assists were a substantial part of this, and I originally said they were not.** That claim rested on counting `applied_auto_wave` events, which fired at most twice per match. It was the wrong thing to count. `applyAdaptivePressure` has three branches, and the other two leave no replay event at all: it can fire `reinforce_wave` (which never reaches `ActionCounters`, because it bypasses `applyDecision`) and it can append a free enemy straight onto the wave queue. All three trigger on `NoopStreak >= 3` — that is, when a player has *saved* three turns running.
+
+That is the trap. `attacker_baseline` spawns every single turn and therefore never triggers it. A live attacker banks for 40-cost `shielded`, saving 54.8% of its turns, and triggers it constantly. Measured on the same ruleset with only the assist flag changed:
+
+| attacker | assists off | assists on |
+|---|---|---|
+| `attacker_baseline` | 62% | **62%** — unchanged |
+| `attacker_live_like` | 65% | **0/40** |
+
+The engine's assist is worth nothing to an attacker that spends and worth the entire match to one that banks. The live matches in the table above ran with assists **on**, because that is the headless default — so the comparison was between an attacker that triggered the assist and one that could not.
+
+Re-run with assists off, live attacker against the same scripted defender, the honest number is smaller: the defender holds **1 of 4** seeds rather than 0 of 4, against `attacker_baseline`'s 2 of 4. A live attacker is genuinely better than the scripted one. It is not the rout the first measurement showed.
+
+The other findings in this section — the defender-proxy agreement, the wave rate, the unit composition — are unaffected, since they are properties of the decisions themselves rather than of who won.
+
+### Re-measuring the whole suite against an attacker that plays like a model
+
+Since `attacker_baseline` turned out to be unrepresentative, every number measured against it is suspect. `attacker_live_like` is a scripted attacker calibrated to the measured live decision mix — waves at 0.0345 per tick against the 0.0343 target, spawn composition within three points on every unit, and a ~59% save share that emerges from banking rather than being set. It banks for the unit it wants instead of substituting a cheaper one, which is what reproduces the live behaviour.
+
+**It was validated against outcomes, not just against the action mix**, which matters because matching a distribution is not the same as matching a strategy. Under the live runs' own conditions it kills `defender_baseline` on all four seeds at ticks 125/125/131/125, against the live model's 163/94/104/105, with matching wave counts.
+
+I wrote down what would change my mind before running any of it. The scorecard:
+
+| claim | against `attacker_baseline` | against `attacker_live_like` | verdict |
+|---|---|---|---|
+| the 62% headline | 62% | **65%** | **survives** — moved 3 points |
+| shielded is decisive | 62% → 0% | 65% → 0% | **survives**, refined |
+| sniper stratum inversion | 6% → 62% two-lane | 12% → **69%** two-lane | **confirmed, stronger** |
+| all three abilities are harmful | 62% → 92/88/65% | 65% → **60**/65/**62**% | **refuted** |
+| splash's multi-target is inert | +3 points | **+0 points** | **survives, stronger** |
+| tank is horizon-dependent | 90% @400, 68% @1500 | 0% @400, 0% @1500 | **method does not transfer** |
+
+**The abilities result reverses.** `surge` takes the defender from 65% to 60% and `reinforce_wave` to 62% — both now *help* the attacker, where against baseline economics both looked catastrophic. The original arms layered an ability on an attacker that spawns every turn and never banks, so they measured an opportunity cost nobody actually pays. Against an economy that already banks, the ability is nearly free. `shield_burst` remains neutral at 65%.
+
+**Splash gets worse, not better.** I predicted this was the most likely finding to flip, on the reasoning that a live-like attacker sends more units and more units should mean more clustering. It does not: given `basic`'s exact stats plus a free three-target attack, splash now gains *nothing at all* (65% against a 65% baseline) where it gained three points before. More units in flight did not put them in the same three-tile neighbourhood.
+
+**The tank arm stops meaning what it meant.** That experiment restats whichever unit the attacker spawns. Against `attacker_baseline`, which sends nothing but `basic`, restatting `basic` makes every enemy a tank — a clean isolation. Against a mixed-composition attacker it converts about a third of the spawns and leaves the shielded ones alone, so the arm no longer isolates anything. The 0% it produces is not evidence that tank is fine or that it is broken. **The restat method is only valid against a mono-composition attacker**, which is worth knowing before it is used again.
+
+Two things did survive intact and are worth stating plainly: the headline hold rate barely moved, and the sniper stratum inversion got stronger. That second one was the gate on whether the sniper change is worth applying.
 
 ### The four mechanics nobody had measured
 
 Research levels, the three attacker abilities, slow zones and fog of war are all on `Game`, and until now no scripted player touched any of them — the same blind spot that hid `tank` and `healer`. Seven new scripts (one per research tech, one per ability, one that places slow zones on live enemy tiles) put each of them under the same 40-seed stratified sweep.
 
-**The attacker abilities are live, reachable, and all three are bad buys.** Defender hold rate, so higher means the ability hurt the attacker:
+**The attacker abilities are live and reachable. Whether they are bad buys depends entirely on who is buying** — see the re-measurement above, where `surge` and `reinforce_wave` both turn out to help an attacker with a realistic economy. Against `attacker_baseline`, which spawns every turn and never banks, all three look catastrophic. Defender hold rate, so higher means the ability hurt the attacker:
 
 | attacker | one lane | two lanes | mixture |
 |---|---|---|---|
@@ -393,7 +433,9 @@ Research levels, the three attacker abilities, slow zones and fog of war are all
 | `attacker_shield_burst` (90) | 100% | 69% | **88%** |
 | `attacker_reinforce` (70) | 100% | 12% | **65%** |
 
-Every one of them makes the attacker worse. Spawns cost 20–50, so 80 spent on a temporary speed buff is four enemies not sent. `reinforce_wave` comes closest to fair because it *is* enemies — three of them for 70 — and it still loses to just spawning.
+Against this attacker every one of them makes it worse. Spawns cost 20–50, so 80 spent on a temporary speed buff is four enemies not sent, and an attacker that would otherwise have spawned on all of those turns pays full price for the delay.
+
+That is the whole of the effect, and it does not survive changing the buyer. An attacker that banks — as a live model does, on 54.8% of its turns — is already not spawning on the turn it buys the ability, so the ability is close to free. Re-measured against `attacker_live_like`, `surge` takes the defender from 65% to 60% and `reinforce_wave` to 62%. **These three rows measure `attacker_baseline`'s economy, not the abilities.**
 
 **Research is reachable and unaffordable.** All three techs cost 140–180 per level, and a defender that banks for even one level dies at tick 101 with a hold rate of 0/40, because the whole match is decided by how the opening 300 is spent. Passive income is +5 every 10 ticks, so a defender that survives 101 ticks has seen about 350 resources in total. One research level is two and a half basic towers, and that trade is fatal. The action is offered on the menu, but taking it loses.
 
@@ -403,7 +445,16 @@ One tech has a bug on top of that: `research:range` adds +1 range only to towers
 
 There is a prompt-layer defect underneath this one. The action menu tells the player a slow zone "MUST be on a path", and the game state it is given contains no path tiles at all — only `paths_count`. The single inferable source of a legal position is where enemies currently are. A model that has not worked that out cannot place one legally except by luck.
 
-**Fog of war is severe and unmeasurable with scripted players.** A sweep with fog on and one with fog off are bit-identical across 40 seeds, which reads as fog doing nothing. That is the wrong reading. Measured directly, fog hides **85.6% of live enemies** from the defender, on 95% of the ticks where any enemy is alive. Both facts hold at once: fog withholds most of the board, and no scripted defender's outcome depends on it, because none of them use enemy positions for anything load-bearing. Its entire effect lands on the model-facing prompt, which is exactly where the proxy cannot reach. It remains unmeasured, and measuring it needs live A/B matches, not a sweep.
+**Fog of war does nothing, and this was tested live.** The scripted sweeps could not settle it, so it was run as a live A/B: `gemini-2.5-flash-lite` defending, the scripted `attacker_baseline` held constant so any difference is attributable to the defender's information, eight seeds under the gate ruleset, fog on against fog off.
+
+| | defender holds | `save` share | outcome |
+|---|---|---|---|
+| fog on | 4/8 | 97.3% | — |
+| fog off | 4/8 | 97.4% | six of eight seeds bit-identical in ticks and lives |
+
+Nothing moved. Seed 7 ended at 169 ticks against 175, seed 8 held with 6 lives against 7, and the other six seeds matched exactly. A defender shown 85.6% more of the board plays the same game and gets the same result. Whatever fog is doing, it is not reaching the decision.
+
+**And it is severe, which is what makes that interesting.** Measured directly, fog hides **85.6% of live enemies** from the defender, on 95% of the ticks where any enemy is alive. So this is not a mechanic that is quietly disabled; it is one that withholds most of the board and still changes nothing, for a scripted defender *or* a live one. Whether that says something about fog or about how much this model uses the enemy list is not something these eight matches can separate — but "fog of war is unmeasured" is no longer true, and "fog of war matters" has no evidence behind it.
 
 ### Trying to make the dominated towers worth buying
 
@@ -457,6 +508,8 @@ That is where I stopped rather than pushing the numbers until something moved. M
 The first two rows are bit-identical to `defender_baseline`'s own numbers, to the decimal, on every stratum — which is the proof that the buffer branch never fired in any of those 120 games. At its shipped 300, and at half that, the precondition never occurs: the defender needs two towers *and* the price spare at the same moment, and on a ~350 lifetime budget it never has both.
 
 Drop it to `basic`'s price and it does get bought — and buying it costs a two-lane win, 62% → 60%. Cost 60 and cost 100 give identical results because the script has exactly 100 spare after its second tower either way, so it buys at the same turn regardless. So `buffer` is unaffordable at its real price and a slight loss at any price low enough to reach: a +50% multiplier on two towers is worth less than a third tower. It would need to reliably reach four or more towers to break even, and the defender never owns four.
+
+**All of the above was re-measured against `attacker_live_like`** and the tower conclusions held: the sniper inversion got stronger (12% → 69% on two-lane maps), splash's multi-target gained nothing at all rather than three points, and buffer went from slightly harmful to merely neutral. Of everything in this document, the tower findings travelled best.
 
 **These sweeps do not touch the gate.** `defender_baseline` only ever builds `basic`, so changing `sniper`, `splash` or `buffer` stats leaves the 40-seed baseline sweep bit-identical by construction. That makes the gate a safety check here, not a measurement; the measurement is the single-tower sweep above. **No balance change has been committed** — the numbers above are proposals with their evidence attached, and the shipped `v2` balance is untouched.
 
