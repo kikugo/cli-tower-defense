@@ -220,7 +220,9 @@ Hold rate has no resolution on `forked` (every script loses), so the metric is d
 | `splash` | 0.0 |
 | `buffer` | 0.0 |
 
-Eight to one against the sniper, and the other two never register a kill. This matches the arithmetic: per 100 resources, `basic` delivers 11.3 damage/tick, `splash` 3.8, `sniper` 1.3 and `buffer` none. `basic` is not the balanced starter tower, it is the only economical one.
+Eight to one against the sniper, and the other two never register a kill. This matches the arithmetic: per 100 resources, `basic` delivers 17.0 damage/tick, `splash` 5.0 at full three-target saturation, `sniper` 1.3 and `buffer` none. `basic` is not the balanced starter tower, it is the only economical one.
+
+(An earlier version of that line said 11.3 / 3.8 / 1.3. It assumed a tower fires every `cooldown + 1` ticks; measured, it fires every `cooldown` ticks. The ratios, and so the conclusion, are unchanged.)
 
 One caveat: starting resources are a per-ruleset value applied to both players, so the 300 and 600 blocks are not comparable *to each other* — only the four scripts within a block are.
 
@@ -325,11 +327,130 @@ Two of the three were code defects and are fixed. The third is configuration: a 
 
 **None of this was detectable before provenance existed.** All four runs produced a winner and a score. The difference between the first and the last is that three of them measured the engine talking to itself.
 
+### Does the scripted proxy predict how models actually play?
+
+Every balance number above was measured with scripted players. That is only worth anything if scripted play resembles model play, and that had never been checked under provenance. It now has been, with `gemini-2.5-flash-lite` on both sides at about 1.2 seconds per decision — cheap enough to run properly. Every match below is reported with its authored share; any run below 90% was discarded and re-run.
+
+**The headline: the defender proxy survives, the attacker proxy does not.**
+
+Run the four combinations of scripted and live in each seat, same seeds, same ruleset:
+
+| defender | attacker | one-lane maps | two-lane maps |
+|---|---|---|---|
+| scripted | scripted | **2/2 hold, 400 ticks, 6 lives** | 0/2 |
+| **live** | scripted | **2/2 hold, 400 ticks, 6 lives** | 0/2 |
+| scripted | **live** | **0/2, dead by tick 105** | 0/2 |
+| live | live | 0/2 | 0/2 |
+
+Swapping the defender changes nothing. Swapping the attacker flips the one-lane stratum from a guaranteed hold to a guaranteed loss. The divergence is entirely in one seat.
+
+Against the *same* scripted attacker, the live defender is close to indistinguishable from the script:
+
+| | holds | `save` | `place:basic` |
+|---|---|---|---|
+| `defender_baseline` | 2/4, both one-lane, 6 lives each | 97.5% | 2.5% |
+| live defender | 2/4, both one-lane, 6 lives each | 97.4% | 2.4% |
+
+The 97.7% save rate reported earlier in this document, which reads as a model refusing to play, is what a real model does too when facing this attacker — 97.4% of its turns, on the same seeds. It is a correct response to a weak opponent and a thin choice set, not incompetence.
+
+The attacker is a different game entirely:
+
+| | `attacker_baseline` | live attacker |
+|---|---|---|
+| `spawn:basic` | 98.6% | 12.6% |
+| `spawn:shielded` | 0% | **15.2%** |
+| `spawn:fast` | 0% | 8.7% |
+| `spawn:tank` | 0% | **1.7%** |
+| `wave` | 1.4% | **7.0%** |
+| waves per match | 2, in matches of 137–400 ticks | 3–5, in matches of 94–163 ticks |
+
+The scripted attacker launches waves at 0.0071 per tick (8 waves over 1,126 ticks). The live one launches at 0.0343 (16 over 466) — **4.8× faster** — and it spends its money on the units this repository's own balance work had already identified as decisive. It finds `shielded` unprompted, and says so in its stated reasoning: *"Shielded units are cost-effective against concentrated defenses due to their damage reduction, allowing them to absorb more damage for their cost."* It also reaches `tank`, which the wave-composition experiments above could not.
+
+Under the exact ruleset the published numbers use, across eight seeds stratified by lane count:
+
+| | scripted (published) | live, both sides |
+|---|---|---|
+| one lane | 100% (24/24) | **0% (0/4)** |
+| two lanes | 3% (n=202) | **0% (0/4)** |
+| mixture | 60.8% | **0% (0/8)** |
+
+So the **60.8% headline describes a matchup no live model plays.** What it measures is a competent defender against an attacker that only ever sends the cheapest unit one at a time. Give the attacker seat to a real model and the defender does not hold a single map.
+
+Two things this does *not* overturn. The shielded result is **confirmed, not refuted** — the balance work predicted 62% → 0% when the attacker commits to shielded, and that is what a live attacker does to a live defender without being told to. And the defender-side conclusions, which are most of the balance work above, rest on a proxy that just passed a direct test.
+
+Engine assists are not the explanation: `applied_auto_wave` fired at most twice in any match, against 30+ player-launched waves.
+
+### The four mechanics nobody had measured
+
+Research levels, the three attacker abilities, slow zones and fog of war are all on `Game`, and until now no scripted player touched any of them — the same blind spot that hid `tank` and `healer`. Seven new scripts (one per research tech, one per ability, one that places slow zones on live enemy tiles) put each of them under the same 40-seed stratified sweep.
+
+**The attacker abilities are live, reachable, and all three are bad buys.** Defender hold rate, so higher means the ability hurt the attacker:
+
+| attacker | one lane | two lanes | mixture |
+|---|---|---|---|
+| `attacker_baseline` | 100% | 6% | **62%** |
+| `attacker_surge` (80) | 100% | 81% | **92%** |
+| `attacker_shield_burst` (90) | 100% | 69% | **88%** |
+| `attacker_reinforce` (70) | 100% | 12% | **65%** |
+
+Every one of them makes the attacker worse. Spawns cost 20–50, so 80 spent on a temporary speed buff is four enemies not sent. `reinforce_wave` comes closest to fair because it *is* enemies — three of them for 70 — and it still loses to just spawning.
+
+**Research is reachable and unaffordable.** All three techs cost 140–180 per level, and a defender that banks for even one level dies at tick 101 with a hold rate of 0/40, because the whole match is decided by how the opening 300 is spent. Passive income is +5 every 10 ticks, so a defender that survives 101 ticks has seen about 350 resources in total. One research level is two and a half basic towers, and that trade is fatal. The action is offered on the menu, but taking it loses.
+
+One tech has a bug on top of that: `research:range` adds +1 range only to towers that *already exist* when it is bought. Buy it before your first tower and you have paid 160 for nothing, with no feedback saying so. That ordering is now pinned by a test.
+
+**Slow zones are reachable and strictly harmful.** A slow zone costs 150 and halves speed on the single tile it occupies — about one extra tick of delay for an enemy at speed 1.0, against 100 for a tower that does 17 damage per tick forever. A defender that buys them whenever it can afford one drops from 62% to **0/40**, dying at tick 104 instead of 315.
+
+There is a prompt-layer defect underneath this one. The action menu tells the player a slow zone "MUST be on a path", and the game state it is given contains no path tiles at all — only `paths_count`. The single inferable source of a legal position is where enemies currently are. A model that has not worked that out cannot place one legally except by luck.
+
+**Fog of war is severe and unmeasurable with scripted players.** A sweep with fog on and one with fog off are bit-identical across 40 seeds, which reads as fog doing nothing. That is the wrong reading. Measured directly, fog hides **85.6% of live enemies** from the defender, on 95% of the ticks where any enemy is alive. Both facts hold at once: fog withholds most of the board, and no scripted defender's outcome depends on it, because none of them use enemy positions for anything load-bearing. Its entire effect lands on the model-facing prompt, which is exactly where the proxy cannot reach. It remains unmeasured, and measuring it needs live A/B matches, not a sweep.
+
+### Trying to make the dominated towers worth buying
+
+Three of the four towers are strictly worse buys than `basic`. Per 100 resources `basic` delivers 17.0 damage/tick, `splash` 5.0 at full three-target saturation, `sniper` 1.33 and `buffer` none — and `basic` out-ranges `splash` (5 against 3) while it is at it. The sharpest statement of it: a `splash` tower's entire three-target volley is 30 damage, less than one `basic` shot's 34, at twice the cost and 1.5× the cooldown.
+
+The first thing the sweeps turned up is that this is not really a damage-curve problem. Passive income is +5 every 10 ticks, and a defender that dies at tick 101 has seen about 350 resources for the whole match. At that budget **only `basic` buys more than one tower.** `defender_sniper`, `defender_splash` and `defender_buffer` all place exactly one tower, then save for 49 straight turns and lose 0/40 at tick 101.0 with a score of 0. It is a granularity problem at a small fixed bank.
+
+**`sniper` can be made genuinely situational.** Sweeping cost and cooldown against `defender_sniper`, 40 seeds:
+
+| sniper variant | damage/tick per 100 | one lane | two lanes | mixture |
+|---|---|---|---|---|
+| `basic`, for reference | 17.0 | 100% | 6% | 62% |
+| 50 / cd 15 / 250 (as shipped) | 1.3 | 0% | 0% | 0% |
+| 50 / cd 6 / 150 | 5.6 | 0% | 0% | 0% |
+| 45 / cd 4 / 120 | 9.4 | 0% | 0% | 0% |
+| **50 / cd 5 / 100** | **10.0** | **8%** | **62%** | **30%** |
+| 50 / cd 3 / 150 | 11.1 | 0% | 69% | 28% |
+| 50 / cd 3 / 100 | 16.7 | 100% | 100% | 100% |
+
+The two middle rows are the result worth having: they **invert the stratum pattern**. `basic` holds every one-lane map and almost no two-lane map; a range-12 sniper at 50/cd 5/100 does the opposite, taking two-lane maps from 6% to 62% while giving up the one-lane maps. One tower with range 12 covers both branches of a fork that a range-5 tower cannot reach. It stays worse overall (30% against 62%), so `basic` remains the default — which is what "situational" is supposed to mean.
+
+The last row is the failure mode on the other side: at 16.7 damage/tick per 100 the sniper is within a hair of `basic`'s 17.0 but keeps range 12, and it wins 100% of every stratum. That is not a rebalanced tower, it is a new dominant one. The usable window between "never worth buying" and "always worth buying" is narrow, and it sits around 10 damage/tick per 100.
+
+**`splash` could not be fixed, and the reason is more interesting than the failure.** Eleven variants; none of them made it situational:
+
+| splash variant | one lane | two lanes | mixture |
+|---|---|---|---|
+| 10 / cd 3 / 200 / range 3 (as shipped) | 0% | 0% | 0% |
+| 24 / cd 3 / 150 / range 4 | 0% | 0% | 0% |
+| 20 / cd 3 / 100 / range 3 | 0% | 0% | 0% |
+| 20 / cd 3 / 100 / range 5 | 100% | 0% | 60% |
+| 20 / cd 2 / 100 / range 5 | 100% | 6% | 62% |
+| **34 / cd 2 / 100 / range 5** | 100% | 12% | **65%** |
+
+Read the last row carefully. That is `splash` given `basic`'s exact damage, cooldown, cost and range — and a free three-target attack on top. It gains **three percentage points**. The multi-target mechanic, which is the tower's entire identity, is worth almost nothing, because enemies string out along the path and rarely occupy the same small neighbourhood. Every splash variant that became competitive did so through *range*, not splash: raise range from 3 to 5 and it tracks `basic`; leave range at 3 and no amount of damage saves it.
+
+I tested the obvious objection — that the scripted attacker simply does not cluster — by running the tuned splash against `attacker_reinforce`, which adds three enemies at once. It scored 65% on the mixture. `defender_baseline` against the same attacker scored 65% too, with an identical stratum split. Reinforcement adds to the *queue*, and the queue drains one enemy at a time, so the enemies still arrive strung out. There is no scripted attacker in this repository that produces spatial clustering, so there is currently no configuration in which `splash` can express what it is for.
+
+That is where I stopped rather than pushing the numbers until something moved. Making `splash` competitive means giving it `basic`'s range and roughly `basic`'s damage, at which point it is a reskinned `basic` — which is a worse outcome than leaving it obviously bad.
+
+**These sweeps do not touch the gate.** `defender_baseline` only ever builds `basic`, so changing `sniper` or `splash` stats leaves the 40-seed baseline sweep bit-identical by construction. That makes the gate a safety check here, not a measurement; the measurement is the single-tower sweep above. **No balance change has been committed** — the numbers above are proposals with their evidence attached, and the shipped `v2` balance is untouched.
+
 ### What is not claimed
 
 - That the balance is tuned for anything beyond `basic`-vs-`basic` play.
-- That the scripted duel proxy predicts model behaviour. It does not currently agree with it: the scripted attacker launches waves, and across a 12-match live tournament no model launched a single one. That comparison has still not been re-run under provenance, so it rests on matches that may have been the engine playing itself.
-- That a live match of useful length is cheap. Measured: 23 seconds per decision for `gemini-3-flash-preview` against 1.0 second for `gemini-2.5-flash-lite`, and a decision is requested every tick. A 400-tick match is therefore about 80 minutes of wall clock and a 1500-tick match around five hours. Balance work uses scripted players for exactly this reason; live comparisons have to be budgeted in hours.
+- That the scripted **attacker** proxy predicts model behaviour. Measured under provenance, it does not: a live attacker launches waves 4.8× more often and spends most of its money on units the scripted one never sends. The scripted **defender** proxy does hold up — see above. An earlier claim here, that no model had ever launched a wave, was wrong; it came from matches the parser bug had turned into engine fallbacks.
+- That a live match of useful length is cheap. Measured: 1.2 seconds per decision for `gemini-2.5-flash-lite`, and a decision is requested every tick, so a 400-tick match is about 8 minutes. A thinking model is a different proposition — `gemini-3-flash-preview` was measured at 23 seconds per decision on one occasion and 82 on another, which puts a 400-tick match somewhere between 80 minutes and five hours. Balance work uses scripted players for exactly this reason.
 - That Elo separates models here. Under a systematic seat advantage with role swap, every pairing goes 1–1 and ratings return to where they started.
 - That the shipped balance survives contact with the content it has never measured. On the evidence above, it does not.
 
@@ -395,13 +516,15 @@ Dependencies are vendored in-repo, so the build needs no network.
 ## Known Issues
 
 - **Replay event streams are capped at 10,000 events and trimmed from the front.** A run at the shipped defaults (3000 ticks, 30 waves) reaches the cap exactly — measured, 858 events discarded, including four tower placements. The data is genuinely gone; what is fixed is that it is no longer *silently* gone. The stream carries a truncation marker, `ReconstructSnapshot` flags the reconstruction as untrustworthy, and the replay viewer shows a warning above the board. A reconstruction of a window entirely before the gap is still exact and is not flagged.
-- **`tank` and `healer` never appear in a scripted duel.** They are gated behind wave 6 and wave 16, and the wave counter does not get there under the measurement wave cap. Both have since been measured anyway — see above — by restatting the unit the scripted attacker spawns, and for the healer's ability, by a dedicated scripted attacker, since that ability keys on the unit's type name rather than on a stat.
+- **`tank` and `healer` never appear in a scripted duel.** They are gated behind wave 6 and wave 16 *in wave composition*, and the wave counter does not get there under the measurement wave cap. Both have since been measured anyway — see above — by restatting the unit the scripted attacker spawns, and for the healer's ability, by a dedicated scripted attacker, since that ability keys on the unit's type name rather than on a stat. Note that live attackers sidestep the gate entirely: they buy `tank` directly with `spawn`, which the scripted attacker never does.
+- **Research, slow zones and all three attacker abilities are reachable and losing plays.** Measured above: each one is offered on the action menu and each one costs its buyer the match. The engine advertises them without qualification.
+- **A slow zone's legality constraint cannot be satisfied from the game state.** The action menu says a slow zone "MUST be on a path", and the state given to a player contains no path tiles — only `paths_count`. The only inferable legal position is where an enemy currently stands.
 - **A decision is still requested every tick by default**, whether or not anything changed — see `skip_forced_save_turns` below for why that default is deliberate.
 - Some Unicode glyphs may not render in every terminal.
 
 ## Asking the model less often
 
-With income at 5/tick and the cheapest action costing 100, a player that spends is broke for about twenty ticks afterwards. The engine asks for a decision every tick regardless, so roughly nineteen of every twenty provider calls exist only to be told that nothing is affordable. On a paid API that is twenty times the tokens and twenty times the latency for no information.
+Passive income is +5 applied every 10 ticks — **0.5 per tick**, measured, not the 5/tick an earlier version of this section claimed — and the cheapest action costs 100. A defender that spends is therefore broke for roughly the next 200 ticks. The engine asks for a decision every tick regardless, so the overwhelming majority of provider calls exist only to be told that nothing is affordable. On a paid API that is a large multiple of the tokens and the latency for no information.
 
 The ruleset field `"skip_forced_save_turns": true` suppresses those calls: when a player's only legal action is `save`, the engine applies the save directly instead of asking. On one seed that took provider calls from 400 to 47.
 
