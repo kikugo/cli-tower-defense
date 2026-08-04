@@ -55,6 +55,29 @@ func (p *ScriptedProvider) GetTowerDecision(gameState map[string]interface{}) (m
 		// *when* they spend, never in *where* they place -- see
 		// scriptedDefenderHoard.
 		return p.scriptedDefenderHoard(gameState), nil
+	case "defender_research_economy":
+		// Commits to the economy research line before behaving exactly like
+		// defender_baseline -- see scriptedDefenderResearch.
+		return scriptedDefenderResearch(gameState, "economy", "research_economy"), nil
+	case "defender_research_range":
+		// Commits to the range research line before behaving exactly like
+		// defender_baseline -- see scriptedDefenderResearch. Because this
+		// script buys "range" before it owns any tower, and researchTech's
+		// "range" branch (engine/actions.go) only bumps the Range of towers
+		// that already exist at purchase time, this ordering makes the
+		// range purchase a guaranteed no-op. That is the property under
+		// measurement here, not a bug in this script -- see
+		// TestResearchRangeOrderingIsANoOpWithoutExistingTowers.
+		return scriptedDefenderResearch(gameState, "range", "research_range"), nil
+	case "defender_research_control":
+		// Commits to the control research line before behaving exactly like
+		// defender_baseline -- see scriptedDefenderResearch.
+		return scriptedDefenderResearch(gameState, "control", "research_control"), nil
+	case "defender_slowzone":
+		// Commits to placing slow zones on live enemy path tiles before
+		// behaving exactly like defender_baseline -- see
+		// scriptedDefenderSlowZone.
+		return scriptedDefenderSlowZone(gameState), nil
 	default:
 		if candidates, ok := gameState["valid_tower_candidates"].([][]int); ok && len(candidates) > 0 {
 			return map[string]interface{}{
@@ -106,6 +129,24 @@ func (p *ScriptedProvider) GetEnemyDecision(gameState map[string]interface{}) (m
 			}
 		}
 		return map[string]interface{}{"action": "spawn", "enemy_type": "basic", "reason": "scripted"}, nil
+	case "attacker_surge":
+		// Fires the surge ability whenever legal, so a sweep against this
+		// script isolates surge's cost-efficiency from the mixed spawn/wave
+		// economy attacker_baseline is bound by. Otherwise identical to the
+		// default/attacker_baseline branch -- see scriptedAttackerAbility.
+		return scriptedAttackerAbility(gameState, "surge"), nil
+	case "attacker_shield_burst":
+		// Same isolation as attacker_surge, for shield_burst -- see
+		// scriptedAttackerAbility.
+		return scriptedAttackerAbility(gameState, "shield_burst"), nil
+	case "attacker_reinforce":
+		// Same isolation as attacker_surge, for reinforce_wave -- see
+		// scriptedAttackerAbility. Note applyAdaptivePressure
+		// (engine/actions.go) can itself fire reinforce_wave when the
+		// attacker has been idle, independently of this script's own
+		// choice; see the ActionCounters caveat documented on
+		// scriptedAttackerAbility.
+		return scriptedAttackerAbility(gameState, "reinforce_wave"), nil
 	default:
 		// Launch a wave once THIS player's own bank reaches the threshold --
 		// "hold until rich enough for a big push". gameState["resources"] is
@@ -114,11 +155,50 @@ func (p *ScriptedProvider) GetEnemyDecision(gameState map[string]interface{}) (m
 		// to the opponent's (here, the defender's) balance instead of this
 		// player's own. your_resources (added in getPlayerGameState) is this
 		// player's own balance, so read that instead.
-		if r, ok := toIntFromAny(gameState["your_resources"]); ok && r >= 260 {
-			return map[string]interface{}{"action": "wave", "reason": "scripted"}, nil
-		}
-		return map[string]interface{}{"action": "spawn", "enemy_type": "basic", "reason": "scripted"}, nil
+		return scriptedAttackerDefault(gameState), nil
 	}
+}
+
+// scriptedAttackerDefault is the attacker_baseline behaviour (also the
+// switch's default branch above): launch a wave once this player's own bank
+// reaches the threshold, otherwise spawn basic. Extracted into its own
+// function so attacker_surge/attacker_shield_burst/attacker_reinforce can
+// fall back to exactly this logic, rather than duplicating it, when their
+// named ability isn't currently legal.
+func scriptedAttackerDefault(gameState map[string]interface{}) map[string]interface{} {
+	if r, ok := toIntFromAny(gameState["your_resources"]); ok && r >= 260 {
+		return map[string]interface{}{"action": "wave", "reason": "scripted"}
+	}
+	return map[string]interface{}{"action": "spawn", "enemy_type": "basic", "reason": "scripted"}
+}
+
+// scriptedAttackerAbility isolates one attacker ability's cost-efficiency
+// (see useAttackerAbility in engine/actions.go) from the mixed spawn/wave
+// economy attacker_baseline is bound by: it fires the named ability
+// whenever "ability:<ability>" is legal, and otherwise falls back to
+// exactly scriptedAttackerDefault (attacker_baseline's own behaviour)
+// rather than duplicating that logic. Shared by attacker_surge,
+// attacker_shield_burst, and attacker_reinforce.
+//
+// Caveat for attacker_reinforce specifically: applyAdaptivePressure
+// (engine/actions.go) can call useAttackerAbility("reinforce_wave")
+// directly, on its own initiative, when the attacker has been idle for
+// several ticks with a quiet board. That path never builds a decision map
+// and never goes through applyDecision, so it does NOT increment
+// g.ActionCounters the way a player-chosen ability use (via this function)
+// does -- see TestApplyAdaptivePressureReinforceWaveDoesNotIncrementActionCounters.
+// A sweep reading ActionCounters to see how often reinforce_wave "fired"
+// will therefore undercount: it only reflects this script's own choices,
+// not engine-initiated ones.
+func scriptedAttackerAbility(gameState map[string]interface{}, ability string) map[string]interface{} {
+	affordable, _ := gameState["affordable_actions"].([]string)
+	abilityAction := "ability:" + ability
+	for _, action := range affordable {
+		if action == abilityAction {
+			return map[string]interface{}{"action": "ability", "ability": ability, "reason": "scripted: " + ability}
+		}
+	}
+	return scriptedAttackerDefault(gameState)
 }
 
 // scriptedDefenderBuild spreads towers of towerType along the path while
@@ -212,4 +292,122 @@ func (p *ScriptedProvider) scriptedDefenderHoard(gameState map[string]interface{
 		p.hoarderSpending = false
 	}
 	return decision
+}
+
+// scriptedDefenderResearch commits to buying one research tech line before
+// behaving exactly like defender_baseline, in the same style
+// scriptedDefenderBuild isolates a single tower type: while
+// "research:<tech>" is legal, take it; while tech isn't maxed yet but that
+// isn't currently affordable, save (bank toward it rather than trickling
+// the money into a tower); once tech is exhausted (level 2, no longer
+// offered), delegate to scriptedDefenderBuild("basic", ...) so the script
+// plays exactly like defender_baseline from then on. Shared by
+// defender_research_economy, defender_research_range, and
+// defender_research_control -- see the callers in GetTowerDecision for the
+// deliberate consequence this ordering has for "range" specifically.
+func scriptedDefenderResearch(gameState map[string]interface{}, tech, label string) map[string]interface{} {
+	affordable, _ := gameState["affordable_actions"].([]string)
+	researchAction := "research:" + tech
+	for _, action := range affordable {
+		if action == researchAction {
+			return map[string]interface{}{"action": "research", "tech": tech, "reason": label + ": research " + tech}
+		}
+	}
+	maxed := false
+	if research, ok := gameState["research"].(map[string]interface{}); ok {
+		if lvl, ok := toIntFromAny(research[tech]); ok && lvl >= 2 {
+			maxed = true
+		}
+	}
+	if !maxed {
+		return map[string]interface{}{"action": "save", "reason": label + ": banking toward " + tech}
+	}
+	return scriptedDefenderBuild(gameState, "basic", label)
+}
+
+// scriptedDefenderSlowZone commits to placing slow zones on live enemy path
+// tiles before behaving exactly like defender_baseline: while
+// "place_slow_zone" is legal AND the script can name a legal path tile
+// (via scriptedSlowZoneTarget), place one there; otherwise fall through to
+// scriptedDefenderBuild's build-coverage/upgrade/save behaviour, unchanged.
+func scriptedDefenderSlowZone(gameState map[string]interface{}) map[string]interface{} {
+	affordable, _ := gameState["affordable_actions"].([]string)
+	canPlaceSlowZone := false
+	for _, action := range affordable {
+		if action == "place_slow_zone" {
+			canPlaceSlowZone = true
+			break
+		}
+	}
+	if canPlaceSlowZone {
+		if y, x, ok := scriptedSlowZoneTarget(gameState); ok {
+			return map[string]interface{}{
+				"action":   "place_slow_zone",
+				"position": []interface{}{float64(y), float64(x)},
+				"reason":   "slowzone: place on enemy path tile",
+			}
+		}
+	}
+	return scriptedDefenderBuild(gameState, "basic", "slowzone")
+}
+
+// scriptedSlowZoneTarget names a legal placeSlowZone target from
+// gameState["enemies"]: enemies are always on a path (see getGameState /
+// getPlayerGameState in engine/actions.go), so any enemy's position is
+// guaranteed to be in g.PathTileSet, unlike valid_tower_candidates (which
+// is off-path by construction and would always be rejected by
+// placeSlowZone's path check). Prefers an enemy position not already
+// covered by an existing slow zone (gameState["slow_zones"]). Returns
+// ok=false, deliberately without guessing a fallback tile, when no enemy is
+// visible -- e.g. behind fog of war, or before any enemy has spawned.
+func scriptedSlowZoneTarget(gameState map[string]interface{}) (int, int, bool) {
+	enemies, _ := gameState["enemies"].([]interface{})
+	if len(enemies) == 0 {
+		return 0, 0, false
+	}
+	existing := map[[2]int]struct{}{}
+	if zones, ok := gameState["slow_zones"].([][]int); ok {
+		for _, z := range zones {
+			if len(z) == 2 {
+				existing[[2]int{z[0], z[1]}] = struct{}{}
+			}
+		}
+	}
+	for _, raw := range enemies {
+		enemy, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		y, x, ok := positionFromAny(enemy["position"])
+		if !ok {
+			continue
+		}
+		if _, taken := existing[[2]int{y, x}]; taken {
+			continue
+		}
+		return y, x, true
+	}
+	return 0, 0, false
+}
+
+// positionFromAny parses a [y, x] position out of either the []int shape
+// getGameState actually produces (see actions.go) or the []interface{}
+// shape a normalized/hand-built decision or gameState might use, so this
+// script works against both real engine state and synthetic test state.
+func positionFromAny(v interface{}) (int, int, bool) {
+	switch pos := v.(type) {
+	case []int:
+		if len(pos) == 2 {
+			return pos[0], pos[1], true
+		}
+	case []interface{}:
+		if len(pos) == 2 {
+			y, okY := toIntFromAny(pos[0])
+			x, okX := toIntFromAny(pos[1])
+			if okY && okX {
+				return y, x, true
+			}
+		}
+	}
+	return 0, 0, false
 }
