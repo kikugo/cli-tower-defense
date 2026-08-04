@@ -75,16 +75,42 @@ const unbalancedShareThreshold = 0.90
 // stratumStats accumulates duel outcomes for one (candidate, stratum)
 // bucket, where "stratum" is the realised lanes count a match generated
 // (MatchResult.Strata["lanes"]), not anything a ruleset requested.
+//
+// rejectedDefender/rejectedAttacker/providerCalls/authored* are the
+// recorded-measurement columns: what the arena actually recorded during each
+// duel, as opposed to the four simulation numbers above (n, wins, ticks,
+// score). A change to the engine's decision plumbing can leave every
+// simulation number bit-identical while silently changing these -- see
+// runBalanceSweep and skip_forced_save_turns in readme.md.
 type stratumStats struct {
 	key        string
 	n          int
 	wins       int
 	totalTicks int64
 	totalScore int
+
+	rejectedDefender int
+	rejectedAttacker int
+	providerCalls    int
+
+	// authoredSum/authoredMeasured/authoredTotal implement an unweighted mean
+	// of eng.MatchResult.ModelAuthored's per-player, per-match share. Each
+	// match contributes up to two samples (defender, attacker); a sample
+	// counts toward authoredSum/authoredMeasured only when ModelAuthored's
+	// bool says that player's provenance was actually recorded for that
+	// match -- an unmeasured sample is dropped from the average entirely,
+	// never treated as 0. authoredTotal is the number of samples attempted
+	// (2 * match count), so the printed aggregate can show partial coverage
+	// ("measured X/Y") instead of silently implying full coverage. See
+	// formatAuthoredAggregate.
+	authoredSum      float64
+	authoredMeasured int
+	authoredTotal    int
 }
 
-func (s stratumStats) avgTicks() float64 { return float64(s.totalTicks) / float64(s.n) }
-func (s stratumStats) avgScore() float64 { return float64(s.totalScore) / float64(s.n) }
+func (s stratumStats) avgTicks() float64  { return float64(s.totalTicks) / float64(s.n) }
+func (s stratumStats) avgScore() float64  { return float64(s.totalScore) / float64(s.n) }
+func (s stratumStats) rejectedTotal() int { return s.rejectedDefender + s.rejectedAttacker }
 
 // stratumKeyFor derives the grouping key for one match result from its
 // realised lane count. A result with no Strata map, or no "lanes" entry,
@@ -112,6 +138,26 @@ func laneNumber(key string) (int, bool) {
 	return n, true
 }
 
+// sumByPlayerPrefix sums a counters map keyed either exactly playerID
+// (eng.MatchResult.ProviderCalls' convention) or "playerID:suffix"
+// (eng.MatchResult.RejectedActions' and DecisionSources' convention). This
+// mirrors sumCounters (engine/report_markdown.go) and totalByPlayerPrefix
+// (engine/scoring.go); both are unexported in package engine, so this is a
+// small local re-implementation rather than a shared import.
+func sumByPlayerPrefix(counters map[string]int, playerID string) int {
+	if playerID == "" {
+		return 0
+	}
+	total := 0
+	prefix := playerID + ":"
+	for key, val := range counters {
+		if key == playerID || strings.HasPrefix(key, prefix) {
+			total += val
+		}
+	}
+	return total
+}
+
 // groupByStratum buckets a candidate's duel results by realised lane count
 // and returns the buckets alongside their keys in stable, deterministic
 // order: ascending lane count, with the unparseable "lanes=?" bucket last.
@@ -131,6 +177,24 @@ func groupByStratum(results []eng.MatchResult) (map[string]*stratumStats, []stri
 		}
 		b.totalTicks += r.Ticks
 		b.totalScore += r.Score[r.Defender]
+
+		b.rejectedDefender += sumByPlayerPrefix(r.RejectedActions, r.Defender)
+		b.rejectedAttacker += sumByPlayerPrefix(r.RejectedActions, r.Attacker)
+		b.providerCalls += r.ProviderCalls[r.Defender] + r.ProviderCalls[r.Attacker]
+		for _, p := range []string{r.Defender, r.Attacker} {
+			if p == "" {
+				// A result with no attacker/defender recorded (malformed or
+				// hand-built) contributes no attempted sample -- counting an
+				// empty player would inflate authoredTotal without ever being
+				// able to measure it, understating coverage for no reason.
+				continue
+			}
+			b.authoredTotal++
+			if share, ok := r.ModelAuthored(p); ok {
+				b.authoredSum += share
+				b.authoredMeasured++
+			}
+		}
 	}
 	keys := make([]string, 0, len(buckets))
 	for k := range buckets {
@@ -162,6 +226,12 @@ func aggregateStrata(buckets map[string]*stratumStats, keys []string) stratumSta
 		agg.wins += b.wins
 		agg.totalTicks += b.totalTicks
 		agg.totalScore += b.totalScore
+		agg.rejectedDefender += b.rejectedDefender
+		agg.rejectedAttacker += b.rejectedAttacker
+		agg.providerCalls += b.providerCalls
+		agg.authoredSum += b.authoredSum
+		agg.authoredMeasured += b.authoredMeasured
+		agg.authoredTotal += b.authoredTotal
 	}
 	return agg
 }
@@ -204,23 +274,61 @@ func formatRate(n, wins int) string {
 	return fmt.Sprintf("%.0f%%", float64(wins)/float64(n)*100)
 }
 
-// formatStratumRow renders one (candidate, stratum) row.
-func formatStratumRow(candidate string, s stratumStats) string {
-	return fmt.Sprintf("%-24s | %-9s | %3d | %2d/%-5d | %-13s | %9.1f | %.1f",
-		candidate, s.key, s.n, s.wins, s.n, formatRate(s.n, s.wins), s.avgTicks(), s.avgScore())
+// formatAuthoredAggregate renders the model-authored share aggregated across
+// every (player, match) sample in a stratum or mixture -- an unweighted mean
+// of eng.MatchResult.ModelAuthored's per-sample share, over samples where
+// ModelAuthored's bool said provenance was actually recorded (see
+// stratumStats.authoredSum). An unmeasured sample is dropped from the
+// average entirely; it is never treated as 0, which is the same "0% authored"
+// vs "not measured" distinction formatModelAuthoredShare (main.go) and
+// formatModelAuthored (engine/report_markdown.go) already enforce per-match.
+// When some but not all samples in the aggregate are measured, the coverage
+// is printed alongside the percentage ("62% (58/80 measured)") rather than
+// silently presenting a partial average as if it covered everything.
+func formatAuthoredAggregate(sum float64, measured, total int) string {
+	if measured == 0 {
+		return "not measured"
+	}
+	pct := fmt.Sprintf("%.0f%%", sum/float64(measured)*100)
+	if measured < total {
+		return fmt.Sprintf("%s (%d/%d measured)", pct, measured, total)
+	}
+	return pct
 }
 
-// formatMixtureRow renders the aggregate MIXTURE row. composition is a
-// required parameter -- not optional, not defaulted -- specifically so a
-// future edit cannot print a MIXTURE row without stating what it is a
-// mixture of. An empty composition is refused outright rather than silently
-// printing a bare "MIXTURE" row.
+// formatRecordedLine renders the recorded-measurement second line that
+// accompanies every stratum/MIXTURE row: total rejected actions (split
+// defender/attacker), total provider calls, and the model-authored share --
+// all read off what the arena actually recorded, not the simulation. This is
+// the column set that can change while the four simulation numbers on the
+// first line stay bit-identical; see skip_forced_save_turns in readme.md.
+func formatRecordedLine(s stratumStats) string {
+	return fmt.Sprintf("    recorded: rejected def=%d att=%d total=%d | provider calls=%d | model-authored=%s",
+		s.rejectedDefender, s.rejectedAttacker, s.rejectedTotal(), s.providerCalls,
+		formatAuthoredAggregate(s.authoredSum, s.authoredMeasured, s.authoredTotal))
+}
+
+// formatStratumRow renders one (candidate, stratum) row across two lines:
+// the simulation numbers (n, wins, rate, avg ticks, avg score), then the
+// recorded-measurement numbers from formatRecordedLine.
+func formatStratumRow(candidate string, s stratumStats) string {
+	first := fmt.Sprintf("%-24s | %-9s | %3d | %2d/%-5d | %-13s | %9.1f | %.1f",
+		candidate, s.key, s.n, s.wins, s.n, formatRate(s.n, s.wins), s.avgTicks(), s.avgScore())
+	return first + "\n" + formatRecordedLine(s)
+}
+
+// formatMixtureRow renders the aggregate MIXTURE row, across two lines like
+// formatStratumRow. composition is a required parameter -- not optional, not
+// defaulted -- specifically so a future edit cannot print a MIXTURE row
+// without stating what it is a mixture of. An empty composition is refused
+// outright rather than silently printing a bare "MIXTURE" row.
 func formatMixtureRow(candidate string, agg stratumStats, composition string) string {
 	if composition == "" {
 		panic("formatMixtureRow: composition must not be empty -- a MIXTURE row must always state its composition")
 	}
-	return fmt.Sprintf("%-24s | %-9s | %3d | %2d/%-5d | %-13s | %9.1f | %.1f   [%s]",
+	first := fmt.Sprintf("%-24s | %-9s | %3d | %2d/%-5d | %-13s | %9.1f | %.1f   [%s]",
 		candidate, "MIXTURE", agg.n, agg.wins, agg.n, formatRate(agg.n, agg.wins), agg.avgTicks(), agg.avgScore(), composition)
+	return first + "\n" + formatRecordedLine(agg)
 }
 
 // formatUnbalancedNote replaces the MIXTURE row when one stratum accounts
@@ -264,6 +372,7 @@ func runBalanceSweep(path string) error {
 
 	fmt.Printf("%-24s | %-9s | %-3s | %-8s | %-13s | %9s | %s\n",
 		"candidate", "stratum", "n", "def wins", "rate", "avg ticks", "avg def score")
+	fmt.Println("  (each row's second line: recorded rejections / provider calls / model-authored share -- what the arena recorded, not the simulation)")
 	for _, cand := range cfg.Candidates {
 		balance := applyBalanceOverride(eng.DefaultBalanceConfig(), cand.Balance)
 		results := make([]eng.MatchResult, 0, len(cfg.Seeds))

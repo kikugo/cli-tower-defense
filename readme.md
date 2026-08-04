@@ -188,6 +188,8 @@ defaults                 | lanes=2   |  16 |  1/16    | 6%            |     188.
 defaults                 | MIXTURE   |  40 | 25/40    | 62%           |     315.4 | 655.5   [lanes=1:60% lanes=2:40%]
 ```
 
+Each row also carries a second line reporting what the arena recorded during those matches — total rejected actions (split defender/attacker), total provider calls, and the model-authored share — alongside the four simulation numbers above. The two are not redundant: a change can leave win rate, ticks, and score bit-identical while altering what got recorded, as `skip_forced_save_turns` does below (same four simulation numbers, rejected actions from 4526 to 0 across the same 40 seeds). The simulation columns alone would report that change as invisible.
+
 ### What the balance harness actually exercises
 
 Less than it looks like. Across 40 scripted duels, counting every entity the engine actually instantiated:

@@ -301,6 +301,153 @@ func TestRunBalanceSweepDefaultConfigPrintsMixtureCompositionAndUnderpowered(t *
 	}
 }
 
+// --- recorded-measurement columns ------------------------------------------
+//
+// These cover the whole reason this file exists: a change that leaves the
+// four simulation numbers above (n, wins, ticks, score) bit-identical can
+// still silently alter what the arena recorded -- rejections, provider
+// calls, model-authored share. See readme.md and
+// engine/forced_save_skip_test.go's TestSkipForcedSaveTurnsEliminatesRejectionsWhenEnabled
+// for the real change that motivated adding these columns.
+
+// TestGroupByStratumAggregatesRecordedMeasurements hand-builds two
+// eng.MatchResult values with known RejectedActions, ProviderCalls, and
+// DecisionSources and checks stratumStats sums them correctly: rejections
+// split by defender/attacker and totalled, provider calls summed across both
+// players, and the model-authored aggregate correctly excluding the match
+// whose provenance was never recorded (ProvenanceVersion == 0).
+func TestGroupByStratumAggregatesRecordedMeasurements(t *testing.T) {
+	measured := eng.MatchResult{
+		Defender: "p1", Attacker: "p2",
+		Winner: "p1", Ticks: 400, Score: map[string]int{"p1": 760},
+		Strata:          map[string]string{"lanes": "1"},
+		RejectedActions: map[string]int{"p1:place_tower": 3, "p2:launch_wave": 2},
+		ProviderCalls:   map[string]int{"p1": 10, "p2": 8},
+		ProvenanceVersion: 1,
+		DecisionSources: map[string]int{
+			"p1:" + string(eng.SourceModel): 8,
+			"p1:fallback":                   2,
+			"p2:" + string(eng.SourceModel): 4,
+			"p2:fallback":                   4,
+		},
+	}
+	// unmeasured has real rejections/calls (like every match does) but its
+	// decisions were never given provenance -- ProvenanceVersion left at the
+	// Go zero value, exactly like every pre-provenance result on disk. Its
+	// rejections/calls must still count; its authored share must not.
+	unmeasured := eng.MatchResult{
+		Defender: "p1", Attacker: "p2",
+		Winner: "p1", Ticks: 400, Score: map[string]int{"p1": 700},
+		Strata:          map[string]string{"lanes": "1"},
+		RejectedActions: map[string]int{"p1:place_tower": 1},
+		ProviderCalls:   map[string]int{"p1": 5, "p2": 5},
+	}
+
+	buckets, keys := groupByStratum([]eng.MatchResult{measured, unmeasured})
+	if len(keys) != 1 || keys[0] != "lanes=1" {
+		t.Fatalf("expected a single lanes=1 bucket, got %v", keys)
+	}
+	b := buckets["lanes=1"]
+
+	if b.rejectedDefender != 4 { // 3 (measured) + 1 (unmeasured)
+		t.Fatalf("rejectedDefender = %d, want 4", b.rejectedDefender)
+	}
+	if b.rejectedAttacker != 2 {
+		t.Fatalf("rejectedAttacker = %d, want 2", b.rejectedAttacker)
+	}
+	if b.rejectedTotal() != 6 {
+		t.Fatalf("rejectedTotal() = %d, want 6", b.rejectedTotal())
+	}
+	if b.providerCalls != 28 { // 10+8 (measured) + 5+5 (unmeasured)
+		t.Fatalf("providerCalls = %d, want 28", b.providerCalls)
+	}
+	if b.authoredTotal != 4 { // 2 matches * 2 players each
+		t.Fatalf("authoredTotal = %d, want 4", b.authoredTotal)
+	}
+	if b.authoredMeasured != 2 { // only `measured`'s p1 and p2 have provenance
+		t.Fatalf("authoredMeasured = %d, want 2 (unmeasured match must not count)", b.authoredMeasured)
+	}
+	wantSum := 0.8 + 0.5 // p1: 8/10 model-authored, p2: 4/8 model-authored
+	if diff := b.authoredSum - wantSum; diff > 1e-9 || diff < -1e-9 {
+		t.Fatalf("authoredSum = %v, want %v", b.authoredSum, wantSum)
+	}
+}
+
+// TestFormatAuthoredAggregateNotMeasuredWhenNoSamplesMeasured is the
+// aggregate-level version of TestFormatModelAuthoredShareNotMeasured: zero
+// measured samples (e.g. every match in a stratum has ProvenanceVersion ==
+// 0) must render as "not measured", never as "0%" -- a bare 0% would read as
+// "the model authored nothing," which is a claim about authorship, not about
+// missing data.
+func TestFormatAuthoredAggregateNotMeasuredWhenNoSamplesMeasured(t *testing.T) {
+	got := formatAuthoredAggregate(0, 0, 4)
+	if got == "0%" {
+		t.Fatalf("zero measured samples rendered as 0%%, want a non-numeric marker like 'not measured'")
+	}
+	if strings.Contains(got, "%") {
+		t.Fatalf("not-measured aggregate rendered with a %% sign: %q", got)
+	}
+}
+
+// TestFormatAuthoredAggregatePartialMeasurementShowsCoverage confirms that
+// when only some samples in a stratum were measured, the rendered aggregate
+// states the coverage (measured/total) alongside the percentage, rather than
+// presenting a partial average as if it were complete.
+func TestFormatAuthoredAggregatePartialMeasurementShowsCoverage(t *testing.T) {
+	got := formatAuthoredAggregate(1.3, 2, 4) // 65% average from 2 of 4 samples
+	if !strings.Contains(got, "65%") {
+		t.Fatalf("expected 65%% in %q", got)
+	}
+	if !strings.Contains(got, "2/4") {
+		t.Fatalf("expected measured coverage \"2/4\" in %q", got)
+	}
+}
+
+// TestFormatAuthoredAggregateFullCoverageOmitsCoverageNote confirms that
+// when every sample was measured, the aggregate prints a bare percentage
+// with no "(x/y measured)" qualifier -- that qualifier exists to flag
+// incomplete coverage, and would be noise on a fully measured stratum.
+func TestFormatAuthoredAggregateFullCoverageOmitsCoverageNote(t *testing.T) {
+	got := formatAuthoredAggregate(3, 4, 4) // 75%, fully covered
+	if got != "75%" {
+		t.Fatalf("formatAuthoredAggregate(3, 4, 4) = %q, want \"75%%\"", got)
+	}
+}
+
+// TestFormatStratumRowProvenanceZeroNeverRendersZeroPercent is the
+// end-to-end version: a stratum built entirely from ProvenanceVersion == 0
+// matches (mkResult never sets it, matching every pre-provenance result on
+// disk) must never show "0%" authored in the printed row -- only
+// "not measured".
+func TestFormatStratumRowProvenanceZeroNeverRendersZeroPercent(t *testing.T) {
+	r := mkResult(true, "1", 400, 760)
+	buckets, keys := groupByStratum([]eng.MatchResult{r})
+	row := formatStratumRow("cand", *buckets[keys[0]])
+	if strings.Contains(row, "0%") {
+		t.Fatalf("expected no bare 0%% authored figure for an unmeasured match, got:\n%s", row)
+	}
+	if !strings.Contains(row, "not measured") {
+		t.Fatalf("expected \"not measured\" in row for a zero-provenance match, got:\n%s", row)
+	}
+}
+
+// TestFormatRecordedLineReportsRejectionsAndCalls confirms formatRecordedLine
+// surfaces the raw rejection/call totals a formatStratumRow/formatMixtureRow
+// caller cannot get from the simulation columns alone.
+func TestFormatRecordedLineReportsRejectionsAndCalls(t *testing.T) {
+	s := stratumStats{
+		key: "lanes=1", n: 2,
+		rejectedDefender: 4, rejectedAttacker: 2, providerCalls: 28,
+		authoredSum: 1.3, authoredMeasured: 2, authoredTotal: 4,
+	}
+	line := formatRecordedLine(s)
+	for _, want := range []string{"def=4", "att=2", "total=6", "calls=28", "65%", "2/4"} {
+		if !strings.Contains(line, want) {
+			t.Fatalf("expected formatRecordedLine output to contain %q, got: %s", want, line)
+		}
+	}
+}
+
 // captureStdout redirects os.Stdout for the duration of fn and returns what
 // was written, so tests can assert on runBalanceSweep's printed table.
 func captureStdout(t *testing.T, fn func()) string {
