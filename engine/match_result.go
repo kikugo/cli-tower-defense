@@ -122,6 +122,16 @@ func (r MatchResult) ModelAuthored(playerID string) (float64, bool) {
 		if key != playerID && !strings.HasPrefix(key, prefix) {
 			continue
 		}
+		// A turn skipped because "save" was the only legal action was never
+		// put to the model at all, so it is neither an authored decision
+		// nor a substitution the engine made on the model's behalf --
+		// counting it in the denominator would understate authorship for a
+		// model that is simply playing in a low-resource stretch of the
+		// match, exactly the effect this metric exists to avoid. See
+		// SourceSkippedForcedSave.
+		if key == prefix+string(SourceSkippedForcedSave) {
+			continue
+		}
 		total += count
 		if key == prefix+string(SourceModel) {
 			modelCount += count

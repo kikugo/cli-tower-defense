@@ -19,6 +19,18 @@ type ArenaRuleset struct {
 	// pressure) so matches measure pure model decisions. Zero value keeps
 	// assists on, so existing ruleset JSONs are unaffected.
 	DisableAssists bool `json:"disable_assists"`
+	// SkipForcedSaveTurns short-circuits a player's turn without dispatching
+	// to the provider when affordableActions is exactly {"save"} -- nothing
+	// else is legal, so the round trip could only ever come back as "save".
+	// This is an explicit opt-in: skipping the call also means the engine
+	// never records the rejection a provider might otherwise have produced
+	// by proposing something unaffordable anyway, and rejection/fallback
+	// rates are a recorded discipline metric (see HANDOFF.md 8g and the
+	// 0.02/rejection scoring penalty in scoring.go). Zero value is false,
+	// so every existing ruleset JSON and every existing test keeps today's
+	// behaviour: the provider is always asked. See HandleAIDecisions and
+	// SourceSkippedForcedSave.
+	SkipForcedSaveTurns bool `json:"skip_forced_save_turns"`
 }
 
 func DefaultArenaRuleset() ArenaRuleset {
@@ -102,4 +114,5 @@ func (g *Game) ApplyRuleset(ruleset ArenaRuleset) {
 		g.SetMapType(ruleset.MapType)
 	}
 	g.AssistsDisabled = ruleset.DisableAssists
+	g.SkipForcedSaveTurns = ruleset.SkipForcedSaveTurns
 }

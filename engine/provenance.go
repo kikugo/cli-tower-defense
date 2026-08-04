@@ -34,6 +34,20 @@ const (
 	// unknown action, an invalid tower/enemy type, an invalid research tech
 	// or attacker ability, or a missing/malformed position with its default.
 	SourceNormalizerDefault DecisionSource = "normalizer_default"
+	// SourceSkippedForcedSave is stamped when the engine never asked the
+	// provider at all because the player's legal action set was exactly
+	// {save} -- nothing else was affordable or legal, so there was nothing
+	// to decide. This is deliberately not one of the substitution sources
+	// above: those all describe the engine papering over a model that was
+	// asked and failed to produce something usable, whereas this describes
+	// a turn where asking would have been pure overhead (the provider could
+	// only ever have echoed "save" back). Keeping it as its own source
+	// rather than reusing SourceModel or a substitution source keeps the
+	// count auditable in DecisionSources while letting ModelAuthored treat
+	// it as neither model-authored nor substituted -- see ModelAuthored in
+	// match_result.go, which excludes it from both its numerator and
+	// denominator.
+	SourceSkippedForcedSave DecisionSource = "skipped_forced_save"
 )
 
 // decisionSourceKey is a reserved decision-map key, the same smuggling idiom

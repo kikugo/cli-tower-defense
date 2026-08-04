@@ -500,6 +500,9 @@ type Game struct {
 	AutoWaveMinResource int
 	AutoDefendMinStreak int
 	AssistsDisabled     bool
+	// SkipForcedSaveTurns mirrors ArenaRuleset.SkipForcedSaveTurns; see there
+	// for what it does and why it defaults to false. Set via ApplyRuleset.
+	SkipForcedSaveTurns bool
 	FogOfWar            bool
 	DefenderVisionRange int
 	BaseVisionRange     int
@@ -783,11 +786,44 @@ func (g *Game) HandleAIDecisions() {
 	if player == g.Attacker {
 		role = "attacker"
 	}
-	gameState := g.getPlayerGameState(player, role)
 	if !g.isDecisionIntervalElapsed(player, currentTime) {
 		return
 	}
+	if g.SkipForcedSaveTurns {
+		if actions := g.affordableActions(player, role); len(actions) == 1 && actions[0] == "save" {
+			// Nothing to decide: "save" is the only legal action, so a real
+			// provider call could only ever come back as "save" (scripted
+			// providers already take exactly this branch off the same
+			// affordable_actions list -- see provider_scripted.go). Skip the
+			// round trip, apply the save directly, and still advance the turn
+			// exactly as the async path would; see applyForcedSave. Gated by
+			// SkipForcedSaveTurns (opt-in, default off): a real provider
+			// asked the same question might have proposed something
+			// unaffordable instead and gotten rejected, and rejection rate
+			// is a recorded discipline metric this default path must keep
+			// producing unless a caller explicitly opts into skipping it.
+			g.LastAIDecision[player] = currentTime
+			g.applyForcedSave(player, role)
+			return
+		}
+	}
+	gameState := g.getPlayerGameState(player, role)
 	g.handlePlayerTurn(player, role, gameState)
+}
+
+// applyForcedSave applies a "save" on playerID's behalf without ever
+// dispatching to the provider, for the case where affordableActions is
+// exactly {"save"}. It reuses applyDecision with a decision map tagged
+// SourceSkippedForcedSave so it goes through the identical game-state path a
+// genuine model-authored "save" would (including the auto-defend assist),
+// and still switches the turn -- skipping that would deadlock the match,
+// since the same player would face the identical all-save situation again
+// on the next tick. See HandleAIDecisions and SourceSkippedForcedSave.
+func (g *Game) applyForcedSave(playerID, role string) {
+	decision := map[string]interface{}{"action": "save"}
+	markDecisionSource(decision, SourceSkippedForcedSave)
+	g.applyDecision(playerID, role, decision)
+	g.switchTurn()
 }
 
 func (g *Game) switchTurn() {
@@ -1010,9 +1046,14 @@ func (g *Game) applyDecision(playerID, role string, decision map[string]interfac
 	// the engine substituted must never be indistinguishable from one the
 	// model made, so a non-model source is folded into the recorded outcome
 	// here -- after this point "applied_primary" can only mean the model's
-	// own decision was applied as-is.
+	// own decision was applied as-is. SourceSkippedForcedSave is deliberately
+	// excluded from this: it is not a substitution (the engine never invented
+	// a value in place of something the model failed to supply), it is a
+	// decision the model was never asked for in the first place, so tagging
+	// it "substituted:" would be as wrong as tagging it "applied_primary"
+	// unqualified -- see SourceSkippedForcedSave.
 	baseOutcome := outcome
-	if source != SourceModel {
+	if source != SourceModel && source != SourceSkippedForcedSave {
 		outcome = "substituted:" + string(source) + ":" + outcome
 	}
 	g.ActionCounters[actionCounterKey(playerID, action, entityType)]++
@@ -1042,10 +1083,14 @@ func (g *Game) applyDecision(playerID, role string, decision map[string]interfac
 			"quality": classifyActionOutcome(outcome),
 		},
 	})
-	// NoopStreak only tracks a model genuinely choosing to save; a
+	// NoopStreak only tracks a model genuinely choosing to save, or a save
+	// forced because nothing else was legal (SourceSkippedForcedSave): both
+	// are a real player-turn that resolved to "save" in the game. A
 	// substituted "save" (e.g. a provider failure normalized to save) must
-	// not trip shouldAutoDefendAfterSave on the model's behalf.
-	if applied && source == SourceModel && originalAction == "save" && baseOutcome == "applied_primary" {
+	// still not trip shouldAutoDefendAfterSave on the model's behalf --
+	// that would mean the assist fires because the engine papered over a
+	// failure, not because the player (model or forced) actually saved.
+	if applied && (source == SourceModel || source == SourceSkippedForcedSave) && originalAction == "save" && baseOutcome == "applied_primary" {
 		g.NoopStreak[playerID]++
 	} else if applied {
 		g.NoopStreak[playerID] = 0
