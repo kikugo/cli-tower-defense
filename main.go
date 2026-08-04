@@ -284,6 +284,13 @@ var (
 		"green": lipgloss.NewStyle().Foreground(lipgloss.Color("46")),
 		"blue":  lipgloss.NewStyle().Foreground(lipgloss.Color("21")),
 	}
+	// truncationWarnStyle renders the replay-truncation banner (see
+	// replayTruncationWarning): white-on-red, bold, so it reads as an alarm
+	// rather than blending in with the status line's plain text above it.
+	truncationWarnStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("231")).
+				Background(lipgloss.Color("196")).
+				Bold(true)
 )
 
 // selectLogWindow picks the slice of raw g.Logs entries the 'L' debug pane
@@ -507,14 +514,54 @@ func (m model) replayView() string {
 	keybarRow := padCells(keyText, lyt.w)
 
 	snap := eng.ReconstructSnapshot(m.replay, idx+1)
-	boardRows := renderReplayBoard(snap, ev.Position, lyt.board)
 
+	boardRect := lyt.board
 	detailWidth := lyt.w
 	detailBudget := lyt.stats.h + lyt.moves.h
 	if lyt.mode == layoutWide {
 		detailWidth = lyt.moves.w
 		detailBudget = lyt.moves.h
 	}
+
+	// When the reconstructed snapshot cannot be trusted (snap.Truncated), a
+	// one-row warning banner is inserted directly above the board -- the
+	// single row it needs comes OUT of the board/detail panes' own budgets
+	// (never added on top of them), so the total row count this function
+	// returns is unchanged and the fit invariant (TestViewNeverExceedsTerminal
+	// et al.) still holds regardless of terminal size or mode.
+	var warnRows []string
+	if snap.Truncated {
+		warnRows = []string{replayTruncationWarning(snap, lyt.w)}
+		if lyt.mode == layoutWide {
+			// Wide mode composes the board and detail panes SIDE BY SIDE
+			// (hjoin), so the body's total height is max(board.h, detail.h),
+			// not their sum. Shrinking BOTH by 1 guarantees the max drops by
+			// exactly 1 regardless of which pane was taller -- max(a-1,b-1)
+			// == max(a,b)-1 for any a,b -- which shrinking only one of them
+			// would not: whichever pane isn't currently the taller one has
+			// slack to spare, and shrinking only that one buys nothing.
+			if boardRect.h > 0 {
+				boardRect.h--
+			}
+			if detailBudget > 0 {
+				detailBudget--
+			}
+		} else {
+			// Stacked/compact mode stacks the panes VERTICALLY (vstack), so
+			// the body's height is board.h + detail.h -- reclaiming the row
+			// from just one of them is enough. The detail pane is preferred:
+			// it already tolerates being short (fitLinesWithMoreIndicator
+			// degrades gracefully to a "+N more lines" indicator), whereas
+			// the board is the one thing this whole view exists to show.
+			if detailBudget > 0 {
+				detailBudget--
+			} else if boardRect.h > 0 {
+				boardRect.h--
+			}
+		}
+	}
+
+	boardRows := renderReplayBoard(snap, ev.Position, boardRect)
 
 	details := "{}"
 	if len(ev.Details) > 0 {
@@ -536,13 +583,42 @@ func (m model) replayView() string {
 
 	var body []string
 	if lyt.mode == layoutWide {
-		body = hjoin(boardRows, lyt.board.w, detailRows, lyt.moves.w)
+		body = hjoin(boardRows, boardRect.w, detailRows, lyt.moves.w)
 	} else {
 		body = vstack(boardRows, detailRows)
 	}
 
-	all := vstack([]string{statusRow}, body, []string{keybarRow})
+	all := vstack([]string{statusRow}, warnRows, body, []string{keybarRow})
 	return strings.Join(all, "\n")
+}
+
+// replayTruncationWarning renders the row shown directly above the board
+// whenever the reconstructed snapshot cannot be trusted (snap.Truncated):
+// eng.MaxReplayEvents forced the recorded stream to discard part of this
+// match's history, so every count and tower this reconstruction produces is
+// a floor, not a fact (see eng.ReplaySnapshot.Truncated) -- towers, spawns,
+// and other events from before the discarded window are simply gone from
+// this board, silently, unless something says so. This states the
+// consequence explicitly ("board is missing earlier towers/enemies"), not
+// just the bare fact that truncation happened, and is styled
+// (truncationWarnStyle: white-on-red, bold) and padded to fill the full
+// width of the row above it so it reads as an alarm rather than a footnote.
+// It is padded to exactly w columns like every other row in this view, so
+// it never throws off vstack's exact-row-count contract.
+func replayTruncationWarning(snap eng.ReplaySnapshot, w int) string {
+	// Kept to ~75 columns (fits the 80-column compact-mode floor without
+	// mid-word truncation) and front-loaded with the consequence -- "board
+	// is missing earlier towers/enemies" -- rather than the count, so that
+	// even a hard cut at the narrowest supported width (60, tooSmallNotice's
+	// floor) still leaves the reader with "board is missing earlier t..."
+	// instead of just the bare fact that a truncation occurred.
+	var text string
+	if snap.TruncatedEvents > 0 {
+		text = fmt.Sprintf("TRUNCATED: %d events discarded -- board is missing earlier towers/enemies", snap.TruncatedEvents)
+	} else {
+		text = "TRUNCATED: events discarded -- board is missing earlier towers/enemies"
+	}
+	return truncationWarnStyle.Render(padCells(text, w))
 }
 
 func main() {
