@@ -1232,3 +1232,43 @@ func TestScriptedProviderDefenderBasicBufferOnlyProposesValidCandidates(t *testi
 		}
 	}
 }
+
+// TestScriptedAttackerLiveLikeAbilityFiresThenFallsThrough pins the two
+// properties the live-like ability arms depend on: the ability is taken
+// whenever it is legal, and when it is not legal the script plays the
+// live-like schedule unchanged (never a substitute action, never a stall).
+func TestScriptedAttackerLiveLikeAbilityFiresThenFallsThrough(t *testing.T) {
+	p := NewScriptedProvider(ResolvedPlayerModelConfig{PlayerModelConfig: PlayerModelConfig{
+		Provider: ProviderScripted, Model: "attacker_live_like_surge", APIKeyEnv: "NONE",
+	}})
+
+	withAbility := map[string]interface{}{
+		"affordable_actions": []string{"save", "spawn:basic", "spawn:shielded", "ability:surge"},
+		"your_resources":     500,
+	}
+	got, err := p.GetEnemyDecision(withAbility)
+	if err != nil {
+		t.Fatalf("GetEnemyDecision: %v", err)
+	}
+	if got["action"] != "ability" || got["ability"] != "surge" {
+		t.Fatalf("with ability:surge affordable, got %v, want the surge ability", got)
+	}
+
+	// Not legal -> must fall through to the live-like schedule, which on a
+	// fully affordable state emits a spawn, not a save and not a substitute
+	// ability.
+	withoutAbility := map[string]interface{}{
+		"affordable_actions": []string{"save", "spawn:basic", "spawn:shielded", "spawn:fast", "spawn:tank"},
+		"your_resources":     500,
+	}
+	got, err = p.GetEnemyDecision(withoutAbility)
+	if err != nil {
+		t.Fatalf("GetEnemyDecision: %v", err)
+	}
+	if got["action"] != "spawn" {
+		t.Fatalf("with ability:surge unaffordable, got %v, want a live-like spawn", got)
+	}
+	if _, isAbility := got["ability"]; isAbility {
+		t.Fatalf("fell through to an ability anyway: %v", got)
+	}
+}

@@ -191,6 +191,15 @@ func (p *ScriptedProvider) GetEnemyDecision(gameState map[string]interface{}) (m
 		// choice; see the ActionCounters caveat documented on
 		// scriptedAttackerAbility.
 		return scriptedAttackerAbility(gameState, "reinforce_wave"), nil
+	case "attacker_live_like_surge":
+		// attacker_live_like plus the surge ability -- see
+		// scriptedAttackerLiveLikeAbility for why the ability arms need a
+		// live-like variant rather than reusing the baseline-economy ones.
+		return p.scriptedAttackerLiveLikeAbility(gameState, "surge"), nil
+	case "attacker_live_like_shield_burst":
+		return p.scriptedAttackerLiveLikeAbility(gameState, "shield_burst"), nil
+	case "attacker_live_like_reinforce":
+		return p.scriptedAttackerLiveLikeAbility(gameState, "reinforce_wave"), nil
 	case "attacker_live_like":
 		// Reproduces the decision mix and spawn composition measured from a
 		// real model (gemini-2.5-flash-lite) playing this seat against
@@ -351,6 +360,31 @@ func buildLiveLikeSpawnSchedule() []string {
 // balance threshold to gate on here (unlike scriptedAttackerDefault's own
 // wave-launch check), so unlike that function this never touches
 // gameState["your_resources"] or gameState["resources"] at all.
+// scriptedAttackerLiveLikeAbility is scriptedAttackerLiveLike with one
+// ability layered on top: fire "ability:<name>" whenever it is legal,
+// otherwise play the live-like schedule unchanged. It exists because the
+// attacker_surge/_shield_burst/_reinforce scripts measure an ability's
+// opportunity cost against attacker_baseline's economy -- spawn basic every
+// turn, never bank -- and that economy is not the one a real model plays.
+// Measuring the same ability against the live-like economy (bank for a
+// shielded, wave every 14th decision) is a different question, so it needs
+// its own scripts rather than a change to the existing ones.
+//
+// Note the ability is taken BEFORE the decision counter advances in the
+// live-like schedule, so a turn spent on an ability does not consume a
+// spawn slot -- the ability's cost shows up as delay, which is exactly the
+// opportunity cost under measurement.
+func (p *ScriptedProvider) scriptedAttackerLiveLikeAbility(gameState map[string]interface{}, ability string) map[string]interface{} {
+	affordable, _ := gameState["affordable_actions"].([]string)
+	abilityAction := "ability:" + ability
+	for _, action := range affordable {
+		if action == abilityAction {
+			return map[string]interface{}{"action": "ability", "ability": ability, "reason": "live_like: " + ability}
+		}
+	}
+	return p.scriptedAttackerLiveLike(gameState)
+}
+
 func (p *ScriptedProvider) scriptedAttackerLiveLike(gameState map[string]interface{}) map[string]interface{} {
 	p.liveLikeDecisions++
 	affordable, _ := gameState["affordable_actions"].([]string)
