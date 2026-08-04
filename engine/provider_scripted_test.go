@@ -6,6 +6,292 @@ import (
 	"testing"
 )
 
+// --- attacker_live_like -----------------------------------------------
+//
+// The tests below cover attacker_live_like's contract end to end:
+// determinism of the schedule, the emitted spawn composition matching the
+// measured live-attacker shares over a long run, refusal to substitute a
+// cheaper unit when the scheduled one is unaffordable, the stickiness of
+// both the spawn cursor and the pending-wave flag while banking toward an
+// unaffordable target, and that none of this touched attacker_baseline's
+// own behaviour.
+
+// liveLikeAlwaysAffordableState is a fixed affordable_actions list wide
+// enough that every unit type in liveLikeSpawnSchedule and "wave" are
+// always legal, so tests that walk many decisions exercise the
+// wave-timing/spawn-schedule mechanics without affordability noise.
+var liveLikeAlwaysAffordableState = map[string]interface{}{
+	"affordable_actions": []string{
+		"save", "wave",
+		"spawn:basic", "spawn:fast", "spawn:tank", "spawn:shielded", "spawn:healer",
+	},
+}
+
+// TestScriptedProviderAttackerLiveLikeIsDeterministic exercises the
+// mandatory determinism property: two independent providers fed the exact
+// same sequence of game states must produce the exact same sequence of
+// decisions, call for call. attacker_live_like feeds 40-seed balance
+// sweeps, so any nondeterminism (e.g. a map-range-driven tie-break) would
+// show up here as flakiness rather than in a sweep months later.
+func TestScriptedProviderAttackerLiveLikeIsDeterministic(t *testing.T) {
+	newProvider := func() *ScriptedProvider {
+		return NewScriptedProvider(ResolvedPlayerModelConfig{
+			PlayerModelConfig: PlayerModelConfig{Provider: ProviderScripted, Model: "attacker_live_like"},
+		})
+	}
+	p1 := newProvider()
+	p2 := newProvider()
+
+	const decisions = 200
+	for i := 0; i < decisions; i++ {
+		d1, err := p1.GetEnemyDecision(liveLikeAlwaysAffordableState)
+		if err != nil {
+			t.Fatalf("decision %d: p1 unexpected error: %v", i, err)
+		}
+		d2, err := p2.GetEnemyDecision(liveLikeAlwaysAffordableState)
+		if err != nil {
+			t.Fatalf("decision %d: p2 unexpected error: %v", i, err)
+		}
+		if fmt.Sprint(d1) != fmt.Sprint(d2) {
+			t.Fatalf("decision %d: nondeterministic, p1=%v p2=%v", i, d1, d2)
+		}
+	}
+}
+
+// TestScriptedProviderAttackerLiveLikeSpawnCompositionMatchesTargetShares
+// checks the emitted spawn composition against the measured live-attacker
+// shares (shielded 39.8%, basic 33.0%, fast 22.7%, tank 4.5% of spawns --
+// see liveLikeUnitWeights) over a long run where everything, including
+// wave, is always affordable. Because wave is affordable here, roughly
+// 1-in-14 decisions is a wave (which does not advance the spawn schedule
+// cursor -- see the comment on liveLikeSpawnCursor), so 400 decisions walk
+// a little over 9 full 40-slot cycles rather than exactly 10; the
+// tolerance below is looser than the schedule's own ~half-point design
+// margin to account for that partial-cycle remainder while still catching
+// a materially wrong composition.
+func TestScriptedProviderAttackerLiveLikeSpawnCompositionMatchesTargetShares(t *testing.T) {
+	p := NewScriptedProvider(ResolvedPlayerModelConfig{
+		PlayerModelConfig: PlayerModelConfig{Provider: ProviderScripted, Model: "attacker_live_like"},
+	})
+
+	spawnCounts := map[string]int{}
+	totalSpawns := 0
+	const decisions = 400 // 10 full 40-slot schedule cycles
+	for i := 0; i < decisions; i++ {
+		d, err := p.GetEnemyDecision(liveLikeAlwaysAffordableState)
+		if err != nil {
+			t.Fatalf("decision %d: unexpected error: %v", i, err)
+		}
+		if d["action"] == "spawn" {
+			enemyType, _ := d["enemy_type"].(string)
+			spawnCounts[enemyType]++
+			totalSpawns++
+		}
+	}
+
+	if totalSpawns == 0 {
+		t.Fatalf("expected at least one spawn over %d decisions, got none", decisions)
+	}
+
+	targets := map[string]float64{
+		"shielded": 0.398,
+		"basic":    0.330,
+		"fast":     0.227,
+		"tank":     0.045,
+	}
+	const tolerance = 0.02 // 2 points, looser than the schedule's own 0.5pt design margin
+	for unitType, target := range targets {
+		got := float64(spawnCounts[unitType]) / float64(totalSpawns)
+		diff := got - target
+		if diff < 0 {
+			diff = -diff
+		}
+		if diff > tolerance {
+			t.Fatalf("spawn share for %s = %.4f (%d/%d), want ~%.4f (target), diff %.4f exceeds tolerance %.4f",
+				unitType, got, spawnCounts[unitType], totalSpawns, target, diff, tolerance)
+		}
+	}
+}
+
+// TestScriptedProviderAttackerLiveLikeSavesWithoutSubstitutingWhenUnaffordable
+// exercises the refusal-to-substitute rule that is the whole reason
+// attacker_live_like's save share is an emergent property rather than a
+// dial: when the scheduled unit isn't in affordable_actions, the script
+// must return save, never spawn a cheaper alternative that happens to be
+// affordable. liveLikeSpawnSchedule's first entry is "shielded" (see
+// buildLiveLikeSpawnSchedule), so a fresh provider's very first decision
+// consults that slot; the state here affords everything except shielded.
+func TestScriptedProviderAttackerLiveLikeSavesWithoutSubstitutingWhenUnaffordable(t *testing.T) {
+	if liveLikeSpawnSchedule[0] != "shielded" {
+		t.Fatalf("test assumes liveLikeSpawnSchedule[0] == \"shielded\", got %q -- update the state below to match", liveLikeSpawnSchedule[0])
+	}
+	p := NewScriptedProvider(ResolvedPlayerModelConfig{
+		PlayerModelConfig: PlayerModelConfig{Provider: ProviderScripted, Model: "attacker_live_like"},
+	})
+	state := map[string]interface{}{
+		// Everything except spawn:shielded (the scheduled unit) is
+		// affordable, including cheaper units -- a substitution bug would
+		// spawn one of these instead of saving.
+		"affordable_actions": []string{"save", "spawn:basic", "spawn:fast", "spawn:tank"},
+	}
+	decision, err := p.GetEnemyDecision(state)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if decision["action"] != "save" {
+		t.Fatalf("expected save when the scheduled unit (shielded) is unaffordable (no substitution), got %v", decision)
+	}
+}
+
+// TestScriptedProviderAttackerLiveLikeSpawnCursorDoesNotAdvanceWhileUnaffordable
+// pins the "bank toward it" fix: liveLikeSpawnCursor must NOT move forward
+// on a "save" decision. liveLikeSpawnSchedule[0] is "shielded"; a fresh
+// provider fed 10 consecutive decisions where spawn:shielded is missing
+// from affordable_actions (but other, cheaper spawns ARE present, so a
+// cursor-advancing bug would let one of them clear) must still be sitting
+// on schedule slot 0 afterward -- proven by then affording ONLY
+// spawn:shielded and observing it spawn immediately, rather than save
+// (which is what would happen if the cursor had silently walked ahead to
+// schedule[10], "basic", while banking).
+func TestScriptedProviderAttackerLiveLikeSpawnCursorDoesNotAdvanceWhileUnaffordable(t *testing.T) {
+	if liveLikeSpawnSchedule[0] != "shielded" {
+		t.Fatalf("test assumes liveLikeSpawnSchedule[0] == \"shielded\", got %q", liveLikeSpawnSchedule[0])
+	}
+	p := NewScriptedProvider(ResolvedPlayerModelConfig{
+		PlayerModelConfig: PlayerModelConfig{Provider: ProviderScripted, Model: "attacker_live_like"},
+	})
+	unaffordableState := map[string]interface{}{
+		// Every other spawn type is affordable EXCEPT shielded (the
+		// scheduled unit) -- a cursor that advanced past an unaffordable
+		// slot would let one of these clear instead.
+		"affordable_actions": []string{"save", "spawn:basic", "spawn:fast", "spawn:tank"},
+	}
+	for i := 0; i < 10; i++ {
+		d, err := p.GetEnemyDecision(unaffordableState)
+		if err != nil {
+			t.Fatalf("decision %d: unexpected error: %v", i, err)
+		}
+		if d["action"] != "save" {
+			t.Fatalf("decision %d: expected save while banking for shielded (no substitution), got %v", i, d)
+		}
+	}
+
+	onlyShieldedState := map[string]interface{}{
+		"affordable_actions": []string{"save", "spawn:shielded"},
+	}
+	d, err := p.GetEnemyDecision(onlyShieldedState)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if d["action"] != "spawn" || d["enemy_type"] != "shielded" {
+		t.Fatalf("expected the cursor to still be on schedule slot 0 (shielded) after 10 unaffordable decisions, got %v", d)
+	}
+}
+
+// TestScriptedProviderAttackerLiveLikePendingWaveSurvivesUnaffordableTurns
+// pins the other half of the sticky-banking fix: once liveLikeWaveInterval
+// decisions have elapsed and a wave is armed, it must stay armed -- and be
+// re-attempted on every subsequent decision -- until "wave" is actually
+// affordable, rather than the one-shot check silently dropping it for that
+// game. The 14th decision here has wave unaffordable (must fall through to
+// spawn, not save-on-principle); several further decisions also have wave
+// unaffordable; only once wave becomes affordable, decisions later, must it
+// finally fire.
+func TestScriptedProviderAttackerLiveLikePendingWaveSurvivesUnaffordableTurns(t *testing.T) {
+	p := NewScriptedProvider(ResolvedPlayerModelConfig{
+		PlayerModelConfig: PlayerModelConfig{Provider: ProviderScripted, Model: "attacker_live_like"},
+	})
+	waveUnaffordableState := map[string]interface{}{
+		// wave deliberately absent; spawns affordable so the fall-through
+		// after an armed-but-unaffordable wave attempt has somewhere to go.
+		"affordable_actions": []string{"save", "spawn:basic", "spawn:fast", "spawn:tank", "spawn:shielded"},
+	}
+
+	// Decisions 1-13: below liveLikeWaveInterval, no wave should be
+	// attempted (and none is affordable anyway).
+	for i := 1; i <= liveLikeWaveInterval-1; i++ {
+		d, err := p.GetEnemyDecision(waveUnaffordableState)
+		if err != nil {
+			t.Fatalf("decision %d: unexpected error: %v", i, err)
+		}
+		if d["action"] == "wave" {
+			t.Fatalf("decision %d: wave fired before liveLikeWaveInterval elapsed, got %v", i, d)
+		}
+	}
+
+	// Decision 14: the wave arms, but is unaffordable this turn -- must
+	// fall through to a spawn (or save), never wave, and never silently
+	// drop the pending wave.
+	d, err := p.GetEnemyDecision(waveUnaffordableState)
+	if err != nil {
+		t.Fatalf("decision %d: unexpected error: %v", liveLikeWaveInterval, err)
+	}
+	if d["action"] == "wave" {
+		t.Fatalf("decision %d: expected no wave (unaffordable), got %v", liveLikeWaveInterval, d)
+	}
+
+	// Decisions 15-19: still unaffordable -- the pending wave must keep
+	// being retried (never wave, since still unaffordable) rather than
+	// expiring or waiting for another 14-decision cycle.
+	for i := liveLikeWaveInterval + 1; i < liveLikeWaveInterval+6; i++ {
+		d, err := p.GetEnemyDecision(waveUnaffordableState)
+		if err != nil {
+			t.Fatalf("decision %d: unexpected error: %v", i, err)
+		}
+		if d["action"] == "wave" {
+			t.Fatalf("decision %d: expected no wave (still unaffordable), got %v", i, d)
+		}
+	}
+
+	// Now wave becomes affordable, well past the original 14th decision --
+	// the pending wave must still be armed and fire immediately.
+	waveAffordableState := map[string]interface{}{
+		"affordable_actions": []string{"save", "wave", "spawn:basic", "spawn:fast", "spawn:tank", "spawn:shielded"},
+	}
+	d, err = p.GetEnemyDecision(waveAffordableState)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if d["action"] != "wave" {
+		t.Fatalf("expected the pending wave (armed at decision %d) to still fire once affordable, got %v", liveLikeWaveInterval, d)
+	}
+}
+
+// TestScriptedProviderAttackerBaselineUnchangedByLiveLikeAddition pins
+// attacker_baseline's behaviour against a fixed game state, directly, so
+// this change (adding attacker_live_like alongside it) cannot be shown to
+// have altered it: below the wave threshold it spawns basic, at/above it
+// it waves, exactly as scriptedAttackerDefault always has.
+func TestScriptedProviderAttackerBaselineUnchangedByLiveLikeAddition(t *testing.T) {
+	p := NewScriptedProvider(ResolvedPlayerModelConfig{
+		PlayerModelConfig: PlayerModelConfig{Provider: ProviderScripted, Model: "attacker_baseline"},
+	})
+
+	belowThreshold := map[string]interface{}{
+		"your_resources":     100.0,
+		"affordable_actions": []string{"save", "spawn:basic"},
+	}
+	d, err := p.GetEnemyDecision(belowThreshold)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if d["action"] != "spawn" || d["enemy_type"] != "basic" || d["reason"] != "scripted" {
+		t.Fatalf("expected exactly {action: spawn, enemy_type: basic, reason: scripted} below threshold, got %v", d)
+	}
+
+	atThreshold := map[string]interface{}{
+		"your_resources":     260.0,
+		"affordable_actions": []string{"save"},
+	}
+	d, err = p.GetEnemyDecision(atThreshold)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if d["action"] != "wave" || d["reason"] != "scripted" {
+		t.Fatalf("expected exactly {action: wave, reason: scripted} at threshold, got %v", d)
+	}
+}
+
 func TestScriptedProviderReturnsDeterministicActions(t *testing.T) {
 	p := NewScriptedProvider(ResolvedPlayerModelConfig{
 		PlayerModelConfig: PlayerModelConfig{Provider: ProviderScripted, Model: "defender_basic"},

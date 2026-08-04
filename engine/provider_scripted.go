@@ -21,6 +21,40 @@ type ScriptedProvider struct {
 	// still set from a prior dispatch -- so this field is safe to mutate
 	// without synchronization. Unused by every other script.
 	hoarderSpending bool
+
+	// liveLikeDecisions / liveLikePendingWave / liveLikeSpawnCursor are
+	// attacker_live_like's own state, carried across turns the same way
+	// hoarderSpending is above (see that comment for why a plain struct
+	// field is safe here without synchronization). All three implement
+	// "banking toward a target" -- sticking on one scheduled thing across
+	// however many consecutive decisions it takes to afford it, rather than
+	// skipping ahead the moment it's unaffordable:
+	//
+	//   - liveLikeDecisions counts every GetEnemyDecision call while no wave
+	//     is pending, so the "every 14th decision" wave-attempt timing lands
+	//     deterministically. It is reset to 0 only when a wave actually
+	//     fires (see liveLikePendingWave), not merely attempted.
+	//   - liveLikePendingWave is set once liveLikeDecisions reaches
+	//     liveLikeWaveInterval and stays set -- with the wave attempted on
+	//     every subsequent decision -- until "wave" is actually affordable
+	//     and taken. This is what makes the wave attempt sticky rather than
+	//     a one-shot check that silently drops if unaffordable that tick.
+	//   - liveLikeSpawnCursor indexes liveLikeSpawnSchedule and advances
+	//     ONLY when a spawn is actually emitted, never on a "save". A
+	//     scheduled unit that isn't affordable yet is retried at the same
+	//     cursor position on every subsequent decision -- that stickiness is
+	//     what "bank toward it" in the brief means: sitting on e.g. a
+	//     40-cost shielded across as many turns as it takes, rather than the
+	//     cursor moving on and letting a cheaper unit clear in its place.
+	//
+	// liveLikeDecisions and liveLikeSpawnCursor remain two separate counters
+	// (not one): the measured spawn composition this script reproduces is a
+	// share of spawns only, independent of how often a wave happens to
+	// land, so coupling them would let wave timing distort the composition.
+	// Unused by every other script.
+	liveLikeDecisions   int
+	liveLikePendingWave bool
+	liveLikeSpawnCursor int
 }
 
 func NewScriptedProvider(config ResolvedPlayerModelConfig) *ScriptedProvider {
@@ -157,6 +191,16 @@ func (p *ScriptedProvider) GetEnemyDecision(gameState map[string]interface{}) (m
 		// choice; see the ActionCounters caveat documented on
 		// scriptedAttackerAbility.
 		return scriptedAttackerAbility(gameState, "reinforce_wave"), nil
+	case "attacker_live_like":
+		// Reproduces the decision mix and spawn composition measured from a
+		// real model (gemini-2.5-flash-lite) playing this seat against
+		// defender_baseline over 4 matches / 230 attacker decisions, rather
+		// than attacker_baseline's spawn-basic-until-260-then-wave script,
+		// which every existing balance number was measured against -- see
+		// scriptedAttackerLiveLike for the wave-timing/spawn-schedule
+		// mechanics and liveLikeSpawnSchedule for where the measured
+		// shielded/basic/fast/tank composition comes from.
+		return p.scriptedAttackerLiveLike(gameState), nil
 	default:
 		// Launch a wave once THIS player's own bank reaches the threshold --
 		// "hold until rich enough for a big push". gameState["resources"] is
@@ -209,6 +253,137 @@ func scriptedAttackerAbility(gameState map[string]interface{}, ability string) m
 		}
 	}
 	return scriptedAttackerDefault(gameState)
+}
+
+// liveLikeWaveInterval is how often (once every this-many decisions)
+// attacker_live_like attempts a wave, calibrated to the measured live rate
+// of 16 waves over 230 attacker decisions (7.0%): 1/14 = 7.14%, the closest
+// integer interval to that measured share.
+const liveLikeWaveInterval = 14
+
+// liveLikeUnitWeight pairs a spawn enemy type with its integer share of the
+// 40-slot composition cycle below. Order is significant: it is also the
+// fixed tie-break order buildLiveLikeSpawnSchedule uses, so it must not
+// change across runs (see that function).
+type liveLikeUnitWeight struct {
+	unitType string
+	weight   int
+}
+
+// liveLikeUnitWeights is proportioned to the measured live-attacker spawn
+// composition (share of the 88 measured spawns): shielded 39.8%, basic
+// 33.0%, fast 22.7%, tank 4.5%. A 40-slot cycle of 16/13/9/2 lands within
+// half a point of every one of those shares (40.0/32.5/22.5/5.0).
+var liveLikeUnitWeights = []liveLikeUnitWeight{
+	{"shielded", 16},
+	{"basic", 13},
+	{"fast", 9},
+	{"tank", 2},
+}
+
+// liveLikeSpawnSchedule is the fixed, interleaved 40-entry unit cycle
+// attacker_live_like steps through for its spawn decisions (see
+// scriptedAttackerLiveLike), computed once at package init by
+// buildLiveLikeSpawnSchedule so the measured composition is spread through
+// a match instead of front-loaded into four separate blocks.
+var liveLikeSpawnSchedule = buildLiveLikeSpawnSchedule()
+
+// buildLiveLikeSpawnSchedule interleaves liveLikeUnitWeights into a single
+// 40-entry cycle using smooth weighted round-robin (the same technique
+// nginx uses to spread weighted upstreams evenly rather than in blocks):
+// every slot, each unit's accumulator gains its own weight, the unit with
+// the largest accumulator is emitted and has the cycle's total weight
+// (40) subtracted back off. This is deterministic and does not depend on Go
+// map iteration order -- liveLikeUnitWeights is an ordered slice, and ties
+// (which occur, since weights are integers) are broken by that fixed order,
+// because the loop below only replaces the running best on a strict >.
+func buildLiveLikeSpawnSchedule() []string {
+	const cycleLen = 40
+	total := 0
+	for _, uw := range liveLikeUnitWeights {
+		total += uw.weight
+	}
+	accumulator := make([]int, len(liveLikeUnitWeights))
+	schedule := make([]string, 0, cycleLen)
+	for i := 0; i < cycleLen; i++ {
+		best := -1
+		for idx, uw := range liveLikeUnitWeights {
+			accumulator[idx] += uw.weight
+			if best == -1 || accumulator[idx] > accumulator[best] {
+				best = idx
+			}
+		}
+		schedule = append(schedule, liveLikeUnitWeights[best].unitType)
+		accumulator[best] -= total
+	}
+	return schedule
+}
+
+// scriptedAttackerLiveLike implements attacker_live_like: calibrated to
+// what a real model (gemini-2.5-flash-lite) actually did playing this seat
+// against defender_baseline, rather than attacker_baseline's
+// spawn-basic-until-rich-then-wave script that every existing balance
+// number was measured against.
+//
+// Every liveLikeWaveInterval-th decision arms a pending wave (see
+// liveLikePendingWave on ScriptedProvider): once armed, a wave is attempted
+// on every subsequent decision -- not just the triggering one -- until
+// "wave" is actually legal and taken, which then disarms it and resets the
+// decision counter. This is "bank toward the wave" the same way the spawn
+// schedule banks toward its scheduled unit below: an unaffordable wave
+// attempt falls through to the spawn logic for that turn (never saves on
+// principle), and the next decision tries the wave again rather than
+// abandoning it.
+//
+// Every decision without an armed-and-firing wave, it consults
+// liveLikeSpawnSchedule at p.liveLikeSpawnCursor (see that field's comment
+// on ScriptedProvider): if the scheduled unit is affordable it is spawned
+// and the cursor advances to the next slot; if not, this returns "save"
+// without substituting a cheaper unit AND without moving the cursor, so the
+// same slot is retried next time. Both of these -- refusing to substitute
+// and refusing to advance past an unaffordable slot -- are what reproduces
+// the measured ~55% save share and the measured composition as an emergent
+// consequence of banking toward 40-cost shielded and 50-cost tank on a
+// small income, rather than a hard-coded probability or a schedule that
+// silently skips what it can't afford.
+//
+// Reads only gameState["affordable_actions"] -- there is no separate
+// balance threshold to gate on here (unlike scriptedAttackerDefault's own
+// wave-launch check), so unlike that function this never touches
+// gameState["your_resources"] or gameState["resources"] at all.
+func (p *ScriptedProvider) scriptedAttackerLiveLike(gameState map[string]interface{}) map[string]interface{} {
+	p.liveLikeDecisions++
+	affordable, _ := gameState["affordable_actions"].([]string)
+
+	if !p.liveLikePendingWave && p.liveLikeDecisions%liveLikeWaveInterval == 0 {
+		p.liveLikePendingWave = true
+	}
+	if p.liveLikePendingWave {
+		for _, action := range affordable {
+			if action == "wave" {
+				p.liveLikePendingWave = false
+				p.liveLikeDecisions = 0
+				return map[string]interface{}{"action": "wave", "reason": "live_like: scheduled wave"}
+			}
+		}
+		// Wave isn't legal yet -- stay armed (do not clear
+		// liveLikePendingWave) and fall through to the spawn schedule below
+		// rather than saving on principle. The next decision tries the wave
+		// again before it tries anything else.
+	}
+
+	unitType := liveLikeSpawnSchedule[p.liveLikeSpawnCursor%len(liveLikeSpawnSchedule)]
+	spawnAction := "spawn:" + unitType
+	for _, action := range affordable {
+		if action == spawnAction {
+			p.liveLikeSpawnCursor++
+			return map[string]interface{}{"action": "spawn", "enemy_type": unitType, "reason": "live_like: " + unitType}
+		}
+	}
+	// Scheduled unit isn't affordable yet -- save toward it and leave the
+	// cursor where it is (do not advance) so the same unit is retried next
+	// decision instead of a cheaper one clearing in its place.
+	return map[string]interface{}{"action": "save", "reason": "live_like: banking for " + unitType}
 }
 
 // scriptedDefenderBuild spreads towers of towerType along the path while
