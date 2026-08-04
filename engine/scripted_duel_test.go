@@ -3,6 +3,7 @@ package engine
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestDefenderBaselineScriptEscalates(t *testing.T) {
@@ -96,6 +97,58 @@ func TestDefenderHeld(t *testing.T) {
 	depleted := MatchResult{Winner: "", Defender: "p1", Lives: map[string]int{"p1": 0}}
 	if depleted.DefenderHeld() {
 		t.Fatalf("zero lives at timeout must not count as held")
+	}
+}
+
+// TestAttackerHealerScriptPutsHealerTypedEnemiesOnBoard proves the unit type
+// itself survives from script decision into the running simulation -- the
+// point of adding attacker_healer, since the heal ability keys on
+// Enemy.EnemyType == "healer", not on any stat. Asserted on real replay
+// spawn events (not on the decision map returned by GetEnemyDecision),
+// because a decision saying enemy_type: "healer" proves nothing about what
+// actually gets spawned. Driven manually (rather than via RunScriptedDuel,
+// which only returns an aggregate MatchResult) so the game's ReplayEvents
+// remain inspectable afterward.
+func TestAttackerHealerScriptPutsHealerTypedEnemiesOnBoard(t *testing.T) {
+	resolved := ResolvedMatchConfig{
+		Player1: ResolvedPlayerModelConfig{PlayerModelConfig: PlayerModelConfig{
+			Provider: ProviderScripted, Model: "defender_baseline", APIKeyEnv: "NONE",
+		}},
+		Player2: ResolvedPlayerModelConfig{PlayerModelConfig: PlayerModelConfig{
+			Provider: ProviderScripted, Model: "attacker_healer", APIKeyEnv: "NONE",
+		}},
+	}
+	g := NewGameFromResolvedConfig(resolved)
+	g.Balance = DefaultBalanceConfig()
+	g.ApplyRuleset(BaselineDuelRuleset())
+	g.SetRandomSeed(1)
+	g.PauseBetweenTurns = false
+	g.AIDecisionInterval[g.Player1] = 0
+	g.AIDecisionInterval[g.Player2] = 0
+
+	maxTicks := 400
+	ticks := 0
+	deadline := time.Now().Add(60 * time.Second)
+	for ticks < maxTicks && !g.GameOver && time.Now().Before(deadline) {
+		if g.AIThinking[g.Player1] || g.AIThinking[g.Player2] {
+			g.HandleAIDecisions()
+			time.Sleep(10 * time.Microsecond)
+			continue
+		}
+		g.UpdateGameState()
+		g.HandleAIDecisions()
+		ticks++
+	}
+
+	sawHealerSpawn := false
+	for _, ev := range g.ReplayEvents {
+		if ev.Type == ReplaySpawn && ev.Details["enemy_type"] == "healer" {
+			sawHealerSpawn = true
+			break
+		}
+	}
+	if !sawHealerSpawn {
+		t.Fatalf("expected at least one healer-typed spawn replay event over %d ticks, saw none", ticks)
 	}
 }
 

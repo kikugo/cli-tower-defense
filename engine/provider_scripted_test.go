@@ -113,3 +113,83 @@ func TestScriptedProviderDefenderSingleTowerScriptSavesWhenUnaffordable(t *testi
 		t.Fatalf("expected save when sniper unaffordable, got %v", decision)
 	}
 }
+
+// TestScriptedProviderAttackerHealerSpawnsHealerWhenAffordable exercises the
+// attacker_healer script added to isolate the healer enemy's heal ability
+// (keyed on EnemyType == "healer") from its body stats, which a restatted
+// "basic" cannot reach. It must spawn a real healer whenever spawn:healer
+// appears in affordable_actions.
+func TestScriptedProviderAttackerHealerSpawnsHealerWhenAffordable(t *testing.T) {
+	p := NewScriptedProvider(ResolvedPlayerModelConfig{
+		PlayerModelConfig: PlayerModelConfig{Provider: ProviderScripted, Model: "attacker_healer"},
+	})
+	state := map[string]interface{}{
+		"resources":          map[string]interface{}{"p1": 100.0, "p2": 100.0},
+		"affordable_actions": []string{"save", "spawn:basic", "spawn:healer"},
+	}
+	decision, err := p.GetEnemyDecision(state)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if decision["action"] != "spawn" || decision["enemy_type"] != "healer" {
+		t.Fatalf("expected spawn healer, got %v", decision)
+	}
+}
+
+// TestScriptedProviderAttackerHealerFallsBackToBasicWhenUnaffordable checks
+// that, unlike attacker_shielded (which saves), attacker_healer falls back to
+// spawning basic when healer isn't affordable yet -- the same fallback
+// attacker_baseline's default branch always takes.
+func TestScriptedProviderAttackerHealerFallsBackToBasicWhenUnaffordable(t *testing.T) {
+	p := NewScriptedProvider(ResolvedPlayerModelConfig{
+		PlayerModelConfig: PlayerModelConfig{Provider: ProviderScripted, Model: "attacker_healer"},
+	})
+	state := map[string]interface{}{
+		"resources":          map[string]interface{}{"p1": 100.0, "p2": 100.0},
+		"affordable_actions": []string{"save", "spawn:basic"},
+	}
+	decision, err := p.GetEnemyDecision(state)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if decision["action"] != "spawn" || decision["enemy_type"] != "basic" {
+		t.Fatalf("expected fallback spawn basic when healer unaffordable, got %v", decision)
+	}
+}
+
+// TestScriptedProviderAttackerHealerLaunchesWaveSameConditionAsBaseline
+// verifies attacker_healer launches a wave under exactly the condition
+// attacker_baseline (the default branch) does -- including the known bug
+// where a wave triggers if ANY player's resources entry is >= 260, not just
+// the attacker's own. This is deliberately reproduced, not fixed, so a sweep
+// comparing the two scripts isolates the spawned unit and nothing else.
+func TestScriptedProviderAttackerHealerLaunchesWaveSameConditionAsBaseline(t *testing.T) {
+	baseline := NewScriptedProvider(ResolvedPlayerModelConfig{
+		PlayerModelConfig: PlayerModelConfig{Provider: ProviderScripted, Model: "attacker_baseline"},
+	})
+	healer := NewScriptedProvider(ResolvedPlayerModelConfig{
+		PlayerModelConfig: PlayerModelConfig{Provider: ProviderScripted, Model: "attacker_healer"},
+	})
+	states := []map[string]interface{}{
+		// Attacker's own resources trip the gate.
+		{"resources": map[string]interface{}{"p1": 100.0, "p2": 260.0}, "affordable_actions": []string{"save"}},
+		// Only the OPPONENT's resources trip the gate -- the latent bug,
+		// reproduced faithfully in both scripts.
+		{"resources": map[string]interface{}{"p1": 260.0, "p2": 50.0}, "affordable_actions": []string{"save"}},
+		// Neither trips the gate.
+		{"resources": map[string]interface{}{"p1": 100.0, "p2": 50.0}, "affordable_actions": []string{"save"}},
+	}
+	for i, state := range states {
+		bd, err := baseline.GetEnemyDecision(state)
+		if err != nil {
+			t.Fatalf("case %d: baseline unexpected error: %v", i, err)
+		}
+		hd, err := healer.GetEnemyDecision(state)
+		if err != nil {
+			t.Fatalf("case %d: healer unexpected error: %v", i, err)
+		}
+		if (bd["action"] == "wave") != (hd["action"] == "wave") {
+			t.Fatalf("case %d: wave-launch condition diverged: baseline=%v healer=%v", i, bd, hd)
+		}
+	}
+}

@@ -154,3 +154,62 @@ func TestSpawnWaveRespectsQueueCap(t *testing.T) {
 		t.Fatalf("wave queue exceeded cap: %d > %d", len(g.WaveQueue), g.MaxWaveQueue)
 	}
 }
+
+// TestHealerAbilityHealsNearbyDamagedEnemy proves the heal ability itself is
+// reachable: a damaged enemy standing next to a healer must gain health on
+// the next tick. This is the mechanic attacker_healer exists to exercise --
+// it is keyed on Enemy.EnemyType == "healer" (engine/actions.go), which a
+// restatted "basic" spawned by attacker_baseline can never trigger, no
+// matter what stats it carries.
+func TestHealerAbilityHealsNearbyDamagedEnemy(t *testing.T) {
+	g := NewGame("test", "test")
+	path := g.Paths[0]
+	start := path[0]
+
+	healer := g.newEnemy(start.Y, start.X, "healer", nil)
+	healer.PathID = 0
+
+	damaged := g.newEnemy(start.Y, start.X, "basic", nil)
+	damaged.PathID = 0
+	damaged.Health = damaged.MaxHealth - 30
+	if damaged.Health <= 0 {
+		t.Fatalf("test setup: damaged enemy must start alive, got health %d", damaged.Health)
+	}
+	preHealHealth := damaged.Health
+
+	g.Enemies = []*Enemy{&healer, &damaged}
+	g.WaveQueue = nil // don't let a queued spawn interfere with this tick
+
+	g.UpdateGameState()
+
+	if damaged.Health <= preHealHealth {
+		t.Fatalf("expected healer to heal nearby damaged enemy: health before=%d after=%d", preHealHealth, damaged.Health)
+	}
+}
+
+// TestHealerAbilityHealsNearbyHealer confirms that, per the brief, an
+// all-healer force heals itself: healers are enemies too, so a damaged
+// healer standing next to another healer must also be healed. This is a
+// legitimate composition, not an edge case to special-case away.
+func TestHealerAbilityHealsNearbyHealer(t *testing.T) {
+	g := NewGame("test", "test")
+	path := g.Paths[0]
+	start := path[0]
+
+	healerA := g.newEnemy(start.Y, start.X, "healer", nil)
+	healerA.PathID = 0
+
+	healerB := g.newEnemy(start.Y, start.X, "healer", nil)
+	healerB.PathID = 0
+	healerB.Health = healerB.MaxHealth - 20
+	preHealHealth := healerB.Health
+
+	g.Enemies = []*Enemy{&healerA, &healerB}
+	g.WaveQueue = nil
+
+	g.UpdateGameState()
+
+	if healerB.Health <= preHealHealth {
+		t.Fatalf("expected a damaged healer to be healed by a nearby healer: before=%d after=%d", preHealHealth, healerB.Health)
+	}
+}

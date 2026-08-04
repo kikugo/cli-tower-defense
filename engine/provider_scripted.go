@@ -65,7 +65,38 @@ func (p *ScriptedProvider) GetEnemyDecision(gameState map[string]interface{}) (m
 			}
 		}
 		return map[string]interface{}{"action": "save", "reason": "scripted: save"}, nil
+	case "attacker_healer":
+		// Spawns real healer-typed units (never a restatted basic) whenever
+		// affordable, so a sweep against this script isolates the healer's
+		// heal ability -- keyed on EnemyType == "healer" in
+		// engine/actions.go -- from its body stats, which restatting basic
+		// cannot reach. Identical to the default/attacker_baseline branch
+		// below in every other respect: same wave-launch condition
+		// (reproduced verbatim, bug and all -- see the comment on the
+		// default branch below) and the same fallback to spawning basic
+		// when healer isn't affordable yet.
+		if resources, ok := gameState["resources"].(map[string]interface{}); ok {
+			for _, v := range resources {
+				if r, ok := toIntFromAny(v); ok && r >= 260 {
+					return map[string]interface{}{"action": "wave", "reason": "scripted"}, nil
+				}
+			}
+		}
+		affordable, _ := gameState["affordable_actions"].([]string)
+		for _, action := range affordable {
+			if action == "spawn:healer" {
+				return map[string]interface{}{"action": "spawn", "enemy_type": "healer", "reason": "scripted: healer"}, nil
+			}
+		}
+		return map[string]interface{}{"action": "spawn", "enemy_type": "basic", "reason": "scripted"}, nil
 	default:
+		// KNOWN BUG, not fixed here: this reads gameState["resources"] as a
+		// map over ALL players and launches a wave if ANY entry is >= 260 --
+		// including the opponent's balance, not just this player's own.
+		// Left as-is because attacker_baseline is one half of the sweep's
+		// measuring stick (see attacker_healer above, which reproduces this
+		// exact logic so the two scripts stay comparable); fixing the gate
+		// here would move the baseline.
 		if resources, ok := gameState["resources"].(map[string]interface{}); ok {
 			for _, v := range resources {
 				if r, ok := toIntFromAny(v); ok && r >= 260 {
