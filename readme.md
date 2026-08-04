@@ -163,11 +163,13 @@ Stratifying the same 40 seeds by how many lanes the generator produced:
 
 | lanes | seeds | defender held |
 |---|---|---|
-| 1 | 24 (60%) | **24/24 = 100%** |
-| 2 | 16 (40%) | **1/16 = 6%** |
-| — | 40 | 25/40 = 62.5% |
+| 1 | 298 (60%) | **298/298 = 100%** |
+| 2 | 202 (40%) | **6/202 = 3%** |
+| — | 500 | 304/500 = 60.8% |
 
-`generatePaths` picks one lane unless a random draw exceeds 0.6, so `P(1 lane) ≈ 0.60`, and `0.60 × 100% + 0.40 × 6% = 62.4%`. **The headline number is, to within rounding, the probability of the RNG rolling a single lane.** It is stable at both 400 and 3000 tick caps because the lane count decides the match long before the cap does.
+`generatePaths` picks one lane unless a random draw exceeds 0.6, so `P(1 lane) ≈ 0.60`, and `0.596 × 100% + 0.404 × 3% = 60.8%` against a measured 60.8%. **The headline number is the probability of the RNG rolling a single lane, to three significant figures.**
+
+This is measured at 500 seeds because the two-lane stratum is where the decomposition can go wrong, and at 40 seeds it rested on a single match. It moved when the sample widened — 6% at n=16, 4% at n=80, 3% at n=202 — so the earlier figure was small-sample optimism and the number to quote is 3%. The single-lane stratum did not move at all: 298/298, still exactly 100%.
 
 Per archetype, 40 seeds each:
 
@@ -249,7 +251,34 @@ The same substitution applied to the remaining unmeasured units. It is faithful 
 | `tank`'s speed only — 0.5 speed at basic's health and cost | 26/40 = 65% |
 | `healer`'s body only — 80hp, cost 30 (no heal) | 27/40 = 68% |
 
-Tank's health is devastating and its price more than cancels it. Three hundred health at 20 resources ends every match; the same unit at its real 50 makes the attacker *worse off than spawning basics*, because half speed doubles the time spent inside tower range, so 3× the health buys only about 1.5× the survivability for 2.5× the price. Speed on its own barely moves anything. Tank is not weak content, it is mispriced content — and nothing had ever measured it either way.
+Tank's health is devastating and its price appears to cancel it. Three hundred health at 20 resources ends every match; the same unit at its real 50 leaves the defender at 90%. Speed on its own barely moves anything.
+
+**That last number turned out to be an artifact of the measurement budget, and it is worth spelling out.** All of the above runs 400 ticks. A tank moves at half speed, so a short horizon penalises it twice — once in the arithmetic, and again by ending the match before slow units arrive. Re-running the same comparison at 1500 ticks:
+
+| max_ticks | `basic` as shipped | `tank`'s full profile |
+|---|---|---|
+| 400 | 62% | **90%** |
+| 1500 | 62% | **68%** |
+
+The baseline is unmoved at 62% either way; the tank arm collapses from 90% to 68%. So "tank is mispriced" is really "tank is mispriced *at a 400-tick horizon*". Given a match long enough for them to cross the map, tanks are only slightly worse than basics, not dramatically so. The tick cap is not a neutral parameter for slow units, and no measurement here had accounted for that.
+
+### Do these conclusions survive a different defender?
+
+Every number above was measured against `defender_baseline`, which places a tower the moment it can afford one — and is therefore broke almost always. Measured, it has more than one legal action on **2.3%** of its turns. That is a property of the strategy, not the economy: a defender that banks instead would face a full menu constantly.
+
+So the conclusions might describe a spendthrift defender rather than the game. A second scripted defender, `defender_hoarder`, banks to a threshold and then spends down, reusing the same placement logic so only the *timing* differs. It faces a real choice on **41.7%** of its turns against the baseline's 2.3% — a genuinely different decision profile.
+
+| | `defender_baseline` | `defender_hoarder` |
+|---|---|---|
+| turns with a real choice | 2.3% | 41.7% |
+| as shipped | 62% | 62% |
+| shield 2 only | **0%** | **0%** |
+| tank's health at basic's price | 0% | 0% |
+| tank's full profile (400 ticks) | 90% | 90% |
+
+**The shield result holds across both.** It was the falsifiable one — had the hoarder survived, "shielded is decisive" would have had to become "decisive against a defender that is always broke". It didn't. And the mechanism is clearer for having checked: shield-only matches end after ~103 ticks on average regardless of the tick cap, which is well before any difference in defensive strategy could express itself. The defender is dead before how it spends could matter.
+
+One honest limit on that. Starting resources equal the hoarder's threshold, so both scripts open with an identical burst of three towers, and inside 400 ticks most matches are decided before the hoarder's second spending cycle. At 1500 ticks they do diverge — 68% versus 62% on the tank arm — which is where the two strategies are genuinely being compared.
 
 The healer's ability needed a different method. It keys on the unit's *type name* rather than on a stat, so a restatted `basic` gets a healer's body and never heals — which is what the 68% above measures. A dedicated scripted attacker that spawns real `healer` units, identical to the baseline in every other respect including its wave logic, gives **26/40 (65%)** against the body-only 27/40 (68%). A one-match swing across 40 seeds: the ability is worth nothing measurable. Of the four units the harness never exercises, one is decisive, one is mispriced, and two are inert.
 
