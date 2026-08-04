@@ -4,7 +4,9 @@ A terminal tower defense game written in Go where any two configured LLMs compet
 
 ![Two models playing a match](docs/demo.gif)
 
-A real match, not a scripted one: `gemini-3-flash-preview` defending against `gemini-2.5-flash-lite` on seed 5. The telemetry panel shows live provider calls and token counts, and the attacker wins — the defender goes from 20 lives to 0 over six waves.
+A real match, not a scripted one: `gemini-2.5-flash-lite` on both sides, seed 7 (a two-lane map), recorded 2026-08-04. Every one of the 11 applied actions came from a model — the run reports `authored_def=100% | authored_att=100%`, and that is the reason to believe the recording at all. The attacker wins on wave 5: the defender places two towers and one research level, saves three times, and runs out of lives.
+
+Earlier recordings of this demo could not make that claim. Until the decision parser was fixed (see [Known Issues](#known-issues) and the provenance section below), a model that pretty-printed its JSON was silently replaced by an engine fallback, so a "real match" could be the engine playing itself and look no different.
 
 ## Game Overview
 
