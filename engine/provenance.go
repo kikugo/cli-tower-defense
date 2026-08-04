@@ -25,6 +25,30 @@ const (
 	// SourceParserEmpty is stamped when a provider returned an empty
 	// response body, before any parsing was attempted.
 	SourceParserEmpty DecisionSource = "parser_fallback_empty"
+	// SourceParserFallbackTruncated is stamped when the Gemini API reports
+	// finishReason "MAX_TOKENS" for a response: the model's output was cut
+	// off by the completion token budget before it finished, most often
+	// because a thinking model spent its budget on hidden reasoning before
+	// it ever got to write the JSON decision (see defaultCompletionTokens in
+	// provider_runtime.go). Without this tag, a truncated response that
+	// failed to parse landed on the generic SourceParserUnparseable, which
+	// is indistinguishable from a model simply writing malformed JSON on its
+	// own -- exactly the kind of silent ambiguity provenance tracking exists
+	// to eliminate. The Gemini provider applies this via overrideDecisionSource
+	// on MAX_TOKENS, replacing whatever fallback tag the parser already
+	// applied, because "the budget cut this response off" is a strictly more
+	// useful diagnosis than "this did not parse" once it is known to be true.
+	// It deliberately does not follow the first-writer-wins convention used
+	// everywhere else in this file -- but it also never overwrites a decision
+	// that parsed cleanly (SourceModel): see overrideDecisionSource. A model
+	// can finish its JSON object and then keep generating trailing prose
+	// until it hits the token cap, so MAX_TOKENS alone does not imply the
+	// decision was truncated; only an unparsed/fallback decision is relabelled.
+	// A response that genuinely was cut off mid-object is still not
+	// model-authored (the model never got to finish), so ModelAuthored counts
+	// it against the authored share exactly like the other substitution
+	// sources: it is anything other than SourceModel.
+	SourceParserFallbackTruncated DecisionSource = "parser_fallback_truncated"
 	// SourceProviderFailure is stamped when the HTTP call itself failed --
 	// timeout, non-2xx status, decode error -- before any parsing was
 	// attempted, or when the turn worker recovered from a panic with no
@@ -69,6 +93,51 @@ func markDecisionSource(decision map[string]interface{}, src DecisionSource) {
 		return
 	}
 	decision[decisionSourceKey] = string(src)
+}
+
+// overrideDecisionSource replaces an existing fallback tag with a more
+// specific one -- e.g. an already-applied SourceParserUnparseable becoming
+// SourceParserFallbackTruncated once the caller learns the real cause
+// (finishReason MAX_TOKENS). This is the one deliberate exception to the
+// first-writer-wins convention markDecisionSource enforces: it exists for
+// callers who learn a substitution's true cause only after the parser has
+// already run and stamped a generic tag.
+//
+// It will never downgrade a genuine model decision: if decision is
+// currently untagged or already stamped SourceModel, this is a no-op. That
+// guarantee lives here, in the one place all callers share, rather than
+// being each call site's responsibility -- a response can finish a
+// complete, valid JSON object and then keep generating trailing prose until
+// it hits a token cap, so a signal like "finishReason was MAX_TOKENS" is
+// not on its own evidence that the recorded decision was truncated. Only a
+// decision that is already tagged with some OTHER fallback source (proof
+// the parser itself considered this response a substitution) is eligible
+// to be relabelled.
+func overrideDecisionSource(decision map[string]interface{}, src DecisionSource) {
+	if decision == nil {
+		return
+	}
+	if peekDecisionSource(decision) == SourceModel {
+		return
+	}
+	decision[decisionSourceKey] = string(src)
+}
+
+// peekDecisionSource reads a decision map's current provenance stamp
+// without removing it (unlike takeDecisionSource, which is destructive),
+// defaulting to SourceModel when no tag is present.
+func peekDecisionSource(decision map[string]interface{}) DecisionSource {
+	if decision == nil {
+		return SourceModel
+	}
+	raw, ok := decision[decisionSourceKey]
+	if !ok {
+		return SourceModel
+	}
+	if s, ok := raw.(string); ok && s != "" {
+		return DecisionSource(s)
+	}
+	return SourceModel
 }
 
 // takeDecisionSource removes and returns the provenance stamp from a

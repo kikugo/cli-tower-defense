@@ -30,7 +30,7 @@ func (p *GeminiNativeProvider) Name() string {
 
 func (p *GeminiNativeProvider) GetTowerDecision(gameState map[string]interface{}) (map[string]interface{}, error) {
 	prompt := (&OpenAIHandler{}).createTowerPrompt(gameState)
-	text, usage, err := p.generateContent(prompt)
+	text, usage, finishReason, err := p.generateContent(prompt)
 	if err != nil {
 		// A network error must not become a gameplay action: tagged as an
 		// engine substitution, and -- unlike before -- the real error is
@@ -42,13 +42,16 @@ func (p *GeminiNativeProvider) GetTowerDecision(gameState map[string]interface{}
 		return decision, err
 	}
 	decision, decErr := (&OpenAIHandler{}).parseTowerResponse(text)
+	if finishReason == "MAX_TOKENS" {
+		overrideDecisionSource(decision, SourceParserFallbackTruncated)
+	}
 	attachTokenUsage(decision, usage)
 	return decision, decErr
 }
 
 func (p *GeminiNativeProvider) GetEnemyDecision(gameState map[string]interface{}) (map[string]interface{}, error) {
 	prompt := (&GeminiHandler{}).createEnemyPrompt(gameState)
-	text, usage, err := p.generateContent(prompt)
+	text, usage, finishReason, err := p.generateContent(prompt)
 	if err != nil {
 		// Was getFallbackEnemyDecision(100), which -- since 100 >= 50 --
 		// always produced "spawn tank" regardless of game state. A network
@@ -59,11 +62,18 @@ func (p *GeminiNativeProvider) GetEnemyDecision(gameState map[string]interface{}
 		return decision, err
 	}
 	decision, decErr := (&GeminiHandler{}).parseEnemyResponse(text)
+	if finishReason == "MAX_TOKENS" {
+		overrideDecisionSource(decision, SourceParserFallbackTruncated)
+	}
 	attachTokenUsage(decision, usage)
 	return decision, decErr
 }
 
-func (p *GeminiNativeProvider) generateContent(prompt string) (string, tokenUsage, error) {
+// generateContent returns the response text, token usage, and the Gemini
+// finishReason ("STOP", "MAX_TOKENS", "SAFETY", ...) alongside any error.
+// finishReason is "" whenever it could not be read off the response, which
+// callers must treat as "unknown", not as "STOP".
+func (p *GeminiNativeProvider) generateContent(prompt string) (string, tokenUsage, string, error) {
 	temperature := resolvedTemperature(p.config.Params)
 	maxTokens := completionTokenBudget(p.config.Params)
 
@@ -82,7 +92,7 @@ func (p *GeminiNativeProvider) generateContent(prompt string) (string, tokenUsag
 	}
 	reqJSON, err := json.Marshal(reqBody)
 	if err != nil {
-		return "", tokenUsage{}, wrapProviderError(p.Name(), "marshal request", err)
+		return "", tokenUsage{}, "", wrapProviderError(p.Name(), "marshal request", err)
 	}
 
 	url := fmt.Sprintf("%s?key=%s", p.config.BaseURL, p.config.APIKey)
@@ -123,8 +133,9 @@ func (p *GeminiNativeProvider) generateContent(prompt string) (string, tokenUsag
 			continue
 		}
 		usage, _ := extractGeminiUsage(result)
-		return text, usage, nil
+		finishReason, _ := extractGeminiFinishReason(result)
+		return text, usage, finishReason, nil
 	}
 
-	return "", tokenUsage{}, lastErr
+	return "", tokenUsage{}, "", lastErr
 }

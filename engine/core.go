@@ -7,7 +7,6 @@ import (
 	"math"
 	"math/rand"
 	"net/http"
-	"regexp"
 	"strings"
 	"time"
 )
@@ -308,27 +307,22 @@ func (h *OpenAIHandler) createTowerPrompt(gameState map[string]interface{}) stri
 }
 
 func (h *OpenAIHandler) parseTowerResponse(response string) (map[string]interface{}, error) {
-	re := regexp.MustCompile(`\{.*\}`)
-	match := re.FindString(response)
-	if match != "" {
-		var decision map[string]interface{}
-		if err := json.Unmarshal([]byte(match), &decision); err == nil {
-			action, hasAction := decision["action"].(string)
-			if hasAction {
-				if action == "place" {
-					towerType, hasTowerType := decision["tower_type"].(string)
-					if !hasTowerType || towerType == "" {
-						decision["tower_type"] = "basic"
-						markDecisionSource(decision, SourceParserUnparseable)
-					}
-					if _, hasPos := decision["position"].([]interface{}); !hasPos {
-						decision["position"] = []interface{}{float64(10), float64(10)}
-						markDecisionSource(decision, SourceParserUnparseable)
-					}
-					return decision, nil
+	if decision, ok := extractDecisionJSON(response); ok {
+		action, hasAction := decision["action"].(string)
+		if hasAction {
+			if action == "place" {
+				towerType, hasTowerType := decision["tower_type"].(string)
+				if !hasTowerType || towerType == "" {
+					decision["tower_type"] = "basic"
+					markDecisionSource(decision, SourceParserUnparseable)
+				}
+				if _, hasPos := decision["position"].([]interface{}); !hasPos {
+					decision["position"] = []interface{}{float64(10), float64(10)}
+					markDecisionSource(decision, SourceParserUnparseable)
 				}
 				return decision, nil
 			}
+			return decision, nil
 		}
 	}
 	fallback := map[string]interface{}{
@@ -394,23 +388,18 @@ func (h *GeminiHandler) parseEnemyResponse(response string) (map[string]interfac
 		markDecisionSource(decision, SourceParserEmpty)
 		return decision, nil
 	}
-	re := regexp.MustCompile(`\{.*\}`)
-	match := re.FindString(response)
-	if match != "" {
-		var decision map[string]interface{}
-		if err := json.Unmarshal([]byte(match), &decision); err == nil {
-			action, hasAction := decision["action"].(string)
-			if hasAction {
-				if action == "spawn" {
-					enemyType, hasEnemyType := decision["enemy_type"].(string)
-					if !hasEnemyType || enemyType == "" {
-						decision["enemy_type"] = "basic"
-						markDecisionSource(decision, SourceParserUnparseable)
-					}
-					return decision, nil
+	if decision, ok := extractDecisionJSON(response); ok {
+		action, hasAction := decision["action"].(string)
+		if hasAction {
+			if action == "spawn" {
+				enemyType, hasEnemyType := decision["enemy_type"].(string)
+				if !hasEnemyType || enemyType == "" {
+					decision["enemy_type"] = "basic"
+					markDecisionSource(decision, SourceParserUnparseable)
 				}
 				return decision, nil
 			}
+			return decision, nil
 		}
 	}
 	fallback := map[string]interface{}{"action": "spawn", "enemy_type": "basic", "reason": "Default fallback"}
@@ -1314,6 +1303,31 @@ func extractGeminiContentText(result map[string]interface{}) (string, bool) {
 	}
 	text, ok := textRaw.(string)
 	return text, ok
+}
+
+// extractGeminiFinishReason reads candidates[0].finishReason from a Gemini
+// generateContent response -- e.g. "STOP", "MAX_TOKENS", "SAFETY". Providers
+// use this to detect a completion truncated by the token budget rather than
+// a genuine (if malformed) model response; see SourceParserFallbackTruncated.
+func extractGeminiFinishReason(result map[string]interface{}) (string, bool) {
+	candidatesRaw, ok := result["candidates"]
+	if !ok {
+		return "", false
+	}
+	candidates, ok := candidatesRaw.([]interface{})
+	if !ok || len(candidates) == 0 {
+		return "", false
+	}
+	candidate, ok := candidates[0].(map[string]interface{})
+	if !ok {
+		return "", false
+	}
+	reasonRaw, ok := candidate["finishReason"]
+	if !ok {
+		return "", false
+	}
+	reason, ok := reasonRaw.(string)
+	return reason, ok
 }
 
 func toIntFromAny(v interface{}) (int, bool) {

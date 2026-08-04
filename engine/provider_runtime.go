@@ -58,7 +58,19 @@ func wrapProviderError(providerName, operation string, err error) error {
 // defaultCompletionTokens is sized so reasoning models still emit a JSON
 // decision after spending hidden tokens on reasoning. Profiles override via
 // params.max_tokens.
-const defaultCompletionTokens = 300
+//
+// Measured against a realistic 635-token prompt, gemini-3-flash-preview (a
+// thinking model) spent 982 hidden reasoning tokens before writing any
+// output: at max=1024 that left only 38 tokens for the actual response,
+// finishReason came back MAX_TOKENS, and the JSON was truncated mid-string
+// and failed to parse. At max=4096 the same call spent 2959 tokens thinking,
+// finished with STOP, and produced 76 tokens of output that parsed cleanly.
+// A non-thinking model (gemini-2.5-flash-lite) used only 60 tokens and
+// finished with STOP well under either cap. maxOutputTokens is a cap on
+// spend, not a charge, so raising it costs nothing for models that do not
+// think -- it only matters for the ones that do, and 4096 is the smallest
+// power-of-two headroom the measurement above showed was enough.
+const defaultCompletionTokens = 4096
 
 func completionTokenBudget(params map[string]float64) int {
 	if v, ok := params["max_tokens"]; ok && v > 0 {
