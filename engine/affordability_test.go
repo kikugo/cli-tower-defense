@@ -22,9 +22,11 @@ func TestAffordableActionsDefenderRich(t *testing.T) {
 	got := g.affordableActions(g.Defender, "defender")
 	// custom is deliberately absent: it is not in the prompt schema and
 	// placeTower rejects it, so advertising it would guarantee rejections.
+	// sniper is affordable at 200 as of balance v3, which priced it at 100
+	// (it was 250). buffer at 300 is still out of reach.
 	want := []string{
 		"save",
-		"place:basic", "place:splash",
+		"place:basic", "place:splash", "place:sniper",
 		"place_slow_zone",
 		"research:economy", "research:range", "research:control",
 		"invest",

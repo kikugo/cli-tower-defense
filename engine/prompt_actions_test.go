@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -50,8 +51,13 @@ func TestDefenderMenuFiltersTowerTypes(t *testing.T) {
 	if !strings.Contains(menu, `"tower_type": "basic|splash"`) {
 		t.Fatalf("place template should list only affordable types:\n%s", menu)
 	}
-	if !strings.Contains(menu, "sniper tower (250)") {
-		t.Fatalf("unaffordable sniper should be priced in guidance:\n%s", menu)
+	// Derive the price from the balance config rather than hardcoding it:
+	// the point under test is that an unaffordable tower is priced in the
+	// guidance at all, and hardcoding the number made this fail for the
+	// wrong reason when the sniper was repriced in v3.
+	wantSniper := fmt.Sprintf("sniper tower (%d)", DefaultBalanceConfig().Towers["sniper"].Cost)
+	if !strings.Contains(menu, wantSniper) {
+		t.Fatalf("unaffordable sniper should be priced in guidance as %q:\n%s", wantSniper, menu)
 	}
 	if strings.Contains(menu, `"action": "research"`) {
 		t.Fatalf("research template must be hidden when unaffordable:\n%s", menu)

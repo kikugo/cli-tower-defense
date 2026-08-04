@@ -44,7 +44,31 @@ var attackerEnemyTypes = []string{"basic", "fast", "healer", "shielded", "tank"}
 var towerChars = map[string]rune{"basic": '^', "sniper": '⌖', "splash": '⊕', "buffer": 'B', "custom": '?'}
 var enemyChars = map[string]rune{"basic": 'o', "fast": '>', "tank": '□', "shielded": 'S', "healer": 'H', "custom": '?'}
 
-// DefaultBalanceConfig returns the tuned "v2" numbers. v1's basic tower
+// v3 changes only the sniper: 50 damage / cooldown 5 / cost 100, from
+// 50 / 15 / 250. At the shipped numbers a sniper-only defender could afford
+// exactly one tower on a ~350 lifetime budget and lost 0/40 at tick 101 with
+// a score of zero -- it delivered 1.3 damage/tick per 100 resources against
+// basic's 17.0, so it was never a real option. v3 puts it at 10.0, still
+// below basic, but its range of 12 covers both branches of a fork that
+// basic's range of 5 cannot reach. Measured over 40 seeds it INVERTS the
+// stratum pattern rather than dominating: 8% on one-lane maps where basic
+// holds 100%, and 62% on two-lane maps where basic holds 6% -- and 69%
+// against the live-calibrated attacker. Overall it stays worse than basic
+// (30% against 62%), so basic remains the default buy and the sniper is a
+// map-dependent alternative.
+//
+// The window is narrow: at 50 / cooldown 3 / cost 100 (16.7 damage/tick per
+// 100, a hair under basic's 17.0, with range 12) the sniper wins 100% of
+// every stratum and is simply a better basic. Do not tune toward that.
+//
+// splash and buffer were left alone deliberately. Neither could be made
+// situational: splash given basic's exact stats plus a free three-target
+// attack gains three points against attacker_baseline and nothing at all
+// against a live-like one, because enemies never occupy the same
+// neighbourhood; buffer is unaffordable at any price the defender can reach.
+// See the readme for both.
+//
+// DefaultBalanceConfig returns the tuned numbers. v1's basic tower
 // (15 dmg / 5 cooldown) could not kill a single 100 HP enemy per pass, making
 // defense mathematically unwinnable (0% baseline hold rate). v2 raises the
 // basic tower to 34 dmg / 2 cooldown, measured at a 72% hold rate for a
@@ -56,10 +80,10 @@ var enemyChars = map[string]rune{"basic": 'o', "fast": '>', "tank": '□', "shie
 // TestBaselineDuelBandWithDefaults.
 func DefaultBalanceConfig() BalanceConfig {
 	return BalanceConfig{
-		Version: "v2",
+		Version: "v3",
 		Towers: map[string]TowerStat{
 			"basic":  {Damage: 34, Range: 5, Cooldown: 2, Cost: 100},
-			"sniper": {Damage: 50, Range: 12, Cooldown: 15, Cost: 250},
+			"sniper": {Damage: 50, Range: 12, Cooldown: 5, Cost: 100},
 			"splash": {Damage: 10, Range: 3, Cooldown: 3, Cost: 200},
 			"buffer": {Damage: 0, Range: 2, Cooldown: 0, Cost: 300},
 			"custom": {Damage: 20, Range: 7, Cooldown: 8, Cost: 150},
