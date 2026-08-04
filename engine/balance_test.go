@@ -2,6 +2,104 @@ package engine
 
 import "testing"
 
+func TestComputeBalanceHashStableAcrossRepeatedCalls(t *testing.T) {
+	cfg := DefaultBalanceConfig()
+	first := ComputeBalanceHash(cfg)
+	if first == "" {
+		t.Fatalf("expected non-empty hash")
+	}
+	// Go randomises map iteration order per call, so the only way this test
+	// catches a regression to "iterate the map directly, no sort" is by
+	// hashing the SAME config many times and requiring identical output
+	// every time -- a single repeat has a real chance of getting lucky.
+	for i := 0; i < 200; i++ {
+		if got := ComputeBalanceHash(cfg); got != first {
+			t.Fatalf("hash unstable on iteration %d: got %q, want %q", i, got, first)
+		}
+	}
+}
+
+func TestComputeBalanceHashStableAcrossFreshConfigInstances(t *testing.T) {
+	// Two independently-constructed configs with identical content (not the
+	// same map underneath) must hash identically -- this is what "stable
+	// across runs and processes" means in practice.
+	a := ComputeBalanceHash(DefaultBalanceConfig())
+	b := ComputeBalanceHash(DefaultBalanceConfig())
+	if a != b {
+		t.Fatalf("expected identical hashes for identical fresh configs, got %q vs %q", a, b)
+	}
+}
+
+func TestComputeBalanceHashChangesOnTowerStatChange(t *testing.T) {
+	base := DefaultBalanceConfig()
+	baseHash := ComputeBalanceHash(base)
+
+	mutated := DefaultBalanceConfig()
+	st := mutated.Towers["basic"]
+	st.Damage++
+	mutated.Towers["basic"] = st
+
+	if got := ComputeBalanceHash(mutated); got == baseHash {
+		t.Fatalf("expected hash to change when a tower stat changes, both %q", got)
+	}
+}
+
+func TestComputeBalanceHashChangesOnEnemyStatChange(t *testing.T) {
+	base := DefaultBalanceConfig()
+	baseHash := ComputeBalanceHash(base)
+
+	mutated := DefaultBalanceConfig()
+	st := mutated.Enemies["basic"]
+	st.Health++
+	mutated.Enemies["basic"] = st
+
+	if got := ComputeBalanceHash(mutated); got == baseHash {
+		t.Fatalf("expected hash to change when an enemy stat changes, both %q", got)
+	}
+}
+
+func TestComputeBalanceHashChangesOnBreachBountyChange(t *testing.T) {
+	base := DefaultBalanceConfig()
+	baseHash := ComputeBalanceHash(base)
+
+	mutated := DefaultBalanceConfig()
+	mutated.BreachResourceBounty++
+
+	if got := ComputeBalanceHash(mutated); got == baseHash {
+		t.Fatalf("expected hash to change when breach resource bounty changes, both %q", got)
+	}
+}
+
+func TestComputeBalanceHashChangesOnBreachScoreChange(t *testing.T) {
+	base := DefaultBalanceConfig()
+	baseHash := ComputeBalanceHash(base)
+
+	mutated := DefaultBalanceConfig()
+	mutated.BreachScore++
+
+	if got := ComputeBalanceHash(mutated); got == baseHash {
+		t.Fatalf("expected hash to change when breach score changes, both %q", got)
+	}
+}
+
+// TestComputeBalanceHashIgnoresVersionLabel is the whole point of this hash:
+// BalanceVersion is a hand-written string (see DefaultBalanceConfig) that
+// balance_sweep.go's applyBalanceOverride never updates, so two configs
+// with materially different stats but the same Version string must be
+// distinguishable -- and two configs with the same stats but different
+// Version strings must NOT look different, because the hash describes
+// content, not the label.
+func TestComputeBalanceHashIgnoresVersionLabel(t *testing.T) {
+	a := DefaultBalanceConfig()
+	a.Version = "v2"
+	b := DefaultBalanceConfig()
+	b.Version = "totally-different-label"
+
+	if ComputeBalanceHash(a) != ComputeBalanceHash(b) {
+		t.Fatalf("expected hash to ignore Version, got different hashes for configs differing only in Version")
+	}
+}
+
 func TestDefaultBalanceConfigSanity(t *testing.T) {
 	b := DefaultBalanceConfig()
 	if b.Version == "" {

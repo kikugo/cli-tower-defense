@@ -513,11 +513,16 @@ type Game struct {
 	Defender            string
 	Attacker            string
 	ModelNames          map[string]string
-	Player1             string
-	Player2             string
-	pendingTurnResults  chan turnResult
-	mapInitRecorded     bool
-	winReasonOverride   string
+	// ProviderConfigs holds the resolved, non-secret provider configuration
+	// (temperature, base URL, timeouts, retries, ...) keyed by playerID, so
+	// run manifests can record what actually produced a result. Never holds
+	// an API key -- see ProviderConfigRecord.
+	ProviderConfigs    map[string]ProviderConfigRecord
+	Player1            string
+	Player2            string
+	pendingTurnResults chan turnResult
+	mapInitRecorded    bool
+	winReasonOverride  string
 }
 
 type turnResult struct {
@@ -571,7 +576,9 @@ func NewGameFromResolvedConfig(resolved ResolvedMatchConfig) *Game {
 		Score: map[string]int{p1: 0, p2: 0}, LastDecisions: map[string]string{p1: "None", p2: "None"},
 		LastReasoning: map[string]string{p1: "Thinking...", p2: "Thinking..."}, LastTaunt: map[string]string{p1: "", p2: ""},
 		WaveQueue: make([]string, 0), GameOver: false, AIEnabled: true, AIThinking: map[string]bool{p1: false, p2: false},
-		Defender: p1, Attacker: p2, ModelNames: map[string]string{p1: resolved.Player1.Model, p2: resolved.Player2.Model}, Player1: p1, Player2: p2,
+		Defender: p1, Attacker: p2, ModelNames: map[string]string{p1: resolved.Player1.Model, p2: resolved.Player2.Model},
+		ProviderConfigs: map[string]ProviderConfigRecord{p1: newProviderConfigRecord(resolved.Player1), p2: newProviderConfigRecord(resolved.Player2)},
+		Player1:         p1, Player2: p2,
 		DecisionRouter: router,
 		Balance:        DefaultBalanceConfig(),
 		GameSpeed:      0.1, AIDecisionInterval: map[string]int{p1: 2, p2: 2},

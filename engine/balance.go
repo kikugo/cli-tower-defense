@@ -1,5 +1,13 @@
 package engine
 
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+	"sort"
+	"strings"
+)
+
 // TowerStat and EnemyStat hold the tunable numbers for one entity type.
 type TowerStat struct {
 	Damage   int `json:"damage"`
@@ -67,6 +75,52 @@ func DefaultBalanceConfig() BalanceConfig {
 		BreachResourceBounty: 30,
 		BreachScore:          50,
 	}
+}
+
+// ComputeBalanceHash returns a short, deterministic fingerprint of the
+// numeric content of cfg: every tower stat, every enemy stat, the breach
+// resource bounty, and the breach score. It deliberately excludes Version --
+// a hand-written human label (see DefaultBalanceConfig) that can drift from
+// the actual numbers, e.g. balance_sweep.go's applyBalanceOverride rewrites
+// tower/enemy stats for a sweep candidate without ever touching Version.
+// Two configs differing only in Version hash identically; two configs
+// differing in any stat hash differently.
+//
+// Go randomises map iteration order per process, so cfg.Towers and
+// cfg.Enemies are walked in sorted-key order before hashing -- without that,
+// this would produce a different hash for the same config on different
+// runs, which is worse than no hash at all. Uses SHA-256 (stdlib, no new
+// dependency), truncated to the first 16 hex characters (64 bits) for
+// legibility in manifests; that's plenty to detect accidental drift and
+// collisions are not a concern here.
+func ComputeBalanceHash(cfg BalanceConfig) string {
+	var b strings.Builder
+
+	towerNames := make([]string, 0, len(cfg.Towers))
+	for name := range cfg.Towers {
+		towerNames = append(towerNames, name)
+	}
+	sort.Strings(towerNames)
+	for _, name := range towerNames {
+		st := cfg.Towers[name]
+		fmt.Fprintf(&b, "tower:%s:%d:%d:%d:%d\n", name, st.Damage, st.Range, st.Cooldown, st.Cost)
+	}
+
+	enemyNames := make([]string, 0, len(cfg.Enemies))
+	for name := range cfg.Enemies {
+		enemyNames = append(enemyNames, name)
+	}
+	sort.Strings(enemyNames)
+	for _, name := range enemyNames {
+		st := cfg.Enemies[name]
+		fmt.Fprintf(&b, "enemy:%s:%d:%g:%d:%d:%d\n", name, st.Health, st.Speed, st.Reward, st.SpawnCost, st.Shield)
+	}
+
+	fmt.Fprintf(&b, "breach_resource_bounty:%d\n", cfg.BreachResourceBounty)
+	fmt.Fprintf(&b, "breach_score:%d\n", cfg.BreachScore)
+
+	sum := sha256.Sum256([]byte(b.String()))
+	return hex.EncodeToString(sum[:])[:16]
 }
 
 func (g *Game) towerCost(name string) (int, bool) {

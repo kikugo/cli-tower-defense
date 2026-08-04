@@ -43,6 +43,43 @@ type ResolvedMatchConfig struct {
 	Player2 ResolvedPlayerModelConfig
 }
 
+// ProviderConfigRecord is the subset of a resolved player provider
+// configuration that is safe to write to disk in a run manifest: everything
+// that can affect model behavior (temperature, token budget, retries,
+// timeout, endpoint, provider/model identity) and nothing secret.
+//
+// It is built explicitly field-by-field from a ResolvedPlayerModelConfig
+// (see newProviderConfigRecord) rather than by embedding or reusing that
+// type, specifically so APIKey -- and Headers, which may themselves carry
+// bearer tokens or other credentials -- can never leak into a manifest by
+// accident, e.g. via a future field added to ResolvedPlayerModelConfig.
+type ProviderConfigRecord struct {
+	Provider       ProviderType `json:"provider"`
+	Model          string       `json:"model"`
+	BaseURL        string       `json:"base_url,omitempty"`
+	TimeoutSeconds int          `json:"timeout_seconds"`
+	RetryCount     int          `json:"retry_count"`
+	MaxTokens      int          `json:"max_tokens"`
+	Temperature    float64      `json:"temperature"`
+}
+
+// newProviderConfigRecord resolves the same effective values the live
+// providers use at request time (see providerRetryAttempts,
+// completionTokenBudget, resolvedTemperature in provider_runtime.go and the
+// provider implementations) so the manifest reflects what actually ran,
+// including defaults that were never explicitly set (e.g. temperature 0.7).
+func newProviderConfigRecord(config ResolvedPlayerModelConfig) ProviderConfigRecord {
+	return ProviderConfigRecord{
+		Provider:       config.Provider,
+		Model:          config.Model,
+		BaseURL:        config.BaseURL,
+		TimeoutSeconds: config.TimeoutSeconds,
+		RetryCount:     providerRetryAttempts(config),
+		MaxTokens:      completionTokenBudget(config.Params),
+		Temperature:    resolvedTemperature(config.Params),
+	}
+}
+
 func DefaultMatchConfig() MatchConfig {
 	return MatchConfig{
 		Player1: PlayerModelConfig{

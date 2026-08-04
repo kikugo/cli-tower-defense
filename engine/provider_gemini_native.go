@@ -64,10 +64,7 @@ func (p *GeminiNativeProvider) GetEnemyDecision(gameState map[string]interface{}
 }
 
 func (p *GeminiNativeProvider) generateContent(prompt string) (string, tokenUsage, error) {
-	temperature := 0.7
-	if v, ok := p.config.Params["temperature"]; ok {
-		temperature = v
-	}
+	temperature := resolvedTemperature(p.config.Params)
 	maxTokens := completionTokenBudget(p.config.Params)
 
 	reqBody := map[string]interface{}{
