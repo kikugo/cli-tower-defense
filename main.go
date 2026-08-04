@@ -640,9 +640,25 @@ func main() {
 		return
 	}
 	p := tea.NewProgram(m, tea.WithAltScreen())
-	if _, err := p.Run(); err != nil {
+	finalModel, err := p.Run()
+	if err != nil {
 		log.Fatal(err)
 	}
+
+	fm, ok := finalModel.(model)
+	if !ok || fm.game == nil || fm.replayIn != "" {
+		return
+	}
+
+	// This print and the artifact writes happen after the alt-screen is torn
+	// down (p.Run() has already returned), so they land on stdout normally
+	// instead of being drawn over by the TUI -- a live TUI match against
+	// real models must leave behind the same provenance record a headless
+	// run does; see the block comment on writeMatchArtifacts.
+	matchResult := fm.game.BuildMatchResult()
+	ticks := int(fm.game.TickCount)
+	printMatchSummary(fm.game, matchResult, "interactive", &ticks)
+	writeMatchArtifacts(fm, matchResult, "interactive", 0)
 }
 
 func runHeadless(m model) {
@@ -655,30 +671,51 @@ func runHeadless(m model) {
 		limit = 3000
 	}
 
-	ticks := 0
-	ticks = runHeadlessSimulation(m.game, limit)
+	ticks := runHeadlessSimulation(m.game, limit)
 	m.game.ResolveTimeout()
 
+	matchResult := m.game.BuildMatchResult()
+	printMatchSummary(m.game, matchResult, "headless", &ticks)
+
+	writeMatchArtifacts(m, matchResult, "headless", limit)
+}
+
+// printMatchSummary prints the one-line provenance summary shared by the
+// headless and interactive run paths. ticks is optional (nil omits the
+// ticks field) because the interactive model does not track a local tick
+// counter the way runHeadlessSimulation does.
+func printMatchSummary(g *eng.Game, matchResult eng.MatchResult, mode string, ticks *int) {
 	result := "incomplete"
-	if m.game.GameOver {
+	if g.GameOver {
 		result = "completed"
 	}
-	matchResult := m.game.BuildMatchResult()
-	fmt.Printf("headless run %s | ticks=%d | wave=%d | winner=%s | defender_lives=%d | logs=%d | rejected_def=%d | rejected_att=%d | provider_err_def=%d | provider_err_att=%d | authored_def=%s | authored_att=%s\n",
+	ticksField := ""
+	if ticks != nil {
+		ticksField = fmt.Sprintf("ticks=%d | ", *ticks)
+	}
+	fmt.Printf("%s run %s | %swave=%d | winner=%s | defender_lives=%d | logs=%d | rejected_def=%d | rejected_att=%d | provider_err_def=%d | provider_err_att=%d | authored_def=%s | authored_att=%s\n",
+		mode,
 		result,
-		ticks,
-		m.game.Wave,
-		m.game.ModelNames[m.game.Winner],
-		m.game.Lives[m.game.Defender],
-		len(m.game.Logs),
-		m.game.TotalRejectedActionsForPlayer(m.game.Defender),
-		m.game.TotalRejectedActionsForPlayer(m.game.Attacker),
-		m.game.TotalProviderErrorsForPlayer(m.game.Defender),
-		m.game.TotalProviderErrorsForPlayer(m.game.Attacker),
-		formatModelAuthoredShare(matchResult, m.game.Defender),
-		formatModelAuthoredShare(matchResult, m.game.Attacker),
+		ticksField,
+		g.Wave,
+		g.ModelNames[g.Winner],
+		g.Lives[g.Defender],
+		len(g.Logs),
+		g.TotalRejectedActionsForPlayer(g.Defender),
+		g.TotalRejectedActionsForPlayer(g.Attacker),
+		g.TotalProviderErrorsForPlayer(g.Defender),
+		g.TotalProviderErrorsForPlayer(g.Attacker),
+		formatModelAuthoredShare(matchResult, g.Defender),
+		formatModelAuthoredShare(matchResult, g.Attacker),
 	)
+}
 
+// writeMatchArtifacts writes the four optional match-provenance artifacts
+// (-result-json, -replay-json, -manifest-json, -report-md) if their
+// corresponding flags were set on m. It is shared by the headless and
+// interactive run paths so that a live TUI match against real models
+// produces the same provenance record a headless run does.
+func writeMatchArtifacts(m model, matchResult eng.MatchResult, mode string, limit int) {
 	if m.resultJSON != "" {
 		if err := writeJSONFile(m.resultJSON, matchResult); err != nil {
 			log.Printf("write result json: %v", err)
@@ -690,7 +727,7 @@ func runHeadless(m model) {
 		}
 	}
 	if m.manifestJSON != "" {
-		manifest := eng.BuildRunManifest("headless", m.game, m.seed, false, limit, m.ruleset, os.Getenv("GIT_COMMIT"))
+		manifest := eng.BuildRunManifest(mode, m.game, m.seed, false, limit, m.ruleset, os.Getenv("GIT_COMMIT"))
 		if err := writeJSONFile(m.manifestJSON, manifest); err != nil {
 			log.Printf("write manifest json: %v", err)
 		}
