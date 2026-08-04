@@ -280,7 +280,7 @@ So the conclusions might describe a spendthrift defender rather than the game. A
 
 One honest limit on that. Starting resources equal the hoarder's threshold, so both scripts open with an identical burst of three towers, and inside 400 ticks most matches are decided before the hoarder's second spending cycle. At 1500 ticks they do diverge — 68% versus 62% on the tank arm — which is where the two strategies are genuinely being compared.
 
-The healer's ability needed a different method. It keys on the unit's *type name* rather than on a stat, so a restatted `basic` gets a healer's body and never heals — which is what the 68% above measures. A dedicated scripted attacker that spawns real `healer` units, identical to the baseline in every other respect including its wave logic, gives **26/40 (65%)** against the body-only 27/40 (68%). A one-match swing across 40 seeds: the ability is worth nothing measurable. Of the four units the harness never exercises, one is decisive, one is mispriced, and two are inert.
+The healer's ability needed a different method. It keys on the unit's *type name* rather than on a stat, so a restatted `basic` gets a healer's body and never heals — which is what the 68% above measures. A dedicated scripted attacker that spawns real `healer` units, identical to the baseline in every other respect including its wave logic, gives **26/40 (65%)** against the body-only 27/40 (68%). A one-match swing across 40 seeds: the ability is worth nothing measurable. Of the four units the harness never exercises, one is decisive, one is mispriced at short horizons and roughly fair at long ones, and two are inert.
 
 ### Whose decision was it?
 
