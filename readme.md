@@ -276,7 +276,6 @@ Matches now record this. Every applied decision is tagged with its source, a pro
 - That the balance is tuned for anything beyond `basic`-vs-`basic` play.
 - That the scripted duel proxy predicts model behaviour. It does not currently agree with it: the scripted attacker launches waves, and across a 12-match live tournament no model launched a single one.
 - That Elo separates models here. Under a systematic seat advantage with role swap, every pairing goes 1–1 and ratings return to where they started.
-- That two runs with the same manifest produce the same match. They do when the seed alone selects the map; they do **not** when `-map-type` is set, because map generation currently depends on the order flags are applied. See Known Issues.
 - That the shipped balance survives contact with the content it has never measured. On the evidence above, it does not.
 
 ## Arena workflow
@@ -338,7 +337,6 @@ Dependencies are vendored in-repo, so the build needs no network.
 
 ## Known Issues
 
-- **Map generation depends on the order flags are applied, not only on the seed.** `-seed 11 -map-type choke` through the TUI/headless path and the same seed and map type through the tournament runner produce different maps — 10 obstacles versus 4 — with identical manifests. Seed-only runs are unaffected.
 - **`balance_version` cannot detect balance drift.** It is a hand-written string, so retuning the numbers without editing it leaves two different games both labelled `v2`.
 - **Replay event streams are capped at 10,000 events and trimmed from the front.** A run at the shipped defaults (3000 ticks, 30 waves) reaches the cap exactly, and reconstruction from a trimmed stream is silently wrong.
 - **`tank` and `healer` never appear in a scripted duel.** They are gated behind wave 6 and wave 16, and the wave counter does not get there under the measurement wave cap. Their stats can be measured by restatting the unit the scripted attacker already spawns (see above), but the healer's ability cannot, because it keys on the unit's type name rather than on a stat.

@@ -118,25 +118,13 @@ func initialModel() model {
 		}
 		g = ng
 	}
-	if *seed != 0 {
-		g.SetRandomSeed(*seed)
-	}
-	appliedRuleset := eng.DefaultArenaRuleset()
-	if *mapType != "" {
-		g.SetMapType(*mapType)
-		appliedRuleset.MapType = *mapType
-	}
-	if *maxWaves > 0 {
-		g.MaxWaves = *maxWaves
-		appliedRuleset.MaxWaves = *maxWaves
-	}
+	var rulesets []eng.ArenaRuleset
 	if *rulesetPreset != "" {
 		ruleset, err := eng.PresetArenaRuleset(*rulesetPreset)
 		if err != nil {
 			log.Fatal(err)
 		}
-		g.ApplyRuleset(ruleset)
-		appliedRuleset = ruleset
+		rulesets = append(rulesets, ruleset)
 	}
 	if *rulesetPath != "" {
 		var ruleset eng.ArenaRuleset
@@ -147,9 +135,9 @@ func initialModel() model {
 		if err := json.Unmarshal(raw, &ruleset); err != nil {
 			log.Fatalf("parse ruleset: %v", err)
 		}
-		g.ApplyRuleset(ruleset)
-		appliedRuleset = ruleset
+		rulesets = append(rulesets, ruleset)
 	}
+	appliedRuleset := applyGameConfiguration(g, *mapType, *maxWaves, rulesets, *seed)
 	if *swap {
 		g.Defender, g.Attacker = g.Player2, g.Player1
 		g.CurrentTurn = g.Defender
@@ -729,6 +717,49 @@ func runTournament(path, ratingsPath, csvPath, mdPath string) error {
 	return nil
 }
 
+// applyGameConfiguration applies map-type, max-waves, and ruleset
+// configuration to g, then applies the random seed as the final step. Every
+// entry point that builds a game (the TUI/headless path in initialModel and
+// the tournament path in runTournamentMatch) must configure the game
+// through this single function rather than calling SetMapType/ApplyRuleset/
+// SetRandomSeed independently in its own order.
+//
+// This matters because SetMapType and ApplyRuleset (when the ruleset sets a
+// map type) both regenerate the map from whatever RNG state exists at the
+// time they're called, and SetRandomSeed replaces the RNG outright and also
+// regenerates the map from it. If the seed is applied before those calls,
+// or after a different number of them, the resulting map depends on the
+// order and count of configuration calls instead of depending only on the
+// seed. Applying the seed last, always, after every map-type/ruleset call,
+// guarantees the final map depends only on (seed, final map type, final
+// ruleset) — never on which entry point built the game or how many prior
+// calls it took to get there.
+//
+// mapType is the explicit -map-type flag value (may be empty). rulesets are
+// applied via ApplyRuleset in order (e.g. a preset ruleset followed by a
+// ruleset file override); the last one with a non-empty MapType wins, same
+// as before. seed of 0 means "no explicit seed" and leaves the game's
+// existing (non-deterministic) RNG state untouched, as before.
+func applyGameConfiguration(g *eng.Game, mapType string, maxWaves int, rulesets []eng.ArenaRuleset, seed int64) eng.ArenaRuleset {
+	appliedRuleset := eng.DefaultArenaRuleset()
+	if mapType != "" {
+		g.SetMapType(mapType)
+		appliedRuleset.MapType = mapType
+	}
+	if maxWaves > 0 {
+		g.MaxWaves = maxWaves
+		appliedRuleset.MaxWaves = maxWaves
+	}
+	for _, ruleset := range rulesets {
+		g.ApplyRuleset(ruleset)
+		appliedRuleset = ruleset
+	}
+	if seed != 0 {
+		g.SetRandomSeed(seed)
+	}
+	return appliedRuleset
+}
+
 func runTournamentMatch(matchup eng.TournamentMatchup, seed int64, config eng.TournamentConfig, swapped bool) (eng.TournamentMatchResult, eng.ArenaRunManifest, error) {
 	matchConfig := eng.MatchConfig{Player1: matchup.Player1, Player2: matchup.Player2}
 	resolved, err := eng.ResolveMatchConfig(matchConfig)
@@ -736,21 +767,14 @@ func runTournamentMatch(matchup eng.TournamentMatchup, seed int64, config eng.To
 		return eng.TournamentMatchResult{}, eng.ArenaRunManifest{}, err
 	}
 	g := eng.NewGameFromResolvedConfig(resolved)
-	appliedRuleset := eng.DefaultArenaRuleset()
 	g.PauseBetweenTurns = false
 	g.AIDecisionInterval[g.Defender] = 0
 	g.AIDecisionInterval[g.Attacker] = 0
-	if config.MaxWaves > 0 {
-		g.MaxWaves = config.MaxWaves
-		appliedRuleset.MaxWaves = config.MaxWaves
-	}
+	var rulesets []eng.ArenaRuleset
 	if config.Ruleset != nil {
-		g.ApplyRuleset(*config.Ruleset)
-		appliedRuleset = *config.Ruleset
+		rulesets = append(rulesets, *config.Ruleset)
 	}
-	if seed != 0 {
-		g.SetRandomSeed(seed)
-	}
+	appliedRuleset := applyGameConfiguration(g, "", config.MaxWaves, rulesets, seed)
 	if swapped {
 		g.Defender, g.Attacker = g.Player2, g.Player1
 		g.CurrentTurn = g.Defender
