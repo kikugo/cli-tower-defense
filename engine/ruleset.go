@@ -94,6 +94,12 @@ func (g *Game) ApplyRuleset(ruleset ArenaRuleset) {
 	if ruleset.StartingLives > 0 {
 		g.Lives[g.Player1] = ruleset.StartingLives
 		g.Lives[g.Player2] = ruleset.StartingLives
+		// StartingLives anchors WaveSummary's lives ledger -- see its doc on
+		// Game. A ruleset is always applied before the match plays any
+		// ticks (both call sites apply it immediately after construction),
+		// so there is never telemetry already in flight for this to
+		// invalidate.
+		g.StartingLives = ruleset.StartingLives
 	}
 	if ruleset.AutoWaveMinResource > 0 {
 		g.AutoWaveMinResource = ruleset.AutoWaveMinResource

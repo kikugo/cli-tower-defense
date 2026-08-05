@@ -108,15 +108,49 @@ type MatchResult struct {
 	// the reason ProvenanceVersion was bumped to 2 rather than reusing 1:
 	// a MatchResult built by the code that added decision-source tracking
 	// but not yet this field must not be misread as having zero assists.
-	EngineAssistCounts map[string]int     `json:"engine_assist_counts,omitempty"`
-	ProvenanceVersion  int                `json:"provenance_version,omitempty"`
-	ProviderErrors     map[string]int     `json:"provider_errors"`
-	ProviderCalls      map[string]int     `json:"provider_calls"`
-	ProviderLatency    map[string]float64 `json:"provider_latency_ms_avg"`
-	TokenUsage         map[string]int     `json:"token_usage"`
-	CostMicros         map[string]int64   `json:"cost_micros"`
-	DurationMillis     int64              `json:"duration_millis"`
-	ReplayEvents       int                `json:"replay_events"`
+	EngineAssistCounts map[string]int `json:"engine_assist_counts,omitempty"`
+	// BreachCount is g.BreachCount copied verbatim: one whole-match counter,
+	// not keyed per playerID -- a breach is one event the attacker causes
+	// and the defender suffers, so storing it under both playerIDs would
+	// just be the same number twice, inviting a caller to sum a map and
+	// double it. It always equals the defender's total lost lives -- see
+	// Game.BreachCount. Present (possibly zero) on any MatchResult with
+	// ProvenanceVersion >= 3.
+	BreachCount int `json:"breach_count,omitempty"`
+	// AuthoredSaveCounts and DecisionsResolved are g.AuthoredSaves and
+	// g.DecisionsResolved copied verbatim. Use the AuthoredSaves method,
+	// not a direct read of these maps, for the same "not measured vs zero"
+	// reason ModelAuthored and EngineAssistTotal exist -- present (possibly
+	// all-zero) on any MatchResult with ProvenanceVersion >= 3.
+	AuthoredSaveCounts map[string]int `json:"authored_save_counts,omitempty"`
+	DecisionsResolved  map[string]int `json:"decisions_resolved,omitempty"`
+	// LeakWindow is g.LeakWindow copied verbatim: the last (up to)
+	// LeakWindowSize enemy resolutions across the whole match, oldest first,
+	// true meaning that resolution leaked through. Use RecentLeaks, not a
+	// direct read, to tell "window not yet full" apart from "zero leaked".
+	LeakWindow []bool `json:"leak_window,omitempty"`
+	// WaveSummaries is g.buildWaveSummaries()'s output: one entry per wave
+	// number that has ever been touched, ordered ascending. See WaveSummary
+	// and Game.WaveSummaries. Present (possibly empty) on any MatchResult
+	// with ProvenanceVersion >= 3.
+	WaveSummaries []WaveSummary `json:"wave_summaries,omitempty"`
+	// ProvenanceVersion was bumped from 2 to 3 alongside the four fields
+	// above (BreachCount, AuthoredSaveCounts/DecisionsResolved, LeakWindow,
+	// WaveSummaries) for the same reason it was bumped from 1 to 2: a
+	// MatchResult built by the code that added engine-assist counting but
+	// not yet this telemetry must not be misread as having zero breaches,
+	// zero authored saves, or an empty leak window when those were simply
+	// never recorded. RecentLeaks is the one accessor here that does not
+	// gate on this -- see its doc for why an absent LeakWindow is already
+	// unambiguous without a version check.
+	ProvenanceVersion int                `json:"provenance_version,omitempty"`
+	ProviderErrors    map[string]int     `json:"provider_errors"`
+	ProviderCalls     map[string]int     `json:"provider_calls"`
+	ProviderLatency   map[string]float64 `json:"provider_latency_ms_avg"`
+	TokenUsage        map[string]int     `json:"token_usage"`
+	CostMicros        map[string]int64   `json:"cost_micros"`
+	DurationMillis    int64              `json:"duration_millis"`
+	ReplayEvents      int                `json:"replay_events"`
 	// ReplayTruncated is true when MaxReplayEvents forced the recorded event
 	// stream to drop events mid-match. The stream still carries a
 	// ReplayTruncated marker event in that case (see ReconstructSnapshot),

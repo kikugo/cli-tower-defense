@@ -171,6 +171,16 @@ type Enemy struct {
 	PathIndex     int
 	PathID        int
 	Shield        int
+	// WaveNumber is g.Wave at the moment this enemy was actually placed on
+	// the field (spawnEnemy's direct "spawn" action, or the WaveQueue-drain
+	// step in UpdateGameState) -- never the wave that queued it. A queued
+	// entry that drains after a later spawnWave() call is tagged with the
+	// wave in progress at drain time, not the one that enqueued it; that is
+	// deliberate, not a bug -- see the per-wave aggregation helpers in
+	// telemetry.go, which bucket "sent" the same way. It never changes after
+	// creation, so it is a stable key for per-wave aggregation regardless of
+	// when the enemy resolves.
+	WaveNumber int
 }
 
 // NewEnemy builds an enemy from default balance numbers. Game code should use
@@ -420,65 +430,121 @@ type AbilitySpec struct {
 }
 
 type Game struct {
-	Height              int
-	Width               int
-	MapHeight           int
-	MapWidth            int
-	MapType             string
-	Paths               [][]Position
-	PathTileSet         map[string]struct{}
-	EnemyTileIndex      map[string][]*Enemy
-	Towers              []*Tower
-	Enemies             []*Enemy
-	SlowZones           []*SlowZone
-	Obstacles           []Position
-	ObstacleTileSet     map[string]struct{}
-	Particles           []*Particle
-	Resources           map[string]int
-	Income              map[string]int
-	Lives               map[string]int
-	Wave                int
-	Score               map[string]int
-	LastDecisions       map[string]string
-	LastReasoning       map[string]string
-	LastTaunt           map[string]string
-	WaveQueue           []string
-	GameOver            bool
-	Winner              string
-	AIEnabled           bool
-	AIThinking          map[string]bool
-	DecisionRouter      *DecisionRouter
-	GameSpeed           float64
-	AIDecisionInterval  map[string]int
-	LastAIDecision      map[string]time.Time
-	CurrentTurn         string
-	LastActionTime      time.Time
-	MaxResources        int
-	MaxWaves            int
-	TurnTimeout         time.Duration
-	PauseBetweenTurns   bool
-	PauseDuration       time.Duration
-	pauseDeadline       time.Time
-	lastStatePrintTime  time.Time
-	lastEnemyCount      int
-	lastTowerCount      int
-	stateChangeCounter  int
-	rng                 *rand.Rand
-	Logs                []string
-	MaxLogs             int
-	MaxWaveQueue        int
-	TickCount           int64
-	StartedAt           time.Time
-	ReplayEvents        []ReplayEvent
-	MaxReplayEvents     int
-	ActionCounters      map[string]int
-	RejectedActions     map[string]int
-	DecisionSources     map[string]int
+	Height          int
+	Width           int
+	MapHeight       int
+	MapWidth        int
+	MapType         string
+	Paths           [][]Position
+	PathTileSet     map[string]struct{}
+	EnemyTileIndex  map[string][]*Enemy
+	Towers          []*Tower
+	Enemies         []*Enemy
+	SlowZones       []*SlowZone
+	Obstacles       []Position
+	ObstacleTileSet map[string]struct{}
+	Particles       []*Particle
+	Resources       map[string]int
+	Income          map[string]int
+	Lives           map[string]int
+	// StartingLives is the defender's life total at kickoff -- 20 by
+	// default (NewGameFromResolvedConfig), overwritten by ApplyRuleset when
+	// a ruleset configures StartingLives explicitly. It anchors
+	// WaveSummary's LivesStart/LivesEnd ledger at a known, fixed origin
+	// instead of reconstructing one from the current Lives value, which is
+	// mutable and therefore the wrong thing to derive a timeline from --
+	// see buildWaveSummaries in telemetry.go.
+	StartingLives      int
+	Wave               int
+	Score              map[string]int
+	LastDecisions      map[string]string
+	LastReasoning      map[string]string
+	LastTaunt          map[string]string
+	WaveQueue          []string
+	GameOver           bool
+	Winner             string
+	AIEnabled          bool
+	AIThinking         map[string]bool
+	DecisionRouter     *DecisionRouter
+	GameSpeed          float64
+	AIDecisionInterval map[string]int
+	LastAIDecision     map[string]time.Time
+	CurrentTurn        string
+	LastActionTime     time.Time
+	MaxResources       int
+	MaxWaves           int
+	TurnTimeout        time.Duration
+	PauseBetweenTurns  bool
+	PauseDuration      time.Duration
+	pauseDeadline      time.Time
+	lastStatePrintTime time.Time
+	lastEnemyCount     int
+	lastTowerCount     int
+	stateChangeCounter int
+	rng                *rand.Rand
+	Logs               []string
+	MaxLogs            int
+	MaxWaveQueue       int
+	TickCount          int64
+	StartedAt          time.Time
+	ReplayEvents       []ReplayEvent
+	MaxReplayEvents    int
+	ActionCounters     map[string]int
+	RejectedActions    map[string]int
+	DecisionSources    map[string]int
 	// EngineAssists counts how many times applyAdaptivePressure acted on a
 	// player's behalf, keyed "playerID:branch" (branch is an AssistBranch
 	// string) exactly like DecisionSources' "playerID:source" keys. See
 	// recordEngineAssist in assist.go and MatchResult.EngineAssistCounts.
-	EngineAssists       map[string]int
+	EngineAssists map[string]int
+	// BreachCount counts how many times an enemy reached the end of its
+	// path, for the whole match -- not keyed per playerID. A breach is one
+	// event the attacker causes and the defender suffers; storing it twice
+	// under both playerIDs would just be the same number under two names,
+	// inviting a caller to sum a map and double-count it. It increments in
+	// the same branch as Lives[g.Defender]--, so it always equals the
+	// defender's total lost lives -- see MatchResult.BreachCount.
+	BreachCount int
+	// AuthoredSaves is the cumulative count of "save" decisions counted by
+	// applyDecision's NoopStreak increment -- see the block in
+	// applyDecision guarded by
+	// `source == SourceModel || source == SourceSkippedForcedSave` with
+	// `originalAction == "save"` and `baseOutcome == "applied_primary"`.
+	// This field increments in that exact same branch, alongside
+	// g.NoopStreak[playerID]++, so the two can never drift apart: a save
+	// counts here if and only if it also extended (or started) the current
+	// streak. An engine-substituted save does not count, by design -- see
+	// MatchResult.AuthoredSaves.
+	AuthoredSaves map[string]int
+	// DecisionsResolved is the denominator for AuthoredSaves: every call to
+	// applyDecision for playerID increments it exactly once, regardless of
+	// action, source, or outcome -- the same unconditional count as
+	// DecisionSources' total (summed across all its "playerID:source"
+	// keys), kept as a dedicated field so MatchResult.AuthoredSaves does
+	// not need to iterate DecisionSources to find it.
+	DecisionsResolved map[string]int
+	// LeakWindow is a rolling window of the last LeakWindowSize enemy
+	// resolutions (killed or leaked) across the whole board -- not per
+	// player, since an enemy resolves once regardless of who "owns" the
+	// outcome. true means that resolution was a breach (leaked through);
+	// false means a tower killed it. Oldest entries are evicted from the
+	// front once the window is full. See recordResolution and
+	// MatchResult.RecentLeaks.
+	LeakWindow []bool
+	// LeakWindowTotal is the all-time count of resolutions ever recorded
+	// into LeakWindow, independent of the window's fixed capacity -- it is
+	// what lets a caller tell "fewer than LeakWindowSize enemies have
+	// resolved all match" apart from "exactly LeakWindowSize resolved and
+	// none leaked". See MatchResult.RecentLeaks.
+	LeakWindowTotal int
+	// WaveSummaries aggregates per-wave telemetry (sent/leaked/killed counts,
+	// a Towers snapshot, a derived LivesStart/LivesEnd pair, and completion)
+	// keyed by wave number. Entries are created lazily the first time a
+	// wave number is touched by recordWaveEvent, so a wave with zero
+	// activity never gets a row. LivesStart/LivesEnd are computed fresh by
+	// buildWaveSummaries from the leak ledger, not tracked incrementally --
+	// see telemetry.go and MatchResult.WaveSummaries.
+	WaveSummaries       map[int]*WaveSummary
 	ProviderErrors      map[string]int
 	ProviderCalls       map[string]int
 	ProviderLatencyMS   map[string]int64
@@ -518,8 +584,8 @@ type Game struct {
 	mapInitRecorded    bool
 	// ReplayTruncated is true once trimReplayEvents has discarded any real
 	// event to respect MaxReplayEvents. See replay.go.
-	ReplayTruncated bool
-	winReasonOverride  string
+	ReplayTruncated   bool
+	winReasonOverride string
 }
 
 type turnResult struct {
@@ -569,7 +635,7 @@ func NewGameFromResolvedConfig(resolved ResolvedMatchConfig) *Game {
 	game := &Game{
 		Height: height, Width: width, MapHeight: mapHeight, MapWidth: width,
 		Towers: make([]*Tower, 0), Enemies: make([]*Enemy, 0), SlowZones: make([]*SlowZone, 0), Obstacles: make([]Position, 0), Particles: make([]*Particle, 0),
-		Resources: map[string]int{p1: 300, p2: 300}, Income: map[string]int{p1: 5, p2: 5}, Lives: map[string]int{p1: 20, p2: 20},
+		Resources: map[string]int{p1: 300, p2: 300}, Income: map[string]int{p1: 5, p2: 5}, Lives: map[string]int{p1: 20, p2: 20}, StartingLives: 20,
 		Score: map[string]int{p1: 0, p2: 0}, LastDecisions: map[string]string{p1: "None", p2: "None"},
 		LastReasoning: map[string]string{p1: "Thinking...", p2: "Thinking..."}, LastTaunt: map[string]string{p1: "", p2: ""},
 		WaveQueue: make([]string, 0), GameOver: false, AIEnabled: true, AIThinking: map[string]bool{p1: false, p2: false},
@@ -581,7 +647,7 @@ func NewGameFromResolvedConfig(resolved ResolvedMatchConfig) *Game {
 		GameSpeed:      0.1, AIDecisionInterval: map[string]int{p1: 2, p2: 2},
 		LastAIDecision: map[string]time.Time{p1: time.Now(), p2: time.Now()},
 		CurrentTurn:    p1, LastActionTime: time.Now(), StartedAt: time.Now(), MaxResources: 800, MaxWaves: 30, TurnTimeout: 45 * time.Second,
-		PauseBetweenTurns: true, PauseDuration: 1 * time.Second, lastStatePrintTime: time.Now(), rng: rng, Logs: make([]string, 0), MaxLogs: 250, MaxWaveQueue: 200, ReplayEvents: make([]ReplayEvent, 0), MaxReplayEvents: 10000, ActionCounters: map[string]int{}, RejectedActions: map[string]int{}, DecisionSources: map[string]int{}, EngineAssists: map[string]int{}, ProviderErrors: map[string]int{}, ProviderCalls: map[string]int{}, ProviderLatencyMS: map[string]int64{}, ProviderTokenUsage: map[string]int{}, ProviderCostMicros: map[string]int64{}, TokenPricing: map[string]tokenPricing{p1: pricingFromConfig(resolved.Player1), p2: pricingFromConfig(resolved.Player2)}, LastActionStatus: map[string]string{p1: "none", p2: "none"}, LastRejectedReason: map[string]string{p1: "", p2: ""}, NoopStreak: map[string]int{p1: 0, p2: 0}, RejectionStreak: map[string]int{p1: 0, p2: 0}, LastRejectedAction: map[string]string{p1: "", p2: ""}, AutoWaveMinResource: 260, AutoDefendMinStreak: 2, FogOfWar: true, DefenderVisionRange: 8, BaseVisionRange: 6, ResearchLevels: map[string]int{"economy": 0, "range": 0, "control": 0}, AbilityCooldowns: map[string]int{"surge": 0, "shield_burst": 0, "reinforce_wave": 0},
+		PauseBetweenTurns: true, PauseDuration: 1 * time.Second, lastStatePrintTime: time.Now(), rng: rng, Logs: make([]string, 0), MaxLogs: 250, MaxWaveQueue: 200, ReplayEvents: make([]ReplayEvent, 0), MaxReplayEvents: 10000, ActionCounters: map[string]int{}, RejectedActions: map[string]int{}, DecisionSources: map[string]int{}, EngineAssists: map[string]int{}, AuthoredSaves: map[string]int{p1: 0, p2: 0}, DecisionsResolved: map[string]int{p1: 0, p2: 0}, LeakWindow: make([]bool, 0, LeakWindowSize), WaveSummaries: map[int]*WaveSummary{}, ProviderErrors: map[string]int{}, ProviderCalls: map[string]int{}, ProviderLatencyMS: map[string]int64{}, ProviderTokenUsage: map[string]int{}, ProviderCostMicros: map[string]int64{}, TokenPricing: map[string]tokenPricing{p1: pricingFromConfig(resolved.Player1), p2: pricingFromConfig(resolved.Player2)}, LastActionStatus: map[string]string{p1: "none", p2: "none"}, LastRejectedReason: map[string]string{p1: "", p2: ""}, NoopStreak: map[string]int{p1: 0, p2: 0}, RejectionStreak: map[string]int{p1: 0, p2: 0}, LastRejectedAction: map[string]string{p1: "", p2: ""}, AutoWaveMinResource: 260, AutoDefendMinStreak: 2, FogOfWar: true, DefenderVisionRange: 8, BaseVisionRange: 6, ResearchLevels: map[string]int{"economy": 0, "range": 0, "control": 0}, AbilityCooldowns: map[string]int{"surge": 0, "shield_burst": 0, "reinforce_wave": 0},
 		PathTileSet: make(map[string]struct{}), EnemyTileIndex: make(map[string][]*Enemy), ObstacleTileSet: make(map[string]struct{}), pendingTurnResults: make(chan turnResult, 8),
 	}
 	game.Paths = game.generatePaths()
@@ -907,6 +973,11 @@ func (g *Game) applyDecision(playerID, role string, decision map[string]interfac
 	modelName := g.ModelNames[playerID]
 	g.logf("%s (%s) decided to: %s", modelName, role, action)
 	g.DecisionSources[playerID+":"+string(source)]++
+	// DecisionsResolved is AuthoredSaves' denominator: unconditional, once
+	// per applyDecision call, mirroring what summing every DecisionSources
+	// key for playerID would already give -- kept as its own counter so
+	// MatchResult.AuthoredSaves does not need to iterate DecisionSources.
+	g.DecisionsResolved[playerID]++
 	g.recordReplayEvent(ReplayEvent{
 		Type:     ReplayDecision,
 		PlayerID: playerID,
@@ -1096,6 +1167,10 @@ func (g *Game) applyDecision(playerID, role string, decision map[string]interfac
 	// failure, not because the player (model or forced) actually saved.
 	if applied && (source == SourceModel || source == SourceSkippedForcedSave) && originalAction == "save" && baseOutcome == "applied_primary" {
 		g.NoopStreak[playerID]++
+		// AuthoredSaves counts exactly what NoopStreak counts, in the same
+		// branch, so the two can never disagree -- see MatchResult.AuthoredSaves
+		// and the field doc on Game.AuthoredSaves for why that matters.
+		g.AuthoredSaves[playerID]++
 	} else if applied {
 		g.NoopStreak[playerID] = 0
 	}

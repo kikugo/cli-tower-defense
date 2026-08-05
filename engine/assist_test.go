@@ -286,7 +286,10 @@ func TestEngineAssistTotalSumsAcrossBranches(t *testing.T) {
 // scenario through UpdateGameState (the same setup
 // TestAdaptiveWaveDirectorAddsPressureOnQuietBoard uses) and confirms
 // BuildMatchResult's EngineAssistCounts and EngineAssistTotal reflect what
-// actually fired, with ProvenanceVersion bumped to 2.
+// actually fired, with ProvenanceVersion bumped to at least 2 (it is 3 as of
+// the breach/save/leak-window/wave-summary telemetry added alongside this
+// test; EngineAssistTotal itself only ever requires >= 2, so this checks the
+// looser bound the field's own guarantee actually makes).
 func TestBuildMatchResultSurfacesEngineAssistCounts(t *testing.T) {
 	g := NewGame("test", "test")
 	g.Resources[g.Player2] = 500
@@ -299,8 +302,8 @@ func TestBuildMatchResultSurfacesEngineAssistCounts(t *testing.T) {
 	}
 
 	result := g.BuildMatchResult()
-	if result.ProvenanceVersion != 2 {
-		t.Fatalf("expected ProvenanceVersion 2, got %d", result.ProvenanceVersion)
+	if result.ProvenanceVersion < 2 {
+		t.Fatalf("expected ProvenanceVersion >= 2, got %d", result.ProvenanceVersion)
 	}
 	total, ok := result.EngineAssistTotal(g.Attacker)
 	if !ok {

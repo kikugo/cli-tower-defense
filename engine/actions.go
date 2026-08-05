@@ -483,8 +483,10 @@ func (g *Game) spawnEnemy(enemyType string, _ map[string]interface{}) bool {
 	start := path[0]
 	en := g.newEnemy(start.Y, start.X, enemyType, nil)
 	en.PathID = pathIdx
+	en.WaveNumber = g.Wave
 	g.Enemies = append(g.Enemies, &en)
 	g.Resources[g.Attacker] -= cost
+	g.recordWaveEvent(en.WaveNumber, "sent")
 	g.recordReplayEvent(ReplayEvent{
 		Type:     ReplaySpawn,
 		PlayerID: g.Attacker,
@@ -509,6 +511,7 @@ func (g *Game) spawnWave(assisted bool) bool {
 	if g.Resources[g.Attacker] < waveCost {
 		return false
 	}
+	oldWave := g.Wave
 	num := 5 + g.Wave
 	if num > 30 {
 		num = 30
@@ -528,6 +531,11 @@ func (g *Game) spawnWave(assisted bool) bool {
 	}
 	g.Resources[g.Attacker] -= waveCost
 	g.Wave++
+	// oldWave just stopped being current: freeze its Towers snapshot at
+	// "now" (see supersedeWave). Lives needs no equivalent capture --
+	// LivesStart/LivesEnd are derived from the leak ledger in
+	// buildWaveSummaries, not sampled off g.Lives at any point in time.
+	g.supersedeWave(oldWave)
 	g.recordReplayEvent(ReplayEvent{
 		Type:           ReplayWave,
 		PlayerID:       g.Attacker,
@@ -583,7 +591,9 @@ func (g *Game) UpdateGameState() {
 			start := path[0]
 			en := g.newEnemy(start.Y, start.X, etype, nil)
 			en.PathID = pathIdx
+			en.WaveNumber = g.Wave
 			g.Enemies = append(g.Enemies, &en)
+			g.recordWaveEvent(en.WaveNumber, "sent")
 		}
 	}
 
@@ -672,12 +682,41 @@ func (g *Game) UpdateGameState() {
 		if e.PathIndex >= len(path)-1 {
 			if g.GameOver {
 				// Match already decided this tick; remove the enemy without
-				// scoring further breaches or driving lives negative.
+				// scoring further breaches or driving lives negative. It
+				// still resolved as a leak in the telemetry sense (it
+				// reached the end of its path), so "leaked" still counts
+				// it -- otherwise this enemy would vanish from its wave's
+				// Sent count with no matching resolution, breaking the
+				// sent==leaked+killed accounting. It deliberately does NOT
+				// count toward BreachCount or "lives_lost", in lockstep
+				// with Lives not decrementing here: see WaveSummary's doc
+				// on Leaked vs LivesLost for why that gap is expected, not
+				// a bug, and must never be closed by pretending this cost
+				// a life it did not cost.
+				g.recordWaveEvent(e.WaveNumber, "leaked")
+				g.recordResolution(true)
 				continue
 			}
 			g.Lives[g.Defender]--
+			// LivesLost increments here, at the single site that ever
+			// decrements Lives, and nowhere else -- see WaveSummary's doc.
+			// This is what buildWaveSummaries' forward-walked ledger sums,
+			// so the ledger cannot drift from what actually happened to
+			// Lives no matter what other branches do.
+			g.recordWaveEvent(e.WaveNumber, "lives_lost")
 			g.Resources[g.Attacker] += g.Balance.BreachResourceBounty
 			g.Score[g.Attacker] += g.Balance.BreachScore
+			// BreachCount is a single whole-match counter, not one per
+			// player: a breach is one event that the attacker causes and
+			// the defender suffers, so keying it by both playerIDs would
+			// just store the same number twice under two names, inviting a
+			// future reader to sum the map and report double the true
+			// count. It increments only here, in the same branch as
+			// Lives--, so BreachCount always equals the defender's total
+			// lost lives -- see MatchResult.BreachCount.
+			g.BreachCount++
+			g.recordWaveEvent(e.WaveNumber, "leaked")
+			g.recordResolution(true)
 			g.recordReplayEvent(ReplayEvent{
 				Type:     ReplayBreach,
 				PlayerID: g.Attacker,
@@ -770,6 +809,8 @@ func (g *Game) runTowerPhase() {
 					// defender wins over 40 seeds with scripted players on both
 					// sides, so it was the game and not the models.
 					g.Score[g.Defender] += e.Reward
+					g.recordWaveEvent(e.WaveNumber, "killed")
+					g.recordResolution(false)
 				}
 			}
 			t.Damage = originalDamage

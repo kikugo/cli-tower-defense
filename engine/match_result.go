@@ -71,7 +71,12 @@ func (g *Game) BuildMatchResult() MatchResult {
 		// not misread by EngineAssistTotal as having recorded zero assists.
 		DecisionSources:    copyIntMap(g.DecisionSources),
 		EngineAssistCounts: copyIntMap(g.EngineAssists),
-		ProvenanceVersion:  2,
+		BreachCount:        g.BreachCount,
+		AuthoredSaveCounts: copyIntMap(g.AuthoredSaves),
+		DecisionsResolved:  copyIntMap(g.DecisionsResolved),
+		LeakWindow:         append([]bool(nil), g.LeakWindow...),
+		WaveSummaries:      g.buildWaveSummaries(),
+		ProvenanceVersion:  3,
 		ProviderErrors:     copyIntMap(g.ProviderErrors),
 		ProviderCalls:      copyIntMap(g.ProviderCalls),
 		ProviderLatency:    averageLatencyByPlayer(g.ProviderLatencyMS, g.ProviderCalls),
@@ -171,6 +176,45 @@ func (r MatchResult) EngineAssistTotal(playerID string) (int, bool) {
 		}
 	}
 	return total, true
+}
+
+// AuthoredSaves reports how many of playerID's resolved decisions were a
+// save counted the same way Game.NoopStreak counts them (see AuthoredSaves'
+// field doc on Game), and total, the denominator: every decision resolved
+// for playerID regardless of action, source, or outcome. The two are
+// counted by construction to use the identical rule NoopStreak uses, so
+// "authored of total" is a valid read on how often a save-streak assist was
+// armed by the player's own choice rather than an engine substitution. The
+// bool return mirrors EngineAssistTotal: a MatchResult built before this
+// field existed (ProvenanceVersion < 3) always returns (0, 0, false), never
+// (0, 0, true) -- absence of provenance is never evidence of zero saves.
+func (r MatchResult) AuthoredSaves(playerID string) (authored int, total int, ok bool) {
+	if r.ProvenanceVersion < 3 {
+		return 0, 0, false
+	}
+	return r.AuthoredSaveCounts[playerID], r.DecisionsResolved[playerID], true
+}
+
+// RecentLeaks reports how many of the last LeakWindowSize resolved enemies
+// (killed or leaked, across the whole board) leaked through, and how many
+// resolutions the window currently holds. full is true once at least
+// LeakWindowSize resolutions have ever been recorded; before that, "leaked N
+// of M" would be a fabricated ratio over a window that has not filled yet,
+// which is exactly why the design renders "leaked none yet" in that case
+// instead -- a caller checks full to choose between the two, the same way a
+// caller checks ok on ModelAuthored or EngineAssistTotal. This does not gate
+// on ProvenanceVersion: an old MatchResult with no LeakWindow recorded
+// simply decodes it as an empty slice, which already reads as "window=0,
+// full=false" -- an honest "not enough data", not a false "zero leaked".
+func (r MatchResult) RecentLeaks() (leaked int, window int, full bool) {
+	window = len(r.LeakWindow)
+	for _, l := range r.LeakWindow {
+		if l {
+			leaked++
+		}
+	}
+	full = window >= LeakWindowSize
+	return leaked, window, full
 }
 
 // DefenderHeld reports whether the defense succeeded: either an outright
