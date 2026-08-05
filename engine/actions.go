@@ -496,8 +496,15 @@ func (g *Game) spawnEnemy(enemyType string, _ map[string]interface{}) bool {
 	return true
 }
 
-// spawnWave queues a mix of enemies and deducts resources.
-func (g *Game) spawnWave() bool {
+// spawnWave queues a mix of enemies and deducts resources. assisted marks
+// the resulting ReplayWave event's EngineAssisted field -- true only when
+// applyAdaptivePressure is the caller (see AssistAutoWave), false for every
+// other call site (a model's own "wave" action, and shouldAutoLaunchWave's
+// auto-wave path, which is recorded separately via applied_auto_wave and is
+// deliberately left alone -- see the task brief). This is purely a marker
+// on the emitted event; it does not change what spawnWave does to game
+// state.
+func (g *Game) spawnWave(assisted bool) bool {
 	waveCost := waveCostForWave(g.Wave)
 	if g.Resources[g.Attacker] < waveCost {
 		return false
@@ -522,12 +529,13 @@ func (g *Game) spawnWave() bool {
 	g.Resources[g.Attacker] -= waveCost
 	g.Wave++
 	g.recordReplayEvent(ReplayEvent{
-		Type:     ReplayWave,
-		PlayerID: g.Attacker,
-		Role:     "attacker",
-		Action:   "wave",
-		Amount:   num,
-		Details:  map[string]interface{}{"cost": waveCost, "wave": g.Wave, "queue": len(g.WaveQueue)},
+		Type:           ReplayWave,
+		PlayerID:       g.Attacker,
+		Role:           "attacker",
+		Action:         "wave",
+		Amount:         num,
+		Details:        map[string]interface{}{"cost": waveCost, "wave": g.Wave, "queue": len(g.WaveQueue)},
+		EngineAssisted: assisted,
 	})
 	return true
 }
@@ -783,15 +791,27 @@ func (g *Game) applyAdaptivePressure() {
 	g.PressureTriggers++
 	g.PressureLevel++
 	if g.Resources[g.Attacker] >= 70 && g.AbilityCooldowns["reinforce_wave"] == 0 {
-		_ = g.useAttackerAbility("reinforce_wave")
+		if g.useAttackerAbility("reinforce_wave") {
+			g.recordEngineAssist(g.Attacker, AssistReinforceWave, map[string]interface{}{
+				"ability": "reinforce_wave",
+			})
+		}
 		return
 	}
 	if g.shouldAutoLaunchWave(g.Attacker) {
-		_ = g.spawnWave()
+		if g.spawnWave(true) {
+			g.recordEngineAssist(g.Attacker, AssistAutoWave, map[string]interface{}{
+				"wave": g.Wave,
+			})
+		}
 		return
 	}
 	if g.Resources[g.Attacker] >= 20 && (g.MaxWaveQueue == 0 || len(g.WaveQueue) < g.MaxWaveQueue) {
 		g.WaveQueue = append(g.WaveQueue, "basic")
+		g.recordEngineAssist(g.Attacker, AssistQueueEnemy, map[string]interface{}{
+			"enemy_type": "basic",
+			"queue":      len(g.WaveQueue),
+		})
 	}
 }
 

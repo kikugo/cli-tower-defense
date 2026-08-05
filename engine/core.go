@@ -474,6 +474,11 @@ type Game struct {
 	ActionCounters      map[string]int
 	RejectedActions     map[string]int
 	DecisionSources     map[string]int
+	// EngineAssists counts how many times applyAdaptivePressure acted on a
+	// player's behalf, keyed "playerID:branch" (branch is an AssistBranch
+	// string) exactly like DecisionSources' "playerID:source" keys. See
+	// recordEngineAssist in assist.go and MatchResult.EngineAssistCounts.
+	EngineAssists       map[string]int
 	ProviderErrors      map[string]int
 	ProviderCalls       map[string]int
 	ProviderLatencyMS   map[string]int64
@@ -576,7 +581,7 @@ func NewGameFromResolvedConfig(resolved ResolvedMatchConfig) *Game {
 		GameSpeed:      0.1, AIDecisionInterval: map[string]int{p1: 2, p2: 2},
 		LastAIDecision: map[string]time.Time{p1: time.Now(), p2: time.Now()},
 		CurrentTurn:    p1, LastActionTime: time.Now(), StartedAt: time.Now(), MaxResources: 800, MaxWaves: 30, TurnTimeout: 45 * time.Second,
-		PauseBetweenTurns: true, PauseDuration: 1 * time.Second, lastStatePrintTime: time.Now(), rng: rng, Logs: make([]string, 0), MaxLogs: 250, MaxWaveQueue: 200, ReplayEvents: make([]ReplayEvent, 0), MaxReplayEvents: 10000, ActionCounters: map[string]int{}, RejectedActions: map[string]int{}, DecisionSources: map[string]int{}, ProviderErrors: map[string]int{}, ProviderCalls: map[string]int{}, ProviderLatencyMS: map[string]int64{}, ProviderTokenUsage: map[string]int{}, ProviderCostMicros: map[string]int64{}, TokenPricing: map[string]tokenPricing{p1: pricingFromConfig(resolved.Player1), p2: pricingFromConfig(resolved.Player2)}, LastActionStatus: map[string]string{p1: "none", p2: "none"}, LastRejectedReason: map[string]string{p1: "", p2: ""}, NoopStreak: map[string]int{p1: 0, p2: 0}, RejectionStreak: map[string]int{p1: 0, p2: 0}, LastRejectedAction: map[string]string{p1: "", p2: ""}, AutoWaveMinResource: 260, AutoDefendMinStreak: 2, FogOfWar: true, DefenderVisionRange: 8, BaseVisionRange: 6, ResearchLevels: map[string]int{"economy": 0, "range": 0, "control": 0}, AbilityCooldowns: map[string]int{"surge": 0, "shield_burst": 0, "reinforce_wave": 0},
+		PauseBetweenTurns: true, PauseDuration: 1 * time.Second, lastStatePrintTime: time.Now(), rng: rng, Logs: make([]string, 0), MaxLogs: 250, MaxWaveQueue: 200, ReplayEvents: make([]ReplayEvent, 0), MaxReplayEvents: 10000, ActionCounters: map[string]int{}, RejectedActions: map[string]int{}, DecisionSources: map[string]int{}, EngineAssists: map[string]int{}, ProviderErrors: map[string]int{}, ProviderCalls: map[string]int{}, ProviderLatencyMS: map[string]int64{}, ProviderTokenUsage: map[string]int{}, ProviderCostMicros: map[string]int64{}, TokenPricing: map[string]tokenPricing{p1: pricingFromConfig(resolved.Player1), p2: pricingFromConfig(resolved.Player2)}, LastActionStatus: map[string]string{p1: "none", p2: "none"}, LastRejectedReason: map[string]string{p1: "", p2: ""}, NoopStreak: map[string]int{p1: 0, p2: 0}, RejectionStreak: map[string]int{p1: 0, p2: 0}, LastRejectedAction: map[string]string{p1: "", p2: ""}, AutoWaveMinResource: 260, AutoDefendMinStreak: 2, FogOfWar: true, DefenderVisionRange: 8, BaseVisionRange: 6, ResearchLevels: map[string]int{"economy": 0, "range": 0, "control": 0}, AbilityCooldowns: map[string]int{"surge": 0, "shield_burst": 0, "reinforce_wave": 0},
 		PathTileSet: make(map[string]struct{}), EnemyTileIndex: make(map[string][]*Enemy), ObstacleTileSet: make(map[string]struct{}), pendingTurnResults: make(chan turnResult, 8),
 	}
 	game.Paths = game.generatePaths()
@@ -989,7 +994,7 @@ func (g *Game) applyDecision(playerID, role string, decision map[string]interfac
 	} else {
 		autoWaveLaunched := false
 		if (action == "spawn" || action == "save") && g.shouldAutoLaunchWave(playerID) {
-			if g.spawnWave() {
+			if g.spawnWave(false) {
 				g.LastDecisions[playerID] = "Launched wave (auto)"
 				action = "wave"
 				applied = true
@@ -1010,7 +1015,7 @@ func (g *Game) applyDecision(playerID, role string, decision map[string]interfac
 		} else if action == "wave" {
 			if autoWaveLaunched {
 				// Auto-wave already consumed the wave action for this turn.
-			} else if g.spawnWave() {
+			} else if g.spawnWave(false) {
 				g.LastDecisions[playerID] = "Launched wave"
 				applied = true
 				outcome = "applied_primary"

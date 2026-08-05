@@ -94,7 +94,7 @@ func TestSpawnWaveIncrementsWaveAndQueuesEnemies(t *testing.T) {
 	g.Resources[g.Attacker] = 1000
 	initialWave := g.Wave
 
-	if !g.spawnWave() {
+	if !g.spawnWave(false) {
 		t.Fatalf("expected wave spawn to succeed")
 	}
 	if g.Wave != initialWave+1 {
@@ -147,7 +147,7 @@ func TestSpawnWaveRespectsQueueCap(t *testing.T) {
 	g.MaxWaveQueue = 5
 	g.Resources[g.Attacker] = 1000
 
-	if !g.spawnWave() {
+	if !g.spawnWave(false) {
 		t.Fatalf("expected spawnWave success")
 	}
 	if len(g.WaveQueue) > g.MaxWaveQueue {

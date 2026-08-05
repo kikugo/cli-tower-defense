@@ -125,7 +125,8 @@ func renderStats(g *eng.Game, rc rect) []string {
 func isMoveFeedEvent(t eng.ReplayEventType) bool {
 	switch t {
 	case eng.ReplayDecision, eng.ReplayPlacement, eng.ReplaySpawn, eng.ReplayWave,
-		eng.ReplayRejected, eng.ReplayProviderErr, eng.ReplayGameEnd, eng.ReplayBreach:
+		eng.ReplayRejected, eng.ReplayProviderErr, eng.ReplayGameEnd, eng.ReplayBreach,
+		eng.ReplayEngineAssist:
 		return true
 	}
 	return false

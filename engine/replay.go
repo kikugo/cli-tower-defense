@@ -18,6 +18,23 @@ const (
 	ReplayRejected    ReplayEventType = "rejected"
 	ReplayProviderErr ReplayEventType = "provider_error"
 	ReplayMapInit     ReplayEventType = "map_init"
+	// ReplayEngineAssist marks a tick where the engine itself acted on a
+	// player's behalf via applyAdaptivePressure -- firing an attacker
+	// ability, launching a wave, or queueing an enemy -- rather than the
+	// player's model (or a substitution standing in for the model) choosing
+	// it through applyDecision. Before this event existed, two of
+	// applyAdaptivePressure's three branches left no record anywhere
+	// (useAttackerAbility bypasses applyDecision entirely, and the raw
+	// WaveQueue append never touches the replay stream), and its third
+	// branch (spawnWave) emitted a ReplayWave event attributed to the
+	// attacker that was indistinguishable from a wave the model actually
+	// chose. See applyAdaptivePressure in actions.go and AssistBranch below.
+	//
+	// PlayerID on this event is always g.Attacker: applyAdaptivePressure
+	// only ever acts on the attacker's behalf. Details["branch"] carries the
+	// stable AssistBranch string; other Details keys vary by branch (see
+	// recordEngineAssist).
+	ReplayEngineAssist ReplayEventType = "engine_assist"
 	// ReplayTruncated is a synthetic marker event. recordReplayEvent plants
 	// one the first time MaxReplayEvents forces it to discard events, and
 	// keeps updating it in place on every later trim. It carries no board
@@ -41,6 +58,19 @@ type ReplayEvent struct {
 	Amount   int                    `json:"amount,omitempty"`
 	Reason   string                 `json:"reason,omitempty"`
 	Details  map[string]interface{} `json:"details,omitempty"`
+	// EngineAssisted marks a ReplayWave event that applyAdaptivePressure
+	// caused (its spawnWave branch) rather than one the attacker's model
+	// chose through applyDecision. Both cases otherwise produce an
+	// identical-looking ReplayWave event, which is exactly the
+	// misattribution this field exists to fix -- see ReplayEngineAssist and
+	// spawnWave's assisted parameter in actions.go. Every ReplayWave event
+	// recorded before this field existed, and every non-wave event, decodes
+	// it as false (the Go zero value): "false" here means "not marked as
+	// engine-assisted," not "confirmed model-authored" -- a caller that
+	// needs to tell those apart uses MatchResult.EngineAssistTotal's
+	// (value, ok) return the same way ModelAuthored already distinguishes
+	// "not measured" from "zero."
+	EngineAssisted bool `json:"engine_assisted,omitempty"`
 }
 
 type MatchResult struct {
@@ -69,6 +99,16 @@ type MatchResult struct {
 	// so an old, provenance-less result is never silently read as authored.
 	DecisionSources    map[string]int     `json:"decision_sources,omitempty"`
 	ModelAuthoredShare map[string]float64 `json:"model_authored_share,omitempty"`
+	// EngineAssistCounts is g.EngineAssists copied verbatim: how many times
+	// applyAdaptivePressure acted on a player's behalf, keyed
+	// "playerID:branch". Present (possibly all-zero) on any MatchResult with
+	// ProvenanceVersion >= 2; use EngineAssistTotal, not a direct read of
+	// this map, to tell "genuinely zero assists" apart from "not measured"
+	// -- the same reasoning as ModelAuthored/ProvenanceVersion above, and
+	// the reason ProvenanceVersion was bumped to 2 rather than reusing 1:
+	// a MatchResult built by the code that added decision-source tracking
+	// but not yet this field must not be misread as having zero assists.
+	EngineAssistCounts map[string]int     `json:"engine_assist_counts,omitempty"`
 	ProvenanceVersion  int                `json:"provenance_version,omitempty"`
 	ProviderErrors     map[string]int     `json:"provider_errors"`
 	ProviderCalls      map[string]int     `json:"provider_calls"`

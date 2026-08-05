@@ -142,6 +142,24 @@ func TestBuildMoveFeedFiltersNonMoveEvents(t *testing.T) {
 	}
 }
 
+// TestBuildMoveFeedIncludesEngineAssist confirms ReplayEngineAssist rows
+// (the engine acting on the attacker's behalf via applyAdaptivePressure --
+// see engine/assist.go) reach the move feed like any other move, rather
+// than being silently dropped the way ReplayTick/ReplayMapInit are.
+func TestBuildMoveFeedIncludesEngineAssist(t *testing.T) {
+	events := []eng.ReplayEvent{
+		{Type: eng.ReplayTick},
+		{Type: eng.ReplayEngineAssist, PlayerID: "p2", Role: "attacker", Action: "assist_auto_wave", Reason: "auto_wave"},
+	}
+	feed := buildMoveFeed(events)
+	if len(feed) != 1 {
+		t.Fatalf("got %d feed events, want 1 (engine assist); feed=%+v", len(feed), feed)
+	}
+	if feed[0].Type != eng.ReplayEngineAssist {
+		t.Fatalf("expected the surviving feed event to be ReplayEngineAssist, got %q", feed[0].Type)
+	}
+}
+
 // --- T2.5: status bar and key bar ----------------------------------------
 
 func TestStatusAndKeyBarExactlyOneRowAtEveryWidth(t *testing.T) {

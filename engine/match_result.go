@@ -62,20 +62,25 @@ func (g *Game) BuildMatchResult() MatchResult {
 		},
 		ActionCounters:  copyIntMap(g.ActionCounters),
 		RejectedActions: copyIntMap(g.RejectedActions),
-		// ProvenanceVersion 1 marks every match built by this code as having
-		// decision-source tracking, however few or many substitutions it
-		// contains -- see ModelAuthored for why that matters.
-		DecisionSources:   copyIntMap(g.DecisionSources),
-		ProvenanceVersion: 1,
-		ProviderErrors:    copyIntMap(g.ProviderErrors),
-		ProviderCalls:     copyIntMap(g.ProviderCalls),
-		ProviderLatency:   averageLatencyByPlayer(g.ProviderLatencyMS, g.ProviderCalls),
-		TokenUsage:        copyIntMap(g.ProviderTokenUsage),
-		CostMicros:        copyInt64Map(g.ProviderCostMicros),
-		DurationMillis:    duration.Milliseconds(),
-		ReplayEvents:      len(g.ReplayEvents),
-		ReplayTruncated:   g.ReplayTruncated,
-		Strata:            g.matchStrata(),
+		// ProvenanceVersion 2 marks every match built by this code as having
+		// both decision-source tracking (version 1) and engine-assist
+		// counting (added alongside it here) -- see ModelAuthored and
+		// EngineAssistTotal for why that matters. It was bumped from 1
+		// rather than left alone specifically so a MatchResult built by the
+		// intermediate code (decision sources only, no assist counts) is
+		// not misread by EngineAssistTotal as having recorded zero assists.
+		DecisionSources:    copyIntMap(g.DecisionSources),
+		EngineAssistCounts: copyIntMap(g.EngineAssists),
+		ProvenanceVersion:  2,
+		ProviderErrors:     copyIntMap(g.ProviderErrors),
+		ProviderCalls:      copyIntMap(g.ProviderCalls),
+		ProviderLatency:    averageLatencyByPlayer(g.ProviderLatencyMS, g.ProviderCalls),
+		TokenUsage:         copyIntMap(g.ProviderTokenUsage),
+		CostMicros:         copyInt64Map(g.ProviderCostMicros),
+		DurationMillis:     duration.Milliseconds(),
+		ReplayEvents:       len(g.ReplayEvents),
+		ReplayTruncated:    g.ReplayTruncated,
+		Strata:             g.matchStrata(),
 	}
 	result.ModelAuthoredShare = map[string]float64{}
 	for _, p := range []string{g.Player1, g.Player2} {
@@ -142,6 +147,30 @@ func (r MatchResult) ModelAuthored(playerID string) (float64, bool) {
 		return 0, false
 	}
 	return float64(modelCount) / float64(total), true
+}
+
+// EngineAssistTotal reports how many times the engine acted on playerID's
+// behalf via applyAdaptivePressure, summed across every AssistBranch. The
+// bool return mirrors ModelAuthored exactly and for the same reason: a
+// MatchResult built before assist counting existed -- ProvenanceVersion < 2,
+// which covers both the Go zero value (0) and the intermediate value (1)
+// used while only decision-source tracking existed -- always returns
+// (0, false), never (0, true). A match recorded before this feature must
+// read as "assists unknown," never as "assists: zero," because an assist
+// that fired and left the old code's counters untouched is indistinguishable
+// from one that never fired at all. See EngineAssistCounts.
+func (r MatchResult) EngineAssistTotal(playerID string) (int, bool) {
+	if r.ProvenanceVersion < 2 {
+		return 0, false
+	}
+	prefix := playerID + ":"
+	total := 0
+	for key, count := range r.EngineAssistCounts {
+		if key == playerID || strings.HasPrefix(key, prefix) {
+			total += count
+		}
+	}
+	return total, true
 }
 
 // DefenderHeld reports whether the defense succeeded: either an outright
