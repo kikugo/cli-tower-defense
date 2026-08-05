@@ -382,16 +382,29 @@ So the **60.8% headline describes a matchup no live model plays.** What it measu
 
 Two things this does *not* overturn. The shielded result is **confirmed, not refuted** — the balance work predicted 62% → 0% when the attacker commits to shielded, and that is what a live attacker does to a live defender without being told to. And the defender-side conclusions, which are most of the balance work above, rest on a proxy that just passed a direct test.
 
-**Correction: engine assists were a substantial part of this, and I originally said they were not.** That claim rested on counting `applied_auto_wave` events, which fired at most twice per match. It was the wrong thing to count. `applyAdaptivePressure` has three branches, and the other two leave no replay event at all: it can fire `reinforce_wave` (which never reaches `ActionCounters`, because it bypasses `applyDecision`) and it can append a free enemy straight onto the wave queue. All three trigger on `NoopStreak >= 3` — that is, when a player has *saved* three turns running.
-
-That is the trap. `attacker_baseline` spawns every single turn and therefore never triggers it. A live attacker banks for 40-cost `shielded`, saving 54.8% of its turns, and triggers it constantly. Measured on the same ruleset with only the assist flag changed:
+**Correction: engine assists were a substantial part of this, and I originally said they were not.** Measured on the same ruleset with only the assist flag changed:
 
 | attacker | assists off | assists on |
 |---|---|---|
 | `attacker_baseline` | 62% | **62%** — unchanged |
 | `attacker_live_like` | 65% | **0/40** |
 
-The engine's assist is worth nothing to an attacker that spends and worth the entire match to one that banks. The live matches in the table above ran with assists **on**, because that is the headless default — so the comparison was between an attacker that triggered the assist and one that could not.
+The engine's assist is worth nothing to an attacker that spends every turn and worth the entire match to one that banks. The live matches in the table above ran with assists **on**, because that is the headless default, so the comparison was between an attacker that triggered the assist and one that could not.
+
+**A second correction, to the first one.** I initially blamed `applyAdaptivePressure` — the assist whose branches leave no replay event. That was wrong, and the way it was wrong is worth recording. `disable_assists` gates *three* separate mechanisms (`applyAdaptivePressure`, `shouldAutoLaunchWave`, `shouldAutoDefendAfterSave`), I toggled all three at once, and I attributed the swing to the one I had just finished reading. Isolating them, 40 seeds per arm:
+
+| arm | defender holds |
+|---|---|
+| all assists on | 0/40 |
+| assists on, streak threshold raised so the banking triggers can't fire | 0/40 — *bit-identical* |
+| all assists off | 26/40 = 65% |
+| assists on, **auto-wave neutralised**, the other two still armed | 26/40 = **65%** |
+
+The entire effect is `shouldAutoLaunchWave`, which converts a `save` into a launched wave whenever the attacker is holding 260. `applyAdaptivePressure` contributes nothing measurable — it fired **zero** times, because it needs a quiet board *and* a tick divisible by 20, and those coincided on 2 ticks out of 125.
+
+So the culprit is the assist that *is* recorded. The four `applied_auto_wave` events in the demo above were the mechanism itself, not a footnote to it. Which sharpens rather than softens the point: the record existed, was visible, and still did not stop a 100%-authored match from being engine-steered — because a provenance field answers *who chose the action* and nothing was answering *who caused the outcome*.
+
+The unrecorded branches of `applyAdaptivePressure` remain a real defect and are now fixed — every branch emits a `ReplayEngineAssist`, the assisted wave is marked so it can be told apart from a chosen one, and `MatchResult` carries per-branch counts that read *unknown* for artifacts predating the change. But that fix closes a hole nobody had fallen through yet. The hole that was actually load-bearing was interpretive.
 
 Re-run with assists off, live attacker against the same scripted defender, the honest number is smaller: the defender holds **1 of 4** seeds rather than 0 of 4, against `attacker_baseline`'s 2 of 4. A live attacker is genuinely better than the scripted one. It is not the rout the first measurement showed.
 
