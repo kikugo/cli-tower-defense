@@ -1,0 +1,30 @@
+  DEFENDER  o3  WINNER                 MATCH OVER  tick 402 of 1500          gpt-4o-mini  ATTACKER  
+  3/10 lives   score 1,240                 wave 5 of 5                      score 980   breached 7  
+  ^5 !3 *2 +1   100% authored     cleared all waves, cap not reached    100% authored, measured     
+┌─ SPAWN >> ────────────────────────────────────────────────────────── CORE  3/10 ─┐ LEGEND ──────  
+│                          ##                                                      │ DEF towers     
+│                  ╭────────────────────────────────────────────╮                  │  ^  basic      
+│                  │                MATCH OVER                  │                  │  !  sniper     
+│                  │    ████         WINNER    o3               │                  │  *  splash     
+│                  │   ██████        DEFENDER                   │.>...             │  +  buffer     
+│           ^      │    ████         ended by  WAVES            │    .             │ ATT enemies    
+│ ......>......>...│  ████████       all 5 cleared, tick 402    │    .             │  o  grunt      
+│               ^  │ ██████████      of a 1500 tick cap         │    .             │  f  fast       
+│                  │  score      DEF 1,240       ATT 980        │    ..........>.. │  t  tank       
+│                  │  lives      3/10 remaining                 │       ^          │  s  shielded   
+│                  │  authored   DEF 100%        ATT 100%       │                  │  h  healer     
+│                  │  engine     ASSIST ON, helped 9x           │                  │ TERRAIN        
+│                  │  verdict    WAVES CLEARED, ENGINE-ASSISTED │         #        │  .  path       
+│         #        ╰────────────────────────────────────────────╯                  │  #  wall       
+└─ ENGINE HELPED 9x ──────────────────────────────────────── started 4 of 5 waves ─┘  ~  slow zone  
+─ MOVE FEED ──────────────────────────────────────────────────────────────────────── final events ─ 
+   399 │ ATT │ save            │ ok  banking   streak 3                                             
+   400 │ >>> │ ENGINE          │ >>  started wave 5    branch not recorded                          
+   401 │ DEF │ upgrade  ! 3,20 │ ok  lv2 -> lv3                                                     
+  ──── │ ─── │ ─────────────── │ WAVE 5 CLEARED    no enemies left alive                            
+   402 │ *** │ GAME END        │ ok  defender held   core at 3/10 lives                             
+                                                                                                    
+  replay written to replays/2026-08-05-o3-vs-gpt-4o-mini.json                                       
+                                                                                                    
+                                                                                                    
+  r range   ? legend   q quit               balance v3 a3f1c8  5 waves  assists on  pricing unset   

@@ -1,0 +1,24 @@
+─ TOWER DEFENSE ARENA ──────────────────────────────────────────── press SPACE ─
+                                                                                
+                   one board. one model attacks, one defends.                   
+                                                                                
+          ████                                                   ████           
+         ██████                       V S                        ████████       
+          ████                                                 ██████████       
+        ████████              30 waves  80x14 map              ██ ██ ██ ██      
+       ██████████                                              ██████████       
+                                                                                
+      DEFENDER                                                  ATTACKER        
+      o3                                                           gpt-4o-mini  
+                                                                                
+─ HOW TO READ THE BOARD ────────────────────────────────────────────────────────
+                                                                                
+  towers   ^ basic 100   ! sniper 100   * splash 200   + buffer 300             
+  enemies  o grunt   f fast   t tank   s shielded   h healer                    
+  terrain  . path   # wall   ~ slow   > flow   X core hit   >>> engine          
+                                                                                
+  ENGINE ASSIST: ON. The engine may act for a player that banks three           
+  turns running, and the board frame reports every time it does.                
+  RULESET  balance v3 a3f1c8  30 waves  assists on  pricing unset               
+                              press SPACE to begin                              
+  space start   +/- speed   ? this screen   q quit                              

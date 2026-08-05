@@ -1,0 +1,19 @@
+  STATE 1   clean                                                               
+  DEF o3           7/10 ███████░░░   $55+5   saves 17/59   84% authored         
+  ATT gpt-4o-mini  breached 3        $10+5   saves 32/59   91% authored         
+─ W12/30 t117/400 ─ ENGINE ASSIST OFF ─ leaked 3 of 8 ─ SPAWN >> ─── CORE 7/10 ─
+                                                                                
+  STATE 2   armed, has not acted   --  tick 1 of every assists-on match         
+  DEF o3           10/10 ██████████  $50+5  saves none yet  authored none yet   
+  ATT gpt-4o-mini  breached 0        $50+5  saves none yet  authored none yet   
+─ W1/30 t1/400 ─ ENGINE ASSIST ON ─ leaked none yet ─ SPAWN >> ──── CORE 10/10 ─
+                                                                                
+  STATE 3   steered                                                             
+  DEF o3           7/10 ███████░░░   $55+5   saves 17/59  100% authored         
+  ATT gpt-4o-mini  breached 3        $10+5   saves 32/59  100% authored         
+─ W5/30 t117/400 ─ ENGINE HELPED 9x ─ leaked 3 of 8 ─ SPAWN >> ───── CORE 7/10 ─
+                                                                                
+  STATE 4   unknown                                                             
+  DEF o3           7/10 ███████░░░  $55+5  saves unknown  authored unknown      
+  ATT gpt-4o-mini  breached 3       $10+5  saves unknown  authored unknown      
+─ W12/30 t117/400 ─ ENGINE ASSIST UNKNOWN ─ leaked 3/8 ─ SPAWN >> ── CORE 7/10 ─

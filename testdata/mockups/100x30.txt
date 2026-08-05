@@ -1,0 +1,30 @@
+  DEFENDER  o3                     WAVE 12/30    tick 117/400            gpt-4o-mini  ATTACKER      
+  7/10 ███████░░░  $55 +5/t      [ATT] 1.0x RUN   leaked 3 of last 8      breached 3   $10 +5/t     
+  ^3 !2 *1 +1  saves 17/59  84%      model-authored      saves 32/59  91%  o4 f2 t1 s1 h1           
+┌─ SPAWN >> ────────────────────────────────────────────────────────── CORE  7/10 ─┐ LEGEND ──────  
+│                          ##                                                      │ DEF towers     
+│                          #                                                       │  ^  basic      
+│                  .....f...~~~~.>..                                               │  !  sniper     
+│                  .  !            .                                               │  *  splash     
+│                  .               .                 ....s....h...>...             │  +  buffer     
+│           ^      .               .                 .      !        .             │ ATT enemies    
+│ ...o..>..o...>....               .                 .               .             │  o  grunt      
+│               ^                  .                 .               .             │  f  fast       
+│                                  .                 .               .....o.f..>.. │  t  tank       
+│                                  .                 .        #         ^          │  s  shielded   
+│                                  . *               .        #                    │  h  healer     
+│                                  ...o..>..~~~..t....                             │ TERRAIN        
+│                                              #    +                     #        │  .  path       
+│         #                                    ##                                  │  #  wall       
+└─ ENGINE HELPED 2x ──────────────────────────────────── authored 84/91, measured ─┘  ~  slow zone  
+─ MOVE FEED ──────────────────────────────────────────────────────────────────── newest at bottom ─ 
+   101 │ >>> │ ENGINE            │ >> queued 4 enemies   no attacker decision                       
+   102 │ DEF │ place    ! 9,40   │ x  unaffordable 55/100   same target, collapsed               x3 
+   103 │ ATT │ BREACH   o 8,79   │ !! core hit   lives 8 -> 7                                       
+   105 │ ATT │ save              │ ok banking   streak 1 of 3                                       
+   106 │ DEF │ research          │ ok range tier 1   "reach the third turn"                         
+   113 │ ATT │ save              │ ~  substituted after timeout, streak unchanged                   
+   114 │ >>> │ ENGINE            │ >> fired ability for ATT   branch not recorded                   
+   115 │ DEF │ place    ! 9,40   │ x  unaffordable 80/100   still saving for it                  x9 
+   117 │ DEF │ place    ! 9,40   │ ok sniper lv1   cost 100                                         
+  space pause   +/- speed   a ai:on   r range   ? legend   L logs:off   q quit      balance a3f1c8  

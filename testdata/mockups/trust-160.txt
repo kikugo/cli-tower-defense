@@ -1,0 +1,30 @@
+  STATE 1   assists disabled in the ruleset, provenance measured   --  the clean case                                                                           
+                                                                                                                                                                
+  DEFENDER   o3                                                WAVE 12/30  ████░░░░░░   tick 117/400                                    gpt-4o-mini   ATTACKER  
+  lives 7/10 ███████░░░   $55 +5/t                             TURN [ATT]     speed 1.0x     RUN                               $10 +5/t   sent 130  breached 3  
+  built ^3 !2 *1 +1   authored 84%                            leaked 3 of last 8 enemies resolved                           live o4 f2 t1 s1 h1   authored 91%  
+─ ENGINE ASSIST OFF ─ every action this match was chosen by a model ────────────────┬─ provenance measured ─────────────────────────────────────────────────────
+                                                                                                                                                                
+                                                                                                                                                                
+  STATE 2   assists enabled, nothing has fired yet   --  the normal opening of every assists-on match                                                           
+                                                                                                                                                                
+  DEFENDER   o3                                                WAVE  1/30  █░░░░░░░░░   tick   1/400                                    gpt-4o-mini   ATTACKER  
+  lives 10/10 ██████████  $50 +5/t                             TURN [ATT]     speed 1.0x     RUN                               $50 +5/t   sent  0   breached 0  
+  built nothing  authored none yet                            leaked none yet, 0 enemies resolved                           live none yet    authored none yet  
+─ ENGINE ASSIST ON ─ armed at tick 1, has not acted ────────────────────────────────┬─ provenance measured ─────────────────────────────────────────────────────
+                                                                                                                                                                
+                                                                                                                                                                
+  STATE 3   assists enabled and firing, provenance measured   --  the demo that reported 100% / 100%                                                            
+                                                                                                                                                                
+  DEFENDER   o3                                                 WAVE 5/30  ████░░░░░░   tick 117/400                                    gpt-4o-mini   ATTACKER  
+  lives 7/10 ███████░░░   $55 +5/t                             TURN [ATT]     speed 1.0x     RUN                               $10 +5/t   sent 130  breached 3  
+  built ^3 !2 *1 +1   authored 100%                           leaked 3 of last 8 enemies resolved                          live o4 f2 t1 s1 h1   authored 100%  
+─ ENGINE HELPED 9x ─ 6 unrecorded, started 4 of 5 waves ────────────────────────────┬─ provenance measured ─────────────────────────────────────────────────────
+                                                                                                                                                                
+                                                                                                                                                                
+  STATE 4   provenance unknown, assists unknown   --  an old artifact                                                                                           
+                                                                                                                                                                
+  DEFENDER   o3                                                WAVE 12/30  ████░░░░░░   tick 117/400                                    gpt-4o-mini   ATTACKER  
+  lives 7/10 ███████░░░   $55 +5/t                             TURN [ATT]     speed 1.0x     RUN                               $10 +5/t   sent 130  breached 3  
+  built ^3 !2 *1 +1   authored unknown                        leaked 3 of last 8 enemies resolved                       live o4 f2 t1 s1 h1   authored unknown  
+─ ENGINE ASSIST UNKNOWN ─ this replay predates assist tracking ─────────────────────┬─ provenance UNKNOWN ──────────────────────────────────────────────────────

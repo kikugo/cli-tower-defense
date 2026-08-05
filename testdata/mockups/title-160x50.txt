@@ -1,0 +1,50 @@
+─ TOWER DEFENSE ARENA ──────────────────────────────────────────────────────────────────────────────────────────────────────────────── an LLM vs LLM benchmark ─
+                                                                                                                                                                
+                                           two language models. one board. one of them attacks, one of them defends.                                            
+                                                                                                                                                                
+                                                                                                                                                                
+                          ████                                                                                                                                  
+                        ████████                                                                                                                                
+                        ██    ██                               30 waves     80 x 14 map     1.0x                         ██████                                 
+                        ████████                                                                                         ██████ █████████                       
+                          ████                                                V S                                     ████████████                              
+                          ████                                                                                      ████████████████                            
+                        ████████                                 the attacker wins by reaching                      ████████████████                            
+                      ████████████                                     the core ten times                           ██ ██ ██ ██ ██ ██                           
+                    ████████████████                                                                                ████████████████                            
+                                                                                                                                                                
+                  DEFENDER                                                                                      ATTACKER                                        
+                  o3                                                                                            gpt-4o-mini                                     
+                  places towers, holds the core                                              spawns enemies, must reach the core                                
+                                                                                                                                                                
+                                         ENGINE ASSIST: ON      it may act for a player that banks three turns running                                          
+                                                                                                                                                                
+                  ─ HOW TO READ THE BOARD ────────────────────────────────────────────────────────────────────────────────────────────────────                  
+                                                                                                                                                                
+                   DEFENDER   blue, punctuation glyphs          ATTACKER   orange, lowercase glyphs                                                             
+                                                                                                                                                                
+                    ^   basic tower       100                  o   grunt                                                                                        
+                    !   sniper            100                  f   fast                                                                                         
+                    *   splash            200                  t   tank, high health                                                                            
+                    +   buffer            300                  s   shielded                                                                                     
+                                                               h   healer                                                                                       
+                                                                                                                                                                
+                   TERRAIN   mid grey, never competes with a unit                                                                                               
+                                                                                                                                                                
+                    .   path        #   wall        ~   slow zone        >   flow direction        X   core hit                                                 
+                                                                                                                                                                
+                  ─ WHAT TO WATCH ────────────────────────────────────────────────────────────────────────────────────────────────────────────                  
+                                                                                                                                                                
+                   1   who is gaining   leaked N of last 8   how many of the last 8 enemies reached the core                                                    
+                   2   who chose it     authored % per side, and >>> marks every action the engine took                                                         
+                   3   when it breaks   a red X on the board, and the defender loses a life                                                                     
+                                                                                                                                                                
+                   RULESET   balance v3 a3f1c8   30 waves   assists on   pricing unset   ends at wave 30 or tick 400                                            
+                                                                                                                                                                
+                                                                      press SPACE to begin                                                                      
+                                                                                                                                                                
+                                                                                                                                                                
+                                                                                                                                                                
+                                                                                                                                                                
+                                                                                                                                                                
+  space start   +/- speed   a ai:on   r range   ? this screen   L logs:off   q quit                                                                             

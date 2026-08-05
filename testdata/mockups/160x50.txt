@@ -1,0 +1,50 @@
+  DEFENDER   o3                                                WAVE 12/30  ████░░░░░░   tick 117/400                                    gpt-4o-mini   ATTACKER  
+  lives 7/10 ███████░░░   $55 +5/t                             TURN [ATT]     speed 1.0x     RUN                               $10 +5/t   sent 130  breached 3  
+  built ^3 !2 *1 +1   authored 84%                            leaked 3 of last 8 enemies resolved                           live o4 f2 t1 s1 h1   authored 91%  
+─ ENGINE HELPED 2x ─ queued 4 enemies, fired 1 ability ─────────────────────────────┬─ provenance measured ─────────────────────────────────────────────────────
+┌─ SPAWN >> ────────────────────────────────────────────────────────── CORE  7/10 ─┐│─ MOVE FEED ─────────────────────────────────────────── newest at bottom ─ 
+│                          ##                                                      ││    75 │ ATT │ spawn    t        │ ok wave 11   queue 4                    
+│                          #                                                       ││    76 │ DEF │ save              │ ok banking   streak 1                   
+│                  .....f...~~~~.>..                                               ││    77 │ ATT │ ability           │ ok shield_burst on the tank             
+│                  .  !            .                                               ││    78 │ DEF │ save              │ ok banking   streak 2                   
+│                  .               .                 ....s....h...>...             ││    79 │ ATT │ spawn    s        │ ok wave 11   queue 3                    
+│           ^      .               .                 .      !        .             ││    80 │ DEF │ place    + 12,50  │ ok buffer lv1   cost 300                
+│ ...o..>..o...>....               .                 .               .             ││    81 │ ATT │ spawn    h        │ ok wave 11   queue 2                    
+│               ^                  .                 .               .             ││    82 │ DEF │ upgrade  * 10,35  │ ok lv1 -> lv2                           
+│                                  .                 .               .....o.f..>.. ││    83 │ ATT │ spawn    o        │ ok wave 11   queue 1                    
+│                                  .                 .        #         ^          ││  ──── │ ─── │ ───────────────── │ WAVE 11 CLEARED   1 leaked              
+│                                  . *               .        #                    ││    85 │ ATT │ wave              │ ok wave 12   14 queued                  
+│                                  ...o..>..~~~..t....                             ││    86 │ DEF │ research          │ ok control tier 1                       
+│                                              #    +                     #        ││  ──── │ ─── │ ───────────────── │ WAVE 12 OPENS   14 queued               
+│         #                                    ##                                  ││    88 │ DEF │ place    ^ 5,10   │ ok basic lv1   cost 100                 
+└─ ? legend ───────────────────────────────────────────────────────────── r range ─┘│    89 │ ATT │ spawn    o        │ ok wave 12   queue 11                   
+─ DEFENDER ──────────────────────────────── ATTACKER ───────────────────────────────│    90 │ ATT │ spawn    f        │ ok wave 12   queue 10                   
+ o3                                        gpt-4o-mini                              │    91 │ DEF │ place    ! 3,20   │ ok sniper lv1   cost 100                
+ holds the core, places towers             sends waves, must reach the core         │    92 │ ATT │ ability           │ ok surge   speed up 8 ticks             
+                                                                                    │    93 │ DEF │ upgrade  ^ 5,10   │ ok lv1 -> lv2                           
+ lives      7/10   ███████░░░              breaches   3      lives taken            │    94 │ ATT │ spawn    t        │ ok wave 12   queue 9                    
+ economy    $55    +5/tick                 economy    $10    +5/tick                │    95 │ DEF │ research          │ ok economy tier 2                       
+ built      ^3  !2  *1  +1                 sent       130 total    live 9           │    96 │ ATT │ save              │ ok banking   streak 1                   
+ research   economy 2, range 1, control 1  abilities  surge 1, shield_burst 1       │    97 │ DEF │ slowzone   9,44   │ ok 3 tiles at the low bend              
+ authored   84%    ████████████████░░░     authored   91%    █████████████████░░    │    98 │ ATT │ save              │ ok banking   streak 2                   
+ calls      59     12k tok                 calls      58     11k tok                │    99 │ DEF │ invest            │ ok income +1                            
+ assist     none on this side              assist     ENGINE ACTED 2x FOR THIS SIDE │   100 │ ATT │ save              │ ok banking   streak 3                   
+ saves      17 of 59  model-authored       saves      32 of 59  model-authored      │   101 │ >>> │ ENGINE            │ >> queued 4 enemies                     
+ streak     0 of 3 toward an assist        streak     1 of 3 toward an assist       │   102 │ DEF │ place    ! 9,40   │ x  unaffordable 55/100               x3 
+ "Income before more guns. The sniper      "Pressure the low bend with fast movers  │   103 │ ATT │ BREACH   o 8,79   │ !! core hit   lives 8 -> 7              
+  covers the long approach and I can        while the tank soaks the sniper, and    │   105 │ ATT │ save              │ ok banking   streak 1 of 3              
+  afford the second one next wave."         bank for a reinforce next wave."        │   106 │ DEF │ research          │ ok range tier 1                         
+─ MATCH TIMELINE ───────────────────────────────────────────────── tick 117 of 400 ─│   113 │ ATT │ save              │ ~  substituted after timeout            
+  wave     sent   leaked   killed   towers   lives    result                        │   114 │ >>> │ ENGINE            │ >> fired ability for ATT                
+  1-10      104        1      103        6   10->9    held                          │   115 │ DEF │ place    ! 9,40   │ x  unaffordable 80/100               x9 
+    11       12        1       11        6    9->8    held                          │   117 │ DEF │ place    ! 9,40   │ ok sniper lv1   cost 100                
+    12       14        1        4        7    8->7    in progress                   │                                                                           
+                                                                                    │─ LEGEND ───────────────────────────────────────────────────── ? toggles ─ 
+  lives      ████████████████████████████████████████████░░░░░░░░░░░░  10 -> 7      │  DEFENDER  blue        ATTACKER  orange      TERRAIN  grey                
+  authored   DEF 84%   ATT 91%          provenance measured                         │  ^  basic tower  100   o  grunt              .  path                      
+  engine     substituted 0 decisions    ASSIST ON, helped 2x, 1 unrecorded          │  !  sniper       100   f  fast               #  wall                      
+  rejected   DEF 38 turns lost to unaffordable placements   ATT 0                   │  *  splash       200   t  tank               ~  slow zone                 
+  waves      12 of 30 played   ends at wave 30 or tick 400, whichever comes first   │  +  buffer       300   s  shielded           X  breach (rev)              
+  horizon    ███████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  tick 117 of 400   │  BOLD = level 2+       h  healer             >  flow direction            
+  ruleset    balance v3 a3f1c8   30 waves   assists on   pricing unset              │  punctuation = tower   lowercase = enemy     >>> the engine acted         
+  space pause   +/- speed   a ai:on   r range   ? legend   L logs:off   tab feed   q quit                                                                       

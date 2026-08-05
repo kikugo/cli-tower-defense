@@ -1,0 +1,24 @@
+  DEF o3           7/10 ███████░░░   $55+5   saves 17/59   84% authored         
+  ATT gpt-4o-mini  breached 3        $10+5   saves 32/59   91% authored         
+─ W12/30 t117/400 ─ ENGINE HELPED 2x ─ leaked 3 of 8 ─ SPAWN >> ──── CORE 7/10 ─
+                         ##                                                     
+                         #                                                      
+                 .....f...~~~~.>..                                              
+                 .  !            .                                              
+                 .               .                 ....s....h...>...            
+          ^      .               .                 .      !        .            
+...o..>..o...>....               .                 .               .            
+              ^                  .                 .               .            
+                                 .                 .               .....o.f..>..
+                                 .                 .        #         ^         
+                                 . *               .        #                   
+                                 ...o..>..~~~..t....                            
+                                             #    +                     #       
+        #                                    ##                                 
+─ MOVE FEED ──────────────────────────────────────────────── newest at bottom ─ 
+   106 │ DEF │ research          │ ok range tier 1                              
+   113 │ ATT │ save              │ ~  substituted after timeout                 
+   114 │ >>> │ ENGINE            │ >> fired ability for ATT                     
+   115 │ DEF │ place    ! 9,40   │ x  unaffordable 80/100                    x9 
+   117 │ DEF │ place    ! 9,40   │ ok sniper lv1   cost 100                     
+  space pause   +/- speed   ? legend   r range   L logs   q quit  balance a3f1c8

@@ -1,0 +1,30 @@
+  DEFENDER  o3  WINNER             MATCH OVER   tick 400 of 400           gpt-4o-mini  ATTACKER     
+  3/10 lives   score 1,240        TICK CAP REACHED at wave 24 of 30      score 980   breached 7     
+  ^5 !3 *2 +1   84% authored     stopped at the cap, waves not cleared   91% authored, measured     
+┌─ SPAWN >> ────────────────────────────────────────────────────────── CORE  3/10 ─┐ LEGEND ──────  
+│                          ##                                                      │ DEF towers     
+│                  ╭────────────────────────────────────────────╮                  │  ^  basic      
+│                  │                 MATCH OVER                 │                  │  !  sniper     
+│                  │  WINNER     o3   DEFENDER                  │                  │  *  splash     
+│                  │  ended by   TICK CAP   400 ticks reached   │.>...             │  +  buffer     
+│           ^      │  reached    wave 24 of 30     lives 3/10   │    .             │ ATT enemies    
+│ ......>......>...│  score      DEF 1,240         ATT 980      │    .             │  o  grunt      
+│               ^  │  authored   DEF 84%           ATT 91%      │    .             │  f  fast       
+│                  │  saves      DEF 61/199        ATT 109/199  │    ..........>.. │  t  tank       
+│                  │  engine     ASSIST ON, helped 9x           │       ^          │  s  shielded   
+│                  │  rejected   DEF 38 turns unaffordable      │                  │  h  healer     
+│                  │  cost       pricing unset -- unknown       │                  │ TERRAIN        
+│                  │  verdict    TICK CAP, ENGINE-ASSISTED      │         #        │  .  path       
+│         #        ╰────────────────────────────────────────────╯                  │  #  wall       
+└─ ENGINE ASSIST ON, helped 9x ───────────────────── verdict: tick cap + assisted ─┘  ~  slow zone  
+─ MOVE FEED ──────────────────────────────────────────────────────────────────────── final events ─ 
+   397 │ ATT │ save            │ ok  banking   streak 3 of 3   assist armed                         
+   398 │ >>> │ ENGINE          │ >>  started wave 24   branch not recorded                          
+   399 │ DEF │ place    ! 9,40 │ x   unaffordable 80/100                                       x38  
+   400 │ *** │ GAME END        │ !!  TICK CAP 400 reached during wave 24 of 30                      
+  ──── │ ─── │ ─────────────── │ the core held, but the match did not reach the horizon             
+                                                                                                    
+  replay written to replays/2026-08-05-o3-vs-gpt-4o-mini.json                                       
+                                                                                                    
+                                                                                                    
+  r range   ? legend   q quit               balance v3 a3f1c8  30 waves  assists on  pricing unset  
