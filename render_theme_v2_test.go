@@ -68,7 +68,7 @@ func TestASCIIFoldLeavesNoBoxOrBlockCharacters(t *testing.T) {
 		"feed":     RenderFeedV2(g.ReplayEvents, 74, 20),
 		"cards":    RenderCardsV2(rect{w: boardMaxW, h: 16}, sampleCardsData()),
 		"timeline": RenderTimelineV2(rect{w: boardMaxW, h: 13}, sampleTimelineData()),
-		"gameover": RenderGameOverCardV2(sampleGameOverData()),
+		"gameover": RenderGameOverCardV2(sampleGameOverData(), gameOverCardMinW),
 		"header": RenderHeaderV2(computeLayoutV2(160, 50), MatchHeaderData{
 			Defender: PlayerHeaderData{ModelName: "o3", Lives: 7, MaxLives: 10},
 			Attacker: PlayerHeaderData{ModelName: "gpt-4o-mini"},
@@ -301,5 +301,50 @@ func TestPaletteDegradesTo16Colours(t *testing.T) {
 	}
 	if !strings.Contains(at256, "38;5;") {
 		t.Fatalf("256-colour rendering does not use the extended selector: %q", at256)
+	}
+}
+
+// --- the tick horizon -----------------------------------------------------
+
+// TestFmtTickNeverInventsACap covers both directions of the fix for a live
+// recording that rendered "tick 445/400" with a full progress bar -- a
+// match that looked finished while it was still running. The interactive
+// loop has no tick cap (see model.tickHorizon), so a zero max must say so
+// rather than divide by it.
+func TestFmtTickNeverInventsACap(t *testing.T) {
+	if got := fmtTick(117, 400); got != "tick 117/400" {
+		t.Fatalf("capped run: got %q", got)
+	}
+	for _, max := range []int64{0, -1} {
+		got := fmtTick(445, max)
+		if strings.Contains(got, "/") {
+			t.Fatalf("uncapped run (max=%d) rendered a ratio: %q", max, got)
+		}
+		if !strings.Contains(got, "445") {
+			t.Fatalf("uncapped run (max=%d) lost the tick count: %q", max, got)
+		}
+	}
+}
+
+// TestTickHorizonIsZeroInteractively pins the decision itself: the live view
+// reports no tick cap, because the interactive Update loop enforces none.
+// If a cap is ever enforced there, this test is the reminder that the view
+// has to start reporting it.
+func TestTickHorizonIsZeroInteractively(t *testing.T) {
+	m := model{maxTicks: 400}
+	if got := m.tickHorizon(); got != 0 {
+		t.Fatalf("tickHorizon = %d, want 0 -- see the doc comment before changing this", got)
+	}
+}
+
+// TestFillBarNeverOverfillsAnUncappedRun: fillBar's max<=0 branch is what
+// stops an uncapped run from drawing a full horizon bar.
+func TestFillBarNeverOverfillsAnUncappedRun(t *testing.T) {
+	bar := fillBar(445, 0, 10)
+	if strings.Contains(bar, "█") {
+		t.Fatalf("uncapped horizon drew a filled bar: %q", bar)
+	}
+	if lipgloss.Width(bar) != 10 {
+		t.Fatalf("bar width %d, want 10", lipgloss.Width(bar))
 	}
 }

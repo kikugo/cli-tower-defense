@@ -177,7 +177,7 @@ func fillBar(value, max, width int) string {
 		return ""
 	}
 	if max <= 0 {
-		return strings.Repeat("░", width)
+		return styleBarEmptyV2.Render(strings.Repeat("░", width))
 	}
 	n := int(math.Round(float64(value) / float64(max) * float64(width)))
 	if n < 0 {
@@ -186,7 +186,8 @@ func fillBar(value, max, width int) string {
 	if n > width {
 		n = width
 	}
-	return strings.Repeat("█", n) + strings.Repeat("░", width-n)
+	return styleBarFullV2.Render(strings.Repeat("█", n)) +
+		styleBarEmptyV2.Render(strings.Repeat("░", width-n))
 }
 
 func moneyLong(resources, income int) string {

@@ -149,6 +149,14 @@ var (
 	styleAlertV2    = lipgloss.NewStyle().Foreground(colAlert)
 	styleDimV2      = lipgloss.NewStyle().Foreground(colDim)
 
+	// Bars: the filled and empty halves are distinguished by COLOUR as well
+	// as by glyph. '█' and '░' are visually close in several popular
+	// monospace fonts -- close enough that a 100%-full bar and an empty one
+	// were hard to tell apart in a recorded demo -- and a progress bar that
+	// needs to be read carefully is not doing its job.
+	styleBarFullV2  = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+	styleBarEmptyV2 = lipgloss.NewStyle().Foreground(colTerrain)
+
 	// styleBreachV2 is the one alert that must survive a monochrome
 	// terminal, a screenshot and the ASCII fold: reverse video is an SGR
 	// attribute, not a colour, so termenv keeps it at every profile
