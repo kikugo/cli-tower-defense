@@ -114,18 +114,50 @@ func (g *Game) matchStrata() map[string]string {
 	}
 }
 
-// ModelAuthored reports the share of playerID's recorded decisions that came
-// directly from a model response, as opposed to one the engine substituted
-// on the model's behalf (a parser fallback, a provider failure, or a
-// normalizer default). The bool return exists specifically to distinguish
-// "0% authored" from "not measured": a MatchResult built before decision
-// provenance was recorded -- ProvenanceVersion's Go zero value is 0, which is
-// what every pre-existing replay and manifest on disk has -- always returns
-// (0, false), never (0, true) and never (1, true). Absence of provenance is
-// never evidence of authorship.
-func (r MatchResult) ModelAuthored(playerID string) (float64, bool) {
+// AuthorshipState is the third state ModelAuthored's (value, ok) pair cannot
+// express. ModelAuthored collapses two genuinely different situations into
+// (0, false): a MatchResult that never recorded provenance at all, and one
+// that recorded it faithfully but has not resolved a single countable
+// decision yet (a match one tick old, or a player whose every turn so far was
+// a forced save). Both are "no percentage to show", which is why the boolean
+// is right for callers that only need to know whether to print a number --
+// but the UI renders them as different words ("authored unknown" against
+// "authored none yet"), and a renderer that had to tell them apart could only
+// do it by reading ProvenanceVersion itself, duplicating the rule this file
+// owns. ModelAuthoredState hands the distinction over directly.
+type AuthorshipState int
+
+const (
+	// AuthorshipUntracked: this MatchResult predates decision-provenance
+	// recording (ProvenanceVersion == 0). Nothing is known about who authored
+	// anything. Render as unknown, never as zero.
+	AuthorshipUntracked AuthorshipState = iota
+	// AuthorshipNoDecisions: provenance is being recorded, and it has counted
+	// exactly zero decisions for this player so far. Render as "none yet" --
+	// an honest statement that the match has not produced data, not that the
+	// model authored nothing.
+	AuthorshipNoDecisions
+	// AuthorshipMeasured: the share is real. A 0.0 in this state means the
+	// model genuinely authored none of its resolved decisions, which is a
+	// finding, not a gap.
+	AuthorshipMeasured
+)
+
+// ModelAuthoredState reports the share of playerID's recorded decisions that
+// came directly from a model response, plus which of the three states above
+// that share is in. This is the full-fidelity accessor; ModelAuthored is a
+// two-state view of the same computation, kept because most callers only need
+// "is there a number to print".
+//
+// The denominator deliberately excludes turns skipped because "save" was the
+// only legal action: such a turn was never put to the model at all, so it is
+// neither an authored decision nor a substitution the engine made on the
+// model's behalf. Counting it would understate authorship for a model that is
+// simply playing through a low-resource stretch of the match -- exactly the
+// distortion this metric exists to avoid. See SourceSkippedForcedSave.
+func (r MatchResult) ModelAuthoredState(playerID string) (float64, AuthorshipState) {
 	if r.ProvenanceVersion == 0 {
-		return 0, false
+		return 0, AuthorshipUntracked
 	}
 	prefix := playerID + ":"
 	total, modelCount := 0, 0
@@ -133,13 +165,6 @@ func (r MatchResult) ModelAuthored(playerID string) (float64, bool) {
 		if key != playerID && !strings.HasPrefix(key, prefix) {
 			continue
 		}
-		// A turn skipped because "save" was the only legal action was never
-		// put to the model at all, so it is neither an authored decision
-		// nor a substitution the engine made on the model's behalf --
-		// counting it in the denominator would understate authorship for a
-		// model that is simply playing in a low-resource stretch of the
-		// match, exactly the effect this metric exists to avoid. See
-		// SourceSkippedForcedSave.
 		if key == prefix+string(SourceSkippedForcedSave) {
 			continue
 		}
@@ -149,9 +174,27 @@ func (r MatchResult) ModelAuthored(playerID string) (float64, bool) {
 		}
 	}
 	if total == 0 {
-		return 0, false
+		return 0, AuthorshipNoDecisions
 	}
-	return float64(modelCount) / float64(total), true
+	return float64(modelCount) / float64(total), AuthorshipMeasured
+}
+
+// ModelAuthored reports the share of playerID's recorded decisions that came
+// directly from a model response, as opposed to one the engine substituted
+// on the model's behalf (a parser fallback, a provider failure, or a
+// normalizer default). The bool return exists specifically to distinguish
+// "0% authored" from "not measured": a MatchResult built before decision
+// provenance was recorded -- ProvenanceVersion's Go zero value is 0, which is
+// what every pre-existing replay and manifest on disk has -- always returns
+// (0, false), never (0, true) and never (1, true). Absence of provenance is
+// never evidence of authorship.
+//
+// It reports ok==false for BOTH untracked provenance and tracked-but-empty
+// provenance. That collapse is intentional and unchanged; a caller that needs
+// to tell those apart calls ModelAuthoredState instead.
+func (r MatchResult) ModelAuthored(playerID string) (float64, bool) {
+	share, state := r.ModelAuthoredState(playerID)
+	return share, state == AuthorshipMeasured
 }
 
 // EngineAssistTotal reports how many times the engine acted on playerID's
