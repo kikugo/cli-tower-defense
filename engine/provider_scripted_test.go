@@ -784,15 +784,26 @@ func TestResearchRangeOrderingIsANoOpWithoutExistingTowers(t *testing.T) {
 	// Order A: buy range first, with zero towers on the board. A tower
 	// placed afterward must have exactly the un-researched base range --
 	// the earlier purchase must have affected nothing.
+	// NewGame seeds its map generator from the clock, so the path layout
+	// differs every run. This test used to hardcode (2,2), which fails
+	// whenever a randomly generated path happens to cross that cell --
+	// an intermittent failure that has nothing to do with what is under
+	// test. Seed the map and ask the engine for a cell it considers
+	// placeable instead.
 	g := NewGame("test", "test")
+	g.SetRandomSeed(1)
 	if len(g.Towers) != 0 {
 		t.Fatalf("expected a fresh game to have no towers, got %d", len(g.Towers))
 	}
 	if !g.researchTech("range") {
 		t.Fatalf("expected researchTech(range) to succeed with no towers on the board")
 	}
-	if !g.placeTower(2, 2, "basic") {
-		t.Fatalf("expected placeTower to succeed")
+	spot := g.validTowerCandidates(1)
+	if len(spot) == 0 {
+		t.Fatalf("setup invariant violated: seeded map offers no legal tower cell")
+	}
+	if !g.placeTower(spot[0][0], spot[0][1], "basic") {
+		t.Fatalf("expected placeTower to succeed at %v", spot[0])
 	}
 	gotRange := g.Towers[0].Range
 	unresearchedRange := g.Balance.Towers["basic"].Range
@@ -803,8 +814,13 @@ func TestResearchRangeOrderingIsANoOpWithoutExistingTowers(t *testing.T) {
 	// Order B: place a tower first, then buy range. That tower's range must
 	// go up by exactly 1.
 	g2 := NewGame("test", "test")
-	if !g2.placeTower(2, 2, "basic") {
-		t.Fatalf("expected placeTower to succeed")
+	g2.SetRandomSeed(1)
+	spot2 := g2.validTowerCandidates(1)
+	if len(spot2) == 0 {
+		t.Fatalf("setup invariant violated: seeded map offers no legal tower cell")
+	}
+	if !g2.placeTower(spot2[0][0], spot2[0][1], "basic") {
+		t.Fatalf("expected placeTower to succeed at %v", spot2[0])
 	}
 	before := g2.Towers[0].Range
 	if !g2.researchTech("range") {
