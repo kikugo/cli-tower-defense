@@ -4,9 +4,9 @@ A terminal tower defense game written in Go where any two configured LLMs compet
 
 ![Two models playing a match](docs/demo.gif)
 
-A real match, not a scripted one: `gemini-2.5-flash-lite` on both sides, seed 7 (a two-lane map), recorded 2026-08-04. All 18 applied actions came from a model — the run reports `authored_def=100% | authored_att=100%` — and **engine assists are off**, so all five waves were launched by the attacker rather than corrected into existence by the engine. The attacker wins on wave 5: it commits to `shielded`, and the defender places three towers and a research level before running out of lives.
+A real match, not a scripted one: `gemini-2.5-flash-lite` on both sides, seed 7, recorded 2026-08-07. Every applied action came from a model — the run reports `authored_def=100% | authored_att=100%` with zero provider errors and zero rejected actions — and **engine assists are off**, so all four waves were launched by the attacker rather than corrected into existence by the engine. The attacker wins on wave 4: the defender opens with two basic towers and a control research level, and the attacker converts income straight into wave pressure faster than the defense can absorb it.
 
-It took two attempts to earn that caption. The first re-recording was 100% model-authored and still not honest: it ran at the interactive default, with assists on, and **four of its five waves were `applied_auto_wave`** — the model's decision, rewritten by the engine into a wave. Provenance said "the model chose this" while the engine chose the outcome. The two are different questions and only the first was being recorded.
+The caption has been earned twice over. An earlier re-recording was 100% model-authored and still not honest: it ran at the interactive default, with assists on, and **four of its five waves were `applied_auto_wave`** — the model's decision, rewritten by the engine into a wave. Provenance said "the model chose this" while the engine chose the outcome. The two are different questions and only the first was being recorded. Recording with live models also turned out to be its own measurement: takes are discarded below 90% authored, and several were, because a slow model gets few turns and a single provider error then dominates a tiny denominator.
 
 Earlier recordings could not make either claim. Until the decision parser was fixed (see [Known Issues](#known-issues) and the provenance section below), a model that pretty-printed its JSON was silently replaced by an engine fallback, so a "real match" could be the engine playing itself and look no different.
 
@@ -23,9 +23,11 @@ Turns alternate strictly. Each turn the engine renders the game state into a pro
 
 - **Pure Go**, no external language dependencies
 - **Provider-agnostic**: OpenAI-compatible endpoints, Gemini native, or scripted players for offline testing
-- **Four tower types**: basic (`^`), sniper (`⌖`), splash (`⊕`), buffer (`B`)
-- **Five enemy types**: basic (`o`), fast (`>`), tank (`□`), shielded (`S`), healer (`H`)
-- **Bounded terminal layout** — the board, stats and move feed each get a row budget, so nothing scrolls off screen
+- **Four tower types**: basic (`^`), sniper (`!`), splash (`*`), buffer (`+`)
+- **Five enemy types**: grunt (`o`), fast (`f`), tank (`t`), shielded (`s`), healer (`h`)
+- **Ownership is readable without colour** — towers are punctuation, enemies are lowercase letters, so a monochrome terminal or a screenshot still says which side a glyph belongs to. Colour is decoration on top of that, never the only thing carrying a fact.
+- **Six-mode terminal layout**, 60 columns to 200+ — the board, player cards, match timeline and move feed each get an exact row budget, so nothing scrolls off screen. `--ascii` swaps the box-drawing and block characters for ASCII on terminals that cannot draw them.
+- **A move feed that survives being small** — consecutive identical rows collapse with a count, and when the pane is short, rows are kept by importance rather than recency: a breach six rows back outranks the fourth save in a row.
 - **Seeded, reproducible runs** with replay export and a timeline viewer
 - **Tournaments** with role swap, ranked standings, and persistent Elo-style ratings
 - **Balance sweeps** — scripted duels across seeds, so combat and economy changes can be measured without spending a token
@@ -119,10 +121,18 @@ The layout is computed from the terminal, not assumed:
 
 | width | layout |
 |---|---|
-| ≥ 116 | board and stats on the left, move feed in a full-height right column |
-| 84–115 | board, stats and feed stacked |
-| 60–83 | compact — the board renders a viewport into the fixed 80×14 map |
+| ≥ 145 | board, player cards and match timeline in a left column; move feed and legend in a right column |
+| 100–144 | framed board with a legend gutter, feed below |
+| 84–99 | framed board, feed full width |
+| 80–83 | borderless map, all 80 columns, no panning |
+| 60–79 | compact — the map pans to the terminal's width |
 | < 60, or height < 15 | a size notice |
+
+Every pane gets an exact rectangle and fills it exactly: short content is padded, long content is truncated *by the pane*. Nothing is handed to the terminal unbounded and hoped to fit.
+
+Panes that cannot fit degrade in a stated order rather than arbitrarily. The move feed keeps rows by importance before recency. The match timeline folds older waves into a single summed band row rather than dropping them, so a 30-wave match still accounts for every wave in a three-row table. The player cards drop the model's reasoning quote first and the model's name last.
+
+`--ascii` replaces the box-drawing and block characters with ASCII (`+`, `-`, `|`, `#`, `.`) for terminals that cannot draw them. It is applied once at the output stage, so it covers every pane and anything a model wrote, and every substitution is one display column for one display column.
 
 The simulation map stays 80×14 at every terminal size. Map dimensions affect path length and therefore balance, so the *viewport* is responsive and the *map* is not.
 
