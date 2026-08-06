@@ -46,17 +46,25 @@ package main
 //
 // --- Rule 4: breach markers do not depend on hue -----------------------------
 //
-// A breach renders as 'X' in reverse video (lipgloss Reverse(true), not a
-// Foreground colour) so the alert survives monochrome terminals and
-// screenshots. This is the one place in this file that emits an ANSI SGR
-// sequence, and it is a deliberate, narrow exception to "no ANSI this
-// phase" -- see the doc comment on TestBoardV2FitsAtEverySize for how the
-// fit tests are split around it (frameDisplayWidth/checkFits, reused from
-// mockup_fit_test.go per the task brief, do not strip ANSI escapes -- they
-// were built for the plain-text mockup fixtures -- so any row containing the
-// breach marker is measured with lipgloss.Width instead, exactly the
-// convention board_viewport_test.go already uses for this project's other
-// ANSI-bearing rendered rows).
+// A breach renders as 'X' in reverse video (styleBreachV2, an SGR attribute
+// plus an additive red). The attribute survives at profile ANSI -- a
+// 16-colour or genuinely monochrome terminal -- where a hue-only alert would
+// be lost.
+//
+// It does NOT survive at profile Ascii: termenv drops every escape sequence
+// there, attributes included, and the marker renders as a bare 'X'. An
+// earlier version of this comment claimed otherwise; TestBreachSurvivesMonochrome
+// measures both cases. The design still holds, for a different reason than
+// the one originally given: profile Ascii means plain text was asked for,
+// and 'X' is used for nothing else in the glyph vocabulary, so the character
+// carries the alert on its own. The test asserts that uniqueness rather than
+// leaving it to inspection.
+//
+// Since Phase 3 every glyph on the board carries a colour (see
+// styleGridRowV2), so board rows must be measured with lipgloss.Width, never
+// with mockup_fit_test.go's frameDisplayWidth -- that helper was built for
+// the plain-text mockup fixtures and counts escape bytes as columns. This is
+// the same convention board_viewport_test.go already uses.
 //
 // --- Rule 5 / coupling with the header agent ---------------------------------
 //
@@ -96,8 +104,6 @@ import (
 	"strings"
 
 	eng "tower-defense/engine"
-
-	"github.com/charmbracelet/lipgloss"
 )
 
 // --- glyphs ---------------------------------------------------------------
@@ -209,25 +215,50 @@ func buildLiveGridV2(g *eng.Game) [][]rune {
 	return grid
 }
 
-// styleGridRowV2 renders columns [colStart, colStart+cols) of grid row y.
-// Every glyph is written plain except the breach marker, which is the one
-// deliberate ANSI exception this file makes (rule 4) -- see this file's
-// top-of-file doc comment for how the fit tests account for that.
+// styleGridRowV2 renders columns [colStart, colStart+cols) of grid row y,
+// applying the Phase 3 palette: each glyph goes through glyphStyleV2
+// (render_theme_v2.go), which colours it by ROLE -- defender, attacker,
+// terrain, breach -- and nothing else.
+//
+// Consecutive glyphs sharing a style are batched into one Render call
+// rather than styled individually. That is not a micro-optimisation: a
+// styled 80-column row of terrain would otherwise carry 80 pairs of escape
+// sequences, roughly 800 bytes per row and 12KB per frame, for a board
+// that is mostly long runs of the same colour.
+//
+// Every row this produces can carry ANSI, so it must be measured with
+// lipgloss.Width, never with mockup_fit_test.go's frameDisplayWidth (which
+// counts escape bytes as columns). See TestBoardV2FitsAtEverySize.
 func styleGridRowV2(grid [][]rune, y, colStart, cols int) string {
-	var b strings.Builder
 	row := grid[y]
 	end := colStart + cols
 	if end > len(row) {
 		end = len(row)
 	}
-	for x := colStart; x < end; x++ {
-		r := row[x]
-		if r == breachGlyphV2 {
-			b.WriteString(lipgloss.NewStyle().Reverse(true).Render(string(r)))
+	if colStart >= end {
+		return ""
+	}
+
+	var b strings.Builder
+	runStart := colStart
+	runStyle := glyphStyleV2(row[colStart])
+	flush := func(upto int) {
+		var run strings.Builder
+		for x := runStart; x < upto; x++ {
+			run.WriteRune(row[x])
+		}
+		b.WriteString(runStyle.Render(run.String()))
+	}
+
+	for x := colStart + 1; x < end; x++ {
+		st := glyphStyleV2(row[x])
+		if st.String() == runStyle.String() {
 			continue
 		}
-		b.WriteRune(r)
+		flush(x)
+		runStart, runStyle = x, st
 	}
+	flush(end)
 	return b.String()
 }
 
@@ -306,7 +337,7 @@ func renderMapPaneV2(g *eng.Game, rc rect, panX int) []string {
 // content matches), so this builds a reasonable single line and lets
 // truncateCells/padCells enforce the width contract regardless of how much
 // of the line fits at the narrow end of compact mode's range (60 columns).
-func renderLabelRowV2(g *eng.Game, rc rect, trust TrustState) []string {
+func renderLabelRowV2(g *eng.Game, rc rect, trust TrustState, maxTick int64) []string {
 	if rc.h <= 0 {
 		return blankRows(rc.h, rc.w)
 	}
@@ -315,10 +346,10 @@ func renderLabelRowV2(g *eng.Game, rc rect, trust TrustState) []string {
 	}
 
 	defID := g.Defender
-	// No tick ceiling is included here (just "t<tick>", not "t<tick>/<max>"):
-	// MaxTicks isn't a field on eng.Game (it's a balance-sweep/config
-	// concept, not sim state), so this omits one rather than fabricate it.
-	wave := fmt.Sprintf("W%d/%d t%d", g.Wave, g.MaxWaves, g.TickCount)
+	// The tick ceiling comes from the CALLER, not from g: MaxTicks is a run
+	// configuration, not simulation state, and there is no field on eng.Game
+	// holding it. Passing 0 renders "no cap" rather than a fabricated "/0".
+	wave := fmt.Sprintf("W%d/%d %s", g.Wave, g.MaxWaves, fmtTick(g.TickCount, maxTick))
 
 	segments := []string{wave}
 	if tb := TrustBandLabel(trust); tb != "" {
@@ -536,25 +567,68 @@ func towerCostV2(g *eng.Game, towerType string) int {
 	return g.Balance.Towers[towerType].Cost
 }
 
-// legendWideLinesV2 is the wide-mode, full-width legend: a titled divider
+// legendColsV2 are the display columns the wide legend's three groups start
+// at: DEFENDER, ATTACKER, TERRAIN. They are named constants rather than
+// padding widths baked into eight separate format strings, which is how the
+// last column came to start at 40 on two rows and 44 on the other six --
+// the "lowercase = enemy" row ran straight into ">>> the engine acted" with
+// no gap.
+const (
+	legendColA = 2
+	legendColB = 25
+	legendColC = 44
+)
+
+// placeColsV2 lays cells out at the given display columns, padding with
+// spaces. A cell that would overrun the next column's start is truncated to
+// fit, so a long entry can never shunt the columns to its right -- the
+// failure mode a chain of %-Ns verbs has, where one over-long value silently
+// widens the row.
+func placeColsV2(cols []int, cells []string) string {
+	var b strings.Builder
+	for i, cell := range cells {
+		if i >= len(cols) {
+			break
+		}
+		if pad := cols[i] - runeColsV2(b.String()); pad > 0 {
+			b.WriteString(strings.Repeat(" ", pad))
+		}
+		budget := -1
+		if i+1 < len(cols) && i+1 < len(cells) {
+			budget = cols[i+1] - cols[i] - 1
+		}
+		if budget >= 0 {
+			cell = truncateCells(cell, budget)
+		}
+		b.WriteString(cell)
+	}
+	return b.String()
+}
+
+// legendWideLinesV2 is the wide-mode, full-width legend
 // row followed by a 3-column DEF/ATT/TERRAIN block with tower costs, per
 // testdata/mockups/160x50.txt lines 42-49 (8 lines total, matching that
 // fixture's fixed legendH=8).
 func legendWideLinesV2(g *eng.Game, w int) []string {
+	cols := []int{legendColA, legendColB, legendColC}
+	entry := func(glyph rune, name string) string {
+		return fmt.Sprintf("%c  %s", glyph, name)
+	}
+	towerEntry := func(typ, name string) string {
+		return fmt.Sprintf("%c  %-14s%d", towerGlyph(typ), name, towerCostV2(g, typ))
+	}
+	enemyEntry := func(typ string) string {
+		return entry(enemyGlyph(typ), enemyDisplayName(typ))
+	}
+
 	return []string{
 		titledRuleV2(w, "LEGEND", "? toggles"),
-		fmt.Sprintf("  %-10s%-14s%-10s%-14s%-9s%s", "DEFENDER", "blue", "ATTACKER", "orange", "TERRAIN", "grey"),
-		fmt.Sprintf("  %c  %-14s%-4d  %c  %-16s%c  %s",
-			towerGlyphV2["basic"], "basic tower", towerCostV2(g, "basic"), enemyGlyphV2["basic"], enemyDisplayName("basic"), rune(pathGlyphV2), "path"),
-		fmt.Sprintf("  %c  %-14s%-4d  %c  %-16s%c  %s",
-			towerGlyphV2["sniper"], "sniper", towerCostV2(g, "sniper"), enemyGlyphV2["fast"], enemyDisplayName("fast"), rune(wallGlyphV2), "wall"),
-		fmt.Sprintf("  %c  %-14s%-4d  %c  %-16s%c  %s",
-			towerGlyphV2["splash"], "splash", towerCostV2(g, "splash"), enemyGlyphV2["tank"], enemyDisplayName("tank"), rune(slowZoneGlyphV2), "slow zone"),
-		fmt.Sprintf("  %c  %-14s%-4d  %c  %-16s%c  %s",
-			towerGlyphV2["buffer"], "buffer", towerCostV2(g, "buffer"), enemyGlyphV2["shielded"], enemyDisplayName("shielded"), rune(breachGlyphV2), "breach (rev)"),
-		fmt.Sprintf("  %-19s   %c  %-16s%c  %s",
-			"BOLD = level 2+", enemyGlyphV2["healer"], enemyDisplayName("healer"), rune(flowGlyphV2), "flow direction"),
-		fmt.Sprintf("  %-19s   %-16s%s",
-			"punctuation = tower", "lowercase = enemy", ">>> the engine acted"),
+		placeColsV2(cols, []string{"DEFENDER  blue", "ATTACKER  orange", "TERRAIN  grey"}),
+		placeColsV2(cols, []string{towerEntry("basic", "basic tower"), enemyEntry("basic"), entry(pathGlyphV2, "path")}),
+		placeColsV2(cols, []string{towerEntry("sniper", "sniper"), enemyEntry("fast"), entry(wallGlyphV2, "wall")}),
+		placeColsV2(cols, []string{towerEntry("splash", "splash"), enemyEntry("tank"), entry(slowZoneGlyphV2, "slow zone")}),
+		placeColsV2(cols, []string{towerEntry("buffer", "buffer"), enemyEntry("shielded"), entry(breachGlyphV2, "breach (rev)")}),
+		placeColsV2(cols, []string{"BOLD = level 2+", enemyEntry("healer"), entry(flowGlyphV2, "flow direction")}),
+		placeColsV2(cols, []string{"punctuation = tower", "lowercase = enemy", ">>> the engine acted"}),
 	}
 }

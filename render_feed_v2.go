@@ -595,7 +595,14 @@ func renderFeedRowText(r feedRow, width int) string {
 		if len(tickStr) > feedTickW {
 			tickStr = tickStr[len(tickStr)-feedTickW:] // never widen the column for a huge tick
 		}
-		sideStr = padCells(r.side, feedSideW)
+		// The side column is the one field in this pane that carries the
+		// Phase 3 palette: it is what a reader scans down to find "who did
+		// this", and colouring it means the engine's own rows (">>>", amber)
+		// separate from the two players' at a glance. Styling is applied
+		// AFTER padCells so the pad is plain spaces inside the colour run
+		// rather than outside it, and so the column's display width is
+		// decided before any escape bytes exist.
+		sideStr = sideStyleV2(r.side).Render(padCells(r.side, feedSideW))
 		actLine := r.action
 		if r.target != "" {
 			actLine += " " + r.target
@@ -631,10 +638,12 @@ func renderFeedRowText(r feedRow, width int) string {
 	b.WriteString(countSuffix)
 
 	// padCells is the actual guarantor of the exact-width invariant: it
-	// pads a short row with plain spaces, or hard-truncates (ANSI-safe,
-	// though this pane never emits ANSI styling) a row that ran long
-	// despite the budgeting above -- e.g. a pathologically small width, or
-	// a countSuffix that pushed just past the edge.
+	// pads a short row with plain spaces, or hard-truncates a row that ran
+	// long despite the budgeting above -- e.g. a pathologically small
+	// width, or a countSuffix that pushed just past the edge. It is
+	// ANSI-safe, which now matters: since Phase 3 the side column carries
+	// colour, so rows from this pane must be measured with lipgloss.Width,
+	// never with mockup_fit_test.go's frameDisplayWidth.
 	return padCells(b.String(), width)
 }
 
