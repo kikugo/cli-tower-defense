@@ -97,22 +97,6 @@ func styleSnapshotGridRow(grid [][]rune, y, colStart, cols int) string {
 	return b.String()
 }
 
-// renderSnapshotBoard styles the grid rows for the replay viewer at full
-// width, with no viewport/panning. Kept for reference and for any caller
-// that wants the whole board regardless of terminal size; the live replay
-// view uses the budget-bounded renderReplayBoard below instead.
-func renderSnapshotBoard(snap eng.ReplaySnapshot, highlight *eng.Position) string {
-	grid := buildSnapshotGrid(snap, highlight)
-	if grid == nil {
-		return ""
-	}
-	rows := make([]string, len(grid))
-	for y := range grid {
-		rows[y] = styleSnapshotGridRow(grid, y, 0, len(grid[y]))
-	}
-	return uiBorder.Render(strings.Join(rows, "\n"))
-}
-
 // renderReplayBoard renders a reconstructed replay snapshot's board into
 // exactly rc.h rows of exactly rc.w columns, the same viewport/pad contract
 // renderBoard (board_viewport.go) applies to the live board. It pans to
