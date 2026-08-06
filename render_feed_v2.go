@@ -207,7 +207,10 @@ func buildFeedRowsV2(events []eng.ReplayEvent) []feedRow {
 			leakedSinceWaveStart++
 			enemyType, _ := ev.Details["enemy_type"].(string)
 			lives, _ := intFromDetails(ev.Details, "defender_lives")
-			target := strings.TrimSpace(enemyType + " " + posStr(ev.Position))
+			// The GLYPH, not the type name: this row has to be scannable
+			// against the board it describes, and the board draws 'o', not
+			// "basic". See glyphs_v2.go.
+			target := strings.TrimSpace(string(enemyGlyph(enemyType)) + " " + posStr(ev.Position))
 			emit(feedRow{
 				tick:   ev.Tick,
 				kind:   feedBreach,
@@ -338,13 +341,20 @@ func enrichApplied(tick int64, player, action string, siblings feedSiblingIndex)
 	}
 	switch sib.Type {
 	case eng.ReplayPlacement:
+		// Glyph in the target column so the row scans against the board
+		// ("place  ! 9,40"), prose name in the detail so the row is still
+		// self-explanatory to someone who has not learned the glyphs yet
+		// ("ok sniper   cost 100"). Both come from glyphs_v2.go, so this
+		// column and the board can never disagree.
 		towerType, _ := sib.Details["tower_type"].(string)
 		cost, _ := intFromDetails(sib.Details, "cost")
-		return posStr(sib.Position), strings.TrimSpace(fmt.Sprintf("%s   cost %d", towerType, cost))
+		target = strings.TrimSpace(string(towerGlyph(towerType)) + " " + posStr(sib.Position))
+		return target, strings.TrimSpace(fmt.Sprintf("%s   cost %d", towerType, cost))
 	case eng.ReplaySpawn:
 		enemyType, _ := sib.Details["enemy_type"].(string)
 		cost, _ := intFromDetails(sib.Details, "cost")
-		return posStr(sib.Position), strings.TrimSpace(fmt.Sprintf("%s   cost %d", enemyType, cost))
+		target = strings.TrimSpace(string(enemyGlyph(enemyType)) + " " + posStr(sib.Position))
+		return target, strings.TrimSpace(fmt.Sprintf("%s   cost %d", enemyDisplayName(enemyType), cost))
 	case eng.ReplayWave:
 		newWave, _ := intFromDetails(sib.Details, "wave")
 		queue, _ := intFromDetails(sib.Details, "queue")
@@ -383,7 +393,8 @@ func engineAssistMessage(ev eng.ReplayEvent) string {
 	case eng.AssistQueueEnemy:
 		enemyType, _ := ev.Details["enemy_type"].(string)
 		queue, _ := intFromDetails(ev.Details, "queue")
-		return strings.TrimSpace(fmt.Sprintf("queued %s enemy   queue %d", enemyType, queue))
+		return strings.TrimSpace(fmt.Sprintf("queued %c %s   queue %d",
+			enemyGlyph(enemyType), enemyDisplayName(enemyType), queue))
 	default:
 		return "branch not recorded"
 	}
