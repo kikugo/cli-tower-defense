@@ -138,11 +138,11 @@ func gameOverBodyLines(d GameOverData) []string {
 		gameOverCardRow("ended by", strings.TrimSpace(d.EndedBy+"   "+d.EndedDetail)),
 		gameOverCardRow("reached", fmt.Sprintf("wave %d of %d     lives %d/%d",
 			d.Wave, d.MaxWave, d.Lives, d.MaxLives)),
-		gameOverCardRow("score", fmt.Sprintf("DEF %-14s ATT %s",
+		gameOverCardRow("score", fmt.Sprintf("DEF %-16s ATT %s",
 			commaInt(d.DefScore), commaInt(d.AttScore))),
-		gameOverCardRow("authored", fmt.Sprintf("DEF %-14s ATT %s",
+		gameOverCardRow("authored", fmt.Sprintf("DEF %-16s ATT %s",
 			fmtAuthored(d.DefAuthored), fmtAuthored(d.AttAuthored))),
-		gameOverCardRow("saves", fmt.Sprintf("DEF %-14s ATT %s",
+		gameOverCardRow("saves", fmt.Sprintf("DEF %-16s ATT %s",
 			fmtSaves(d.DefSaves), fmtSaves(d.AttSaves))),
 		gameOverCardRow("engine", gameOverAssistLine(d.Assist)),
 		gameOverCardRow("rejected", rejected),
@@ -165,20 +165,56 @@ func gameOverAssistLine(t TrustState) string {
 
 // --- the card ---------------------------------------------------------------
 
-// gameOverCardW is the card's total width including its two border
-// columns, matching testdata/mockups/gameover-100x30.txt (46 columns). The
-// card is a fixed size rather than a fraction of the terminal: its content
-// is a fixed set of eleven labelled rows, so scaling it with the frame
-// would only ever add whitespace.
-const gameOverCardW = 46
+// gameOverCardMinW / gameOverCardMaxW bound the card's total width
+// including its two border columns. The minimum is the mockup's own 46
+// (testdata/mockups/gameover-100x30.txt); the maximum is 68.
+//
+// The card was originally a fixed 46 on the reasoning that its content is a
+// fixed set of eleven labelled rows, so extra width could only add
+// whitespace. A live recording disproved that: with real model names the
+// WINNER row read "gemini-2.5-flash-lite   ATTACKE" and the end-reason row
+// "CORE LOST   defender_lives_depl", both clipped mid-word. Model names and
+// the engine's own WinReason tokens are not fixed-length, and the two rows
+// that got cut are the two the card exists to state.
+const (
+	gameOverCardMinW = 46
+	gameOverCardMaxW = 68
+)
+
+// gameOverCardWidth picks the card's width for a pane paneW columns wide:
+// as wide as its content wants, bounded by gameOverCardMaxW and by leaving a
+// margin of board visible either side, but never below the minimum -- a
+// clipped card on a narrow terminal is better than no card, and
+// OverlayCenteredV2 clips rather than overflowing.
+func gameOverCardWidth(d GameOverData, paneW int) int {
+	want := gameOverCardMinW
+	for _, line := range gameOverBodyLines(d) {
+		if n := lipgloss.Width(line) + 4; n > want {
+			want = n
+		}
+	}
+	if want > gameOverCardMaxW {
+		want = gameOverCardMaxW
+	}
+	if room := paneW - 6; want > room {
+		want = room
+	}
+	if want < gameOverCardMinW {
+		want = gameOverCardMinW
+	}
+	return want
+}
 
 // RenderGameOverCardV2 renders the modal card itself: a rounded box of
-// exactly gameOverCardW columns and len(body)+2 rows, its first content row
-// centred as a title and the rest flush left. It returns the card alone;
+// exactly width columns and len(body)+2 rows, its first content row centred
+// as a title and the rest flush left. It returns the card alone;
 // OverlayCenteredV2 is what places it over a rendered pane.
-func RenderGameOverCardV2(d GameOverData) []string {
+func RenderGameOverCardV2(d GameOverData, width int) []string {
+	if width < gameOverCardMinW {
+		width = gameOverCardMinW
+	}
 	body := gameOverBodyLines(d)
-	innerW := gameOverCardW - 2
+	innerW := width - 2
 
 	out := make([]string, 0, len(body)+2)
 	out = append(out, "╭"+strings.Repeat("─", innerW)+"╮")

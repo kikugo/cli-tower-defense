@@ -281,20 +281,27 @@ func abilityTallyV2(events []eng.ReplayEvent) string {
 	return strings.Join(parts, ", ")
 }
 
-// sentCountV2 is how many enemies actually reached the board, counted from
-// ReplaySpawn events rather than from ActionCounters[attacker+":spawn"].
+// sentCountV2 is how many enemies this match has put on the board, summed
+// from the engine's own per-wave WaveSummary.Sent counters.
 //
-// The counter version undercounts, and by a lot in exactly the matches worth
-// watching: it only sees a spawn the ATTACKER chose, so every enemy the
-// engine queued through an assist, and every enemy a wave launch put on the
-// board, is invisible to it. A header reading "sent 0  breached 13" is the
-// symptom -- it was real, and this is the fix.
-func sentCountV2(g *eng.Game) int {
+// Two earlier sources were wrong, each in its own way, and both produced the
+// same visible nonsense -- a header reading "sent 0  breached 10":
+//
+//   - ActionCounters[attacker+":spawn"] only counts spawn ACTIONS the
+//     attacker chose. An attacker that plays by launching waves never
+//     touches it.
+//   - Counting ReplaySpawn events misses the same enemies for the same
+//     reason: a wave launch queues its enemies without emitting one per
+//     enemy.
+//
+// WaveSummary.Sent is incremented at the single site where an enemy is
+// actually added to the board, so it counts every enemy however it got
+// there. It is also the number the timeline's own "sent" column shows, so
+// the header and the table can no longer disagree.
+func sentCountV2(r eng.MatchResult) int {
 	n := 0
-	for _, ev := range g.ReplayEvents {
-		if ev.Type == eng.ReplaySpawn {
-			n++
-		}
+	for _, ws := range r.WaveSummaries {
+		n += ws.Sent
 	}
 	return n
 }
@@ -309,6 +316,23 @@ func rulesetStampV2(g *eng.Game, ruleset eng.ArenaRuleset) string {
 	}
 	return fmt.Sprintf("balance %s %s   %d waves   %s   pricing unset",
 		g.Balance.Version, eng.ComputeBalanceHash(g.Balance)[:6], g.MaxWaves, assists)
+}
+
+// tickHorizon is the tick at which THIS run will stop, or 0 for none.
+//
+// It is deliberately not m.maxTicks. That flag is documented as "maximum
+// ticks to run in headless mode" and is only read by runHeadless and the
+// tournament/sweep paths; the interactive Update loop calls UpdateGameState
+// on every tickMsg with no upper bound at all. Rendering m.maxTicks as the
+// horizon is what produced "tick 445/400" with a full progress bar during a
+// live recording -- a finished-looking match that was still running.
+//
+// A ruleset's own max_ticks is not used either, and for the same reason:
+// declared is not enforced. Interactively the match ends when the core
+// falls, when the waves run out, or when the viewer quits, so the header
+// and the timeline say there is no tick cap, which is true.
+func (m model) tickHorizon() int64 {
+	return 0
 }
 
 // --- extraction: per-pane -------------------------------------------------
@@ -342,12 +366,12 @@ func (m model) headerDataV2(r eng.MatchResult) MatchHeaderData {
 			Resources: g.Resources[g.Attacker],
 			Income:    g.Income[g.Attacker],
 			Live:      liveTallyV2(g),
-			Sent:      sentCountV2(g),
+			Sent:      sentCountV2(r),
 			Saves:     savesStatV2(r, g.Attacker),
 			Authored:  authoredShareV2(r, g.Attacker),
 		},
 		Wave: g.Wave, MaxWave: g.MaxWaves,
-		Tick: int64(g.TickCount), MaxTick: int64(m.maxTicks),
+		Tick: int64(g.TickCount), MaxTick: m.tickHorizon(),
 		TurnSide: turn,
 		Speed:    speedMultiplierV2(m.tickDur),
 		RunState: run,
@@ -389,7 +413,7 @@ func (m model) cardsDataV2(r eng.MatchResult) MatchCardsData {
 			ModelName: g.ModelNames[g.Attacker],
 			Breaches:  g.BreachCount,
 			Resources: g.Resources[g.Attacker], Income: g.Income[g.Attacker],
-			Sent: sentCountV2(g), Live: len(g.Enemies),
+			Sent: sentCountV2(r), Live: len(g.Enemies),
 			Abilities:   abilityTallyV2(g.ReplayEvents),
 			Authored:    authoredShareV2(r, g.Attacker),
 			Saves:       savesStatV2(r, g.Attacker),
@@ -417,7 +441,7 @@ func (m model) timelineDataV2(r eng.MatchResult, trust TrustState) TimelineData 
 		Wave:          g.Wave,
 		MaxWave:       g.MaxWaves,
 		Tick:          int64(g.TickCount),
-		MaxTick:       int64(m.maxTicks),
+		MaxTick:       m.tickHorizon(),
 		StartingLives: g.StartingLives,
 		Lives:         g.Lives[g.Defender],
 		DefAuthored:   authoredShareV2(r, g.Defender),
@@ -477,7 +501,7 @@ func (m model) gameOverDataV2(r eng.MatchResult, trust TrustState) GameOverData 
 		}
 	}
 
-	endedBy, endedDetail := endReasonV2(g, m.maxTicks, r.WinReason)
+	endedBy, endedDetail := endReasonV2(g, int(m.tickHorizon()), r.WinReason)
 
 	return GameOverData{
 		WinnerName: winnerName, WinnerRole: winnerRole,
@@ -583,10 +607,12 @@ func (m model) ViewV2() string {
 	// still readable, a frame that grew a column is not.
 	switch l.mode {
 	case modeMinimum, modeCompact:
-		blitV2(frame, l.label, renderLabelRowV2(g, rect{w: l.label.w, h: l.label.h}, trust, int64(m.maxTicks)), l.w)
+		blitV2(frame, l.label, renderLabelRowV2(g, rect{w: l.label.w, h: l.label.h}, trust, m.tickHorizon()), l.w)
 		mapRows := renderMapPaneV2(g, rect{w: l.mapPane.w, h: l.mapPane.h}, panX)
 		if g.GameOver {
-			mapRows = OverlayCenteredV2(mapRows, RenderGameOverCardV2(m.gameOverDataV2(result, trust)), l.mapPane.w)
+			card := m.gameOverDataV2(result, trust)
+			mapRows = OverlayCenteredV2(mapRows,
+				RenderGameOverCardV2(card, gameOverCardWidth(card, l.mapPane.w)), l.mapPane.w)
 		}
 		blitV2(frame, l.mapPane, mapRows, l.w)
 
@@ -599,7 +625,9 @@ func (m model) ViewV2() string {
 		}
 		board := renderFramedBoardV2(g, rect{w: l.board.w, h: l.board.h}, panX, bl, br)
 		if g.GameOver {
-			board = OverlayCenteredV2(board, RenderGameOverCardV2(m.gameOverDataV2(result, trust)), l.board.w)
+			card := m.gameOverDataV2(result, trust)
+			board = OverlayCenteredV2(board,
+				RenderGameOverCardV2(card, gameOverCardWidth(card, l.board.w)), l.board.w)
 		}
 		blitV2(frame, l.board, board, l.w)
 	}

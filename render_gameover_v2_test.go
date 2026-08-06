@@ -35,12 +35,12 @@ func sampleGameOverData() GameOverData {
 // width, a rounded border on all four corners, and one row per body line
 // plus the two border rows.
 func TestRenderGameOverCardV2Shape(t *testing.T) {
-	card := RenderGameOverCardV2(sampleGameOverData())
+	card := RenderGameOverCardV2(sampleGameOverData(), gameOverCardMinW)
 
 	if len(card) != len(gameOverBodyLines(sampleGameOverData()))+2 {
 		t.Fatalf("card has %d rows", len(card))
 	}
-	if err := checkFits(strings.Join(card, "\n"), gameOverCardW, len(card)); err != nil {
+	if err := checkFits(strings.Join(card, "\n"), gameOverCardMinW, len(card)); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.HasPrefix(card[0], "╭") || !strings.HasSuffix(card[0], "╮") {
@@ -64,13 +64,13 @@ func TestRenderGameOverCardV2Shape(t *testing.T) {
 func TestRenderGameOverCardV2NeverInventsACost(t *testing.T) {
 	d := sampleGameOverData()
 	d.Cost = ""
-	out := strings.Join(RenderGameOverCardV2(d), "\n")
+	out := strings.Join(RenderGameOverCardV2(d, gameOverCardMinW), "\n")
 	if !strings.Contains(out, "pricing unset -- unknown") {
 		t.Fatalf("empty cost did not render as an unknown:\n%s", out)
 	}
 
 	d.Cost = "$0.41 measured"
-	out = strings.Join(RenderGameOverCardV2(d), "\n")
+	out = strings.Join(RenderGameOverCardV2(d, gameOverCardMinW), "\n")
 	if !strings.Contains(out, "$0.41 measured") {
 		t.Fatalf("caller-supplied cost was not passed through:\n%s", out)
 	}
@@ -81,7 +81,7 @@ func TestRenderGameOverCardV2NeverInventsACost(t *testing.T) {
 func TestRenderGameOverCardV2Draw(t *testing.T) {
 	d := sampleGameOverData()
 	d.WinnerRole = ""
-	out := strings.Join(RenderGameOverCardV2(d), "\n")
+	out := strings.Join(RenderGameOverCardV2(d, gameOverCardMinW), "\n")
 	if !strings.Contains(out, "no winner") || !strings.Contains(out, "DRAW") {
 		t.Fatalf("draw did not render as a draw:\n%s", out)
 	}
@@ -98,7 +98,7 @@ func TestRenderGameOverCardV2UnknownsRenderAsWords(t *testing.T) {
 	d.AttSaves = SavesStat{}
 	d.Assist = TrustState{}
 
-	out := strings.Join(RenderGameOverCardV2(d), "\n")
+	out := strings.Join(RenderGameOverCardV2(d, gameOverCardMinW), "\n")
 	if strings.Count(out, "unknown") < 3 {
 		t.Fatalf("unmeasured figures did not all render as unknown:\n%s", out)
 	}
@@ -201,7 +201,7 @@ func TestOverlayCenteredV2Contract(t *testing.T) {
 	for i := range base {
 		base[i] = strings.Repeat(".", 100)
 	}
-	card := RenderGameOverCardV2(sampleGameOverData())
+	card := RenderGameOverCardV2(sampleGameOverData(), gameOverCardMinW)
 
 	for _, width := range []int{100, 84, 60, 46, 30} {
 		out := OverlayCenteredV2(base, card, width)
@@ -307,7 +307,7 @@ func TestOverlayCenteredV2DegenerateInputs(t *testing.T) {
 // over a placeholder board, for visual review against
 // testdata/mockups/gameover-100x30.txt lines 6-18.
 func TestRenderGameOverCardV2Demo(t *testing.T) {
-	card := RenderGameOverCardV2(sampleGameOverData())
+	card := RenderGameOverCardV2(sampleGameOverData(), gameOverCardMinW)
 	t.Logf("game-over card:\n%s", strings.Join(card, "\n"))
 
 	base := make([]string, 16)
@@ -316,4 +316,53 @@ func TestRenderGameOverCardV2Demo(t *testing.T) {
 	}
 	t.Logf("composited over a %d-column board:\n%s",
 		boardMaxW, strings.Join(OverlayCenteredV2(base, card, boardMaxW), "\n"))
+}
+
+// TestGameOverCardWidensForLongNames is the fix for a defect a live
+// recording produced and no test had: at a fixed 46 columns the WINNER row
+// read "gemini-2.5-flash-lite   ATTACKE" and the end-reason row
+// "CORE LOST   defender_lives_depl". Both were clipped mid-word, and both
+// are rows the card exists to state.
+func TestGameOverCardWidensForLongNames(t *testing.T) {
+	d := sampleGameOverData()
+	d.WinnerName = "gemini-2.5-flash-lite"
+	d.EndedBy, d.EndedDetail = "CORE LOST", "defender_lives_depleted"
+
+	w := gameOverCardWidth(d, boardMaxW)
+	card := RenderGameOverCardV2(d, w)
+	joined := strings.Join(card, "\n")
+
+	for _, want := range []string{"gemini-2.5-flash-lite", d.WinnerRole, "defender_lives_depleted"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("card clipped %q at width %d:\n%s", want, w, joined)
+		}
+	}
+	if err := checkFits(joined, w, len(card)); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestGameOverCardWidthStaysInsideItsPane checks the widening never pushes
+// the card past the pane it will be composited into, at every pane width the
+// layout can produce.
+func TestGameOverCardWidthStaysInsideItsPane(t *testing.T) {
+	d := sampleGameOverData()
+	d.WinnerName = strings.Repeat("very-long-model-name", 5)
+
+	for _, paneW := range []int{boardMaxW, 80, 60, 50, 46, 30} {
+		w := gameOverCardWidth(d, paneW)
+		if w > gameOverCardMaxW {
+			t.Fatalf("paneW=%d: width %d exceeds the maximum", paneW, w)
+		}
+		if w < gameOverCardMinW {
+			t.Fatalf("paneW=%d: width %d is below the minimum", paneW, w)
+		}
+		if paneW >= gameOverCardMinW+6 && w > paneW-6 {
+			t.Fatalf("paneW=%d: width %d leaves no board visible", paneW, w)
+		}
+		card := RenderGameOverCardV2(d, w)
+		if err := checkFits(strings.Join(card, "\n"), w, len(card)); err != nil {
+			t.Fatalf("paneW=%d: %v", paneW, err)
+		}
+	}
 }

@@ -1,5 +1,5 @@
-  DEFENDER   o3                                               WAVE 2/5  ████░░░░░░   tick 117/400                                               gpt-4   ATTACKER
-  lives 7/20 ████░░░░░░   $55 +5/t                               TURN [ATT]     speed 1.0x     RUN                                $0 +5/t   sent 33  breached 13
+  DEFENDER   o3                                                WAVE 2/5  ████░░░░░░   tick 117/0                                                gpt-4   ATTACKER
+  lives 7/20 ████░░░░░░   $55 +5/t                               TURN [ATT]     speed 1.0x     RUN                                $0 +5/t   sent 44  breached 13
   built ^3   authored 100%                                     leaked 3 of last 8 enemies resolved                                      live o10   authored 100%
 ─ ENGINE ASSIST ON ─────────────────────────────────────────────────────────────────┬─ provenance measured ─────────────────────────────────────────────────────
 ┌─ SPAWN >> ─────────────────────────────────────────────────────────── CORE 7/20 ─┐│───── │ ─── │ ────────────────── │ WAVE 1 OPENS   5 queued                 
@@ -24,7 +24,7 @@
                                                                                     │   97 │ ATT │ BREACH o 10,79     │ !! core hit   lives 10 -> 9             
  lives      7/20  ████░░░░░░               breaches   13    lives taken             │   97 │ DEF │ place              │ x  unknown                              
  economy    $55   +5/tick                  economy    $0    +5/tick                 │   99 │ DEF │ place              │ x  unknown                              
- built      ^3                             sent       33 total    live 10           │  101 │ ATT │ BREACH o 10,79     │ !! core hit   lives 9 -> 8              
+ built      ^3                             sent       44 total    live 10           │  101 │ ATT │ BREACH o 10,79     │ !! core hit   lives 9 -> 8              
  research   none bought                    abilities  none used                     │  101 │ DEF │ place              │ x  unknown                              
  authored   100%  ██████████████████       authored   100%  ██████████████████      │  103 │ ATT │ BREACH o 10,79     │ !! core hit   lives 8 -> 7              
  calls      59    0 tok                    calls      58    0 tok                   │  103 │ DEF │ place              │ x  unknown                              
@@ -34,7 +34,7 @@
  "scripted"                                "scripted"                               │  111 │ DEF │ place              │ x  unknown                              
                                                                                     │  112 │ ATT │ spawn              │ x  invalid or unaffordable spawn        
                                                                                     │  113 │ DEF │ place              │ x  unknown                              
-─ MATCH TIMELINE ──────────────────────────────────────────────────── tick 117/400 ─│  114 │ ATT │ spawn              │ x  invalid or unaffordable spawn        
+─ MATCH TIMELINE ──────────────────────────────────────────────── tick 117, no cap ─│  114 │ ATT │ spawn              │ x  invalid or unaffordable spawn        
     wave     sent   leaked   killed   towers   lives    result                      │  115 │ DEF │ place              │ x  unknown                              
        1        2        2        0        2   20->18   held                        │  116 │ ATT │ spawn              │ x  invalid or unaffordable spawn        
        2       42       11       21        3   18->7    in progress                 │  117 │ DEF │ place              │ x  unknown                              
@@ -43,8 +43,8 @@
   authored   DEF 100%   ATT 100%      provenance measured                           │  DEFENDER  blue         ATTACKER  orange   TERRAIN  grey                  
   engine     substituted 0 decisions    ENGINE ASSIST ON                            │  ^  basic tower   100   o  grunt           .  path                        
   rejected   DEF 56 turns lost to place   ATT 23                                    │  !  sniper        100   f  fast            #  wall                        
-  waves      2 of 5 played   ends at wave 5 or tick 400, whichever comes first      │  *  splash        200   t  tank            ~  slow zone                   
-  horizon    █████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  tick 117/400            │  +  buffer        300   s  shielded        X  breach (rev)                
+  waves      2 of 5 played   ends at wave 5, no tick cap set                        │  *  splash        200   t  tank            ~  slow zone                   
+  horizon    ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  tick 117, no cap        │  +  buffer        300   s  shielded        X  breach (rev)                
   ruleset    balance v3 9d459d   5 waves   assists on   pricing unset               │  BOLD = level 2+        h  healer          >  flow direction              
                                                                                     │  punctuation = tower    lowercase = enemy  >>> the engine acted           
 space pause · +/- speed · a ai:on · r range · L logs:off · q quit                                                                                               

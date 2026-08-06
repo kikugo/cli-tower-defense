@@ -26,10 +26,10 @@ var ansiStripRE = regexp.MustCompile("\x1b\\[[0-9;]*m")
 
 func TestViewGoldenSnapshot160x50(t *testing.T) {
 	g := newScriptedGame(t, "o3", "gpt-4")
-	// maxTicks is set explicitly: the header and timeline both render "no
-	// cap" when it is zero, and a golden that captured that state would be
-	// pinning a configuration no real run uses.
-	m := model{game: g, tickDur: 100 * time.Millisecond, width: 160, height: 50, maxTicks: 400}
+	// No maxTicks: the interactive view reports no tick cap because the
+	// interactive Update loop enforces none (model.tickHorizon), so setting
+	// one here would pin a value the view deliberately ignores.
+	m := model{game: g, tickDur: 100 * time.Millisecond, width: 160, height: 50}
 
 	got := ansiStripRE.ReplaceAllString(m.View(), "")
 
