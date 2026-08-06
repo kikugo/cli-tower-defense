@@ -230,12 +230,24 @@ func timelineSummaryLines(d TimelineData, width int) []string {
 			fmtAuthored(d.DefAuthored), fmtAuthored(d.AttAuthored), d.Assist.provenanceLabel())),
 		row("engine", engineRow),
 		row("rejected", rejected),
-		row("waves", fmt.Sprintf("%d of %d played   ends at wave %d or tick %d, whichever comes first",
-			d.Wave, d.MaxWave, d.MaxWave, d.MaxTick)),
-		row("horizon", fmt.Sprintf("%s  tick %d of %d",
-			fillBar(int(d.Tick), int(d.MaxTick), horizonBarW), d.Tick, d.MaxTick)),
+		row("waves", horizonSentenceV2(d)),
+		row("horizon", fmt.Sprintf("%s  %s",
+			fillBar(int(d.Tick), int(d.MaxTick), horizonBarW), fmtTick(d.Tick, d.MaxTick))),
 		row("ruleset", orElse(d.Ruleset, "ruleset not stamped")),
 	}
+}
+
+// horizonSentenceV2 states what will end the match. With no tick cap
+// configured there is only one horizon to name, and claiming a tick limit
+// that does not exist would be a fabricated fact on the row whose entire job
+// is stating the match's terms.
+func horizonSentenceV2(d TimelineData) string {
+	if d.MaxTick <= 0 {
+		return fmt.Sprintf("%d of %d played   ends at wave %d, no tick cap set",
+			d.Wave, d.MaxWave, d.MaxWave)
+	}
+	return fmt.Sprintf("%d of %d played   ends at wave %d or tick %d, whichever comes first",
+		d.Wave, d.MaxWave, d.MaxWave, d.MaxTick)
 }
 
 // barBudget sizes a summary row's bar: everything left of the row's width
@@ -281,8 +293,7 @@ func RenderTimelineV2(rc rect, d TimelineData) []string {
 	}
 
 	rows := make([]string, 0, rc.h)
-	rows = append(rows, titledRuleV2(rc.w, "MATCH TIMELINE",
-		fmt.Sprintf("tick %d of %d", d.Tick, d.MaxTick)))
+	rows = append(rows, titledRuleV2(rc.w, "MATCH TIMELINE", fmtTick(d.Tick, d.MaxTick)))
 
 	table := buildWaveTableRows(d.Waves, tableBudget)
 	if len(table) > 0 {

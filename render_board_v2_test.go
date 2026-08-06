@@ -162,7 +162,7 @@ func TestBoardV2FitsAtEverySize(t *testing.T) {
 				if err := checkFits(strings.Join(mapRows, "\n"), l.mapPane.w, l.mapPane.h); err != nil {
 					t.Fatalf("w=%d h=%d mode=%v mapPane: %v", w, h, l.mode, err)
 				}
-				labelRows := renderLabelRowV2(g, rect{w: l.label.w, h: l.label.h}, sampleTrustStateV2())
+				labelRows := renderLabelRowV2(g, rect{w: l.label.w, h: l.label.h}, sampleTrustStateV2(), 400)
 				if err := checkFits(strings.Join(labelRows, "\n"), l.label.w, l.label.h); err != nil {
 					t.Fatalf("w=%d h=%d mode=%v label: %v", w, h, l.mode, err)
 				}
@@ -375,7 +375,7 @@ func TestRenderBoardV2Demo(t *testing.T) {
 
 		switch l.mode {
 		case modeMinimum, modeCompact:
-			for _, row := range renderLabelRowV2(g, rect{w: l.label.w, h: l.label.h}, sampleTrustStateV2()) {
+			for _, row := range renderLabelRowV2(g, rect{w: l.label.w, h: l.label.h}, sampleTrustStateV2(), 400) {
 				t.Logf("%s", row)
 			}
 			for _, row := range renderMapPaneV2(g, rect{w: l.mapPane.w, h: l.mapPane.h}, 0) {

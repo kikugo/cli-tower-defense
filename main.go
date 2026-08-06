@@ -61,10 +61,15 @@ type model struct {
 	ratingsJSON   string
 	replayIn      string
 	replayMode    bool
-	replay        []eng.ReplayEvent
-	replayIdx     int
-	seed          int64
-	ruleset       eng.ArenaRuleset
+	// asciiMode folds the UI's box-drawing and block characters down to
+	// ASCII at the output stage (render_theme_v2.go). It is a property of
+	// the terminal, not of any pane, which is why it lives here and is
+	// applied once rather than threaded through the renderers.
+	asciiMode bool
+	replay    []eng.ReplayEvent
+	replayIdx int
+	seed      int64
+	ruleset   eng.ArenaRuleset
 }
 
 func initialModel() model {
@@ -91,6 +96,7 @@ func initialModel() model {
 	tournamentMD := flag.String("tournament-md", "", "write tournament markdown report to this path")
 	balanceSweep := flag.String("balance-sweep", "", "run balance sweep config JSON and print win-rate table")
 	ratingsJSON := flag.String("ratings-json", "", "path to read/write persistent model ratings for tournaments")
+	ascii := flag.Bool("ascii", false, "draw the UI with ASCII characters only (no box-drawing or block glyphs)")
 	flag.Parse()
 	_ = godotenv.Load()
 	var g *eng.Game
@@ -155,7 +161,7 @@ func initialModel() model {
 			g.AIDecisionInterval[g.Attacker] = 0
 		}
 	}
-	m := model{game: g, tickDur: 100 * time.Millisecond, headless: *headless, maxTicks: *maxTicks, resultJSON: *resultJSON, replayJSON: *replayJSON, manifestJSON: *manifestJSON, reportMD: *reportMD, tournament: *tournament, tournamentCSV: *tournamentCSV, tournamentMD: *tournamentMD, balanceSweep: *balanceSweep, ratingsJSON: *ratingsJSON, replayIn: *replayIn, seed: *seed, ruleset: appliedRuleset}
+	m := model{game: g, tickDur: 100 * time.Millisecond, headless: *headless, maxTicks: *maxTicks, resultJSON: *resultJSON, replayJSON: *replayJSON, manifestJSON: *manifestJSON, reportMD: *reportMD, tournament: *tournament, tournamentCSV: *tournamentCSV, tournamentMD: *tournamentMD, balanceSweep: *balanceSweep, ratingsJSON: *ratingsJSON, replayIn: *replayIn, seed: *seed, ruleset: appliedRuleset, asciiMode: *ascii}
 	m.syncPauseDuration()
 	if *replayIn != "" {
 		var events []eng.ReplayEvent
@@ -337,78 +343,10 @@ func (m model) View() string {
 		return "loading..."
 	}
 
-	lyt := computeLayout(m.width, m.height)
-	if lyt.mode == layoutTooSmall {
-		return tooSmallNotice(m.width, m.height)
-	}
-
-	if m.game.GameOver {
-		return m.gameOverView(lyt)
-	}
-
-	statusRow := padCells(renderStatusText(m.game, m.tickDur, m.paused), lyt.w)
-	keybarRow := padCells(renderKeyText(m.paused, m.game.AIEnabled, m.showLogs), lyt.w)
-
-	viewportW := boardViewportWidth(m.game.MapWidth, lyt.board.w)
-	panX := autoFollowPanX(m.game, viewportW)
-	boardRows := renderBoard(m.game, lyt.board, panX, m.showRange)
-	statsRows := renderStats(m.game, lyt.stats)
-	sideRows := m.buildSideRows(lyt)
-
-	body := composeBody(lyt, boardRows, statsRows, sideRows)
-	all := vstack([]string{statusRow}, body, []string{keybarRow})
-	return strings.Join(all, "\n")
-}
-
-// gameOverView renders the match-over screen: the frozen final board (the
-// same state the live view would already be showing, since Update() stops
-// calling UpdateGameState once GameOver is true -- nothing here recomputes
-// anything) with a centered MATCH OVER result card spliced into it, plus the
-// same stats pane and move feed/log pane the live view renders. This
-// replaces the old bare "Game Over! Winner: %s\nPress q to quit." string,
-// which discarded the board, score, wave, and cost at the exact moment they
-// matter most (see main_view_test.go's TestGameOverContentPresence for the
-// regression test that catches a return to that behavior -- the fit
-// invariant alone cannot, since a two-line string fits every terminal).
-func (m model) gameOverView(lyt layout) string {
-	statusRow := padCells(renderGameOverStatusText(m.game), lyt.w)
-	keybarRow := padCells(renderGameOverKeyText(m.showLogs), lyt.w)
-
-	viewportW := boardViewportWidth(m.game.MapWidth, lyt.board.w)
-	panX := autoFollowPanX(m.game, viewportW)
-	cardMaxW, cardMaxH := boardInteriorSize(m.game, lyt.board)
-	card := buildGameOverCard(m.game, cardMaxW, cardMaxH)
-	boardRows := renderBoardWithCard(m.game, lyt.board, panX, m.showRange, card)
-	statsRows := renderStats(m.game, lyt.stats)
-	sideRows := m.buildSideRows(lyt)
-
-	body := composeBody(lyt, boardRows, statsRows, sideRows)
-	all := vstack([]string{statusRow}, body, []string{keybarRow})
-	return strings.Join(all, "\n")
-}
-
-// buildSideRows selects the live view's right-hand/lower pane content: the
-// move feed by default, or the raw log window when 'L' has toggled it on.
-// Shared by View() and gameOverView() so the two paths can't drift in how
-// they build this pane -- only the board and status/key text differ between
-// them.
-func (m model) buildSideRows(lyt layout) []string {
-	if m.showLogs {
-		return fitLines(selectLogWindow(m.game.Logs, lyt.moves.h, m.logScroll), lyt.moves.w, lyt.moves.h)
-	}
-	return renderMoveFeed(buildMoveFeed(m.game.ReplayEvents), lyt.moves.w, lyt.moves.h)
-}
-
-// composeBody assembles the board/stats/move-feed panes into the final body
-// rows for a given layout: wide mode joins the board+stats left column
-// beside the full-height move feed; compact/stacked modes stack all three
-// vertically. Shared by the live view and the game-over view.
-func composeBody(lyt layout, boardRows, statsRows, sideRows []string) []string {
-	if lyt.mode == layoutWide {
-		left := vstack(boardRows, statsRows)
-		return hjoin(left, lyt.board.w, sideRows, lyt.moves.w)
-	}
-	return vstack(boardRows, statsRows, sideRows)
+	// The redesign. ViewV2 (main_view_v2.go) owns the live and game-over
+	// screens for every terminal size; the old computeLayout path this
+	// function used to take is gone with the renderers that fed it.
+	return m.ViewV2()
 }
 
 // waveProgressBar renders wave progress as a compact bar for the sidebar.

@@ -242,6 +242,17 @@ func fmtLeakShort(l LeakStat) string {
 	return fmt.Sprintf("leaked %d of last %d", l.Leaked, l.Window)
 }
 
+// fmtTick renders the tick counter. A MaxTick of 0 means no cap was
+// configured for this run, and "tick 117/0" is worse than useless -- it
+// reads as a finished match, and fillBar would draw a full bar for it. The
+// uncapped case says so instead.
+func fmtTick(tick, maxTick int64) string {
+	if maxTick <= 0 {
+		return fmt.Sprintf("tick %d, no cap", tick)
+	}
+	return fmt.Sprintf("tick %d/%d", tick, maxTick)
+}
+
 func builtOrNothing(s string) string {
 	if s == "" {
 		return "nothing"
@@ -330,7 +341,13 @@ func threeCol(width int, left, center, right string) string {
 // mirrored left/center/right shape to preserve, just a left-to-right list
 // of stats.
 func joinFields(width int, fields ...string) string {
-	return padCells(strings.Join(fields, "   "), width)
+	kept := make([]string, 0, len(fields))
+	for _, f := range fields {
+		if f != "" {
+			kept = append(kept, f)
+		}
+	}
+	return padCells(strings.Join(kept, "   "), width)
 }
 
 // --- the trust band ---------------------------------------------------
@@ -508,8 +525,19 @@ func renderCollapsedHeader(mode layoutModeV2, w int, data MatchHeaderData) []str
 	defName := shortName(data.Defender.ModelName, nb)
 	attName := shortName(data.Attacker.ModelName, nb)
 
+	// Narrow mode is the one collapsed mode with no label row under it (it
+	// draws a framed board, not the borderless map that minimum/compact
+	// title with "W12/30 t117/400 ..."), so it is the one that has to carry
+	// wave and tick in the header itself. Adding them for all three would
+	// duplicate the label row at 80 columns, where space is scarcest.
+	waveField := ""
+	if mode == modeNarrow {
+		waveField = fmt.Sprintf("W%d/%d %s", data.Wave, data.MaxWave, fmtTick(data.Tick, data.MaxTick))
+	}
+
 	row1 := joinFields(w,
 		"  DEF "+defName,
+		waveField,
 		fmt.Sprintf("%d/%d %s", data.Defender.Lives, data.Defender.MaxLives, fillBar(data.Defender.Lives, data.Defender.MaxLives, 10)),
 		moneyShort(data.Defender.Resources, data.Defender.Income),
 		"saves "+fmtSaves(data.Defender.Saves),

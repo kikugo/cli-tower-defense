@@ -8,15 +8,25 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// towerGlyphs maps tower types to their board glyphs. Shared by the live view
-// and the replay board.
-var towerGlyphs = map[string]rune{"basic": '^', "splash": '⊕', "sniper": '⌖', "buffer": 'B'}
+// The replay board draws from the SAME glyph vocabulary as the live board
+// (glyphs_v2.go). It used to keep its own table -- '⊕' for splash, '⌖' for
+// sniper, '⬡' for a wall, '✗' for a breach -- which meant a replay of a
+// match looked like a different game from the match itself, and several of
+// those characters are two display cells wide in emoji-capable fonts, the
+// exact defect the redesign's one-column rule exists to prevent.
+//
+// The replay screen's LAYOUT is still computeLayout's, not computeLayoutV2's:
+// there is no replay mockup in testdata/mockups, so porting it would mean
+// inventing a six-mode design with nothing to check it against. The glyphs
+// and palette are shared; the pane arithmetic is not. That split is
+// deliberate and is the one place the two designs still meet.
 
-var (
-	breachStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true)
-	highlightStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("226")).Bold(true)
-	obstacleStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
-)
+// highlightGlyphV2 marks the tile the currently-selected replay event is
+// about. It is not in glyphs_v2.go because nothing else in the UI has a
+// concept of a selected tile -- only the replay inspector does.
+const highlightGlyphV2 = '@'
+
+var highlightStyle = lipgloss.NewStyle().Reverse(true)
 
 // buildSnapshotGrid draws the reconstructed board into a rune grid.
 // Overlay order: path, obstacles, towers, breaches, highlight (topmost).
@@ -37,39 +47,37 @@ func buildSnapshotGrid(snap eng.ReplaySnapshot, highlight *eng.Position) [][]run
 	for _, path := range snap.MapPaths {
 		for _, pos := range path {
 			if inBounds(pos) {
-				grid[pos.Y][pos.X] = '·'
+				grid[pos.Y][pos.X] = pathGlyphV2
 			}
 		}
 	}
 	for _, pos := range snap.MapObstacles {
 		if inBounds(pos) {
-			grid[pos.Y][pos.X] = '⬡'
+			grid[pos.Y][pos.X] = wallGlyphV2
 		}
 	}
 	for _, t := range snap.Towers {
-		glyph, ok := towerGlyphs[t.TowerType]
-		if !ok {
-			glyph = '^'
-		}
 		if inBounds(t.Pos) {
-			grid[t.Pos.Y][t.Pos.X] = glyph
+			grid[t.Pos.Y][t.Pos.X] = towerGlyph(t.TowerType)
 		}
 	}
 	for _, pos := range snap.BreachPoints {
 		if inBounds(pos) {
-			grid[pos.Y][pos.X] = '✗'
+			grid[pos.Y][pos.X] = breachGlyphV2
 		}
 	}
 	if highlight != nil && inBounds(*highlight) {
-		grid[highlight.Y][highlight.X] = '◉'
+		grid[highlight.Y][highlight.X] = highlightGlyphV2
 	}
 	return grid
 }
 
 // styleSnapshotGridRow renders columns [colStart, colStart+cols) of grid row
-// y using the same per-glyph switch renderSnapshotBoard applies to a whole
-// row -- factored out so both the legacy whole-board render and the
-// viewport-bounded renderReplayBoard share one styling definition.
+// y through the shared palette (glyphStyleV2), so a tower is the defender's
+// colour in a replay for the same reason it is in a live match. The
+// event-highlight marker is the one glyph with no role in that palette, so
+// it is handled first and drawn in reverse video -- an SGR attribute, which
+// survives a 16-colour terminal where a hue would not.
 func styleSnapshotGridRow(grid [][]rune, y, colStart, cols int) string {
 	var b strings.Builder
 	row := grid[y]
@@ -79,20 +87,11 @@ func styleSnapshotGridRow(grid [][]rune, y, colStart, cols int) string {
 	}
 	for x := colStart; x < end; x++ {
 		r := row[x]
-		switch r {
-		case '·':
-			b.WriteString(pathStyle.Render(string(r)))
-		case '⬡':
-			b.WriteString(obstacleStyle.Render(string(r)))
-		case '^', '⊕', '⌖', 'B':
-			b.WriteString(towerColor[towerGlyphType[r]].Render(string(r)))
-		case '✗':
-			b.WriteString(breachStyle.Render(string(r)))
-		case '◉':
+		if r == highlightGlyphV2 {
 			b.WriteString(highlightStyle.Render(string(r)))
-		default:
-			b.WriteRune(r)
+			continue
 		}
+		b.WriteString(glyphStyleV2(r).Render(string(r)))
 	}
 	return b.String()
 }

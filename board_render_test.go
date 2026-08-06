@@ -24,20 +24,32 @@ func TestBuildSnapshotGridPlacesGlyphs(t *testing.T) {
 	if grid == nil {
 		t.Fatalf("expected grid")
 	}
-	if grid[2][1] != '·' {
+	// The replay board draws from glyphs_v2.go, the same vocabulary the live
+	// board uses -- so these are the redesign's characters, not the retired
+	// '·' / '⌖' / '⬡' / '✗' / '◉' set this test used to pin.
+	if grid[2][1] != pathGlyphV2 {
 		t.Fatalf("expected path glyph at 2,1 got %q", grid[2][1])
 	}
-	if grid[1][1] != '⌖' {
+	if grid[1][1] != towerGlyph("sniper") {
 		t.Fatalf("expected sniper glyph at 1,1 got %q", grid[1][1])
 	}
-	if grid[0][9] != '⬡' {
-		t.Fatalf("expected obstacle glyph at 0,9 got %q", grid[0][9])
+	if grid[0][9] != wallGlyphV2 {
+		t.Fatalf("expected wall glyph at 0,9 got %q", grid[0][9])
 	}
-	if grid[2][2] != '✗' {
+	if grid[2][2] != breachGlyphV2 {
 		t.Fatalf("expected breach glyph at 2,2 got %q", grid[2][2])
 	}
-	if grid[2][0] != '◉' {
+	if grid[2][0] != highlightGlyphV2 {
 		t.Fatalf("expected highlight glyph at 2,0 got %q", grid[2][0])
+	}
+
+	// Every glyph the replay board can draw must be one display column, the
+	// same rule the live board holds to -- three of the retired ones were
+	// not, which is why they went.
+	for _, r := range []rune{pathGlyphV2, wallGlyphV2, breachGlyphV2, highlightGlyphV2, towerGlyph("sniper")} {
+		if w := frameDisplayWidth(string(r)); w != 1 {
+			t.Fatalf("replay glyph %q is %d display columns, want 1", string(r), w)
+		}
 	}
 }
 

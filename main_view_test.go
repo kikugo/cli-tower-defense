@@ -419,11 +419,15 @@ func TestGameOverContentPresence(t *testing.T) {
 	}
 
 	result := game.BuildMatchResult()
-	winnerName := shortName(result.WinnerModel, gameOverCardNameCells)
+	// The redesigned card shows the model name in full (nameBudget is
+	// generous enough for any realistic one) and its scores comma-separated
+	// on one row each, so the expectations below are built the way
+	// RenderGameOverCardV2 builds them rather than the way the old card did.
+	winnerName := result.WinnerModel
 	if winnerName == "" {
-		t.Fatalf("test setup invariant violated: shortName(%q, %d) is empty", result.WinnerModel, gameOverCardNameCells)
+		t.Fatalf("test setup invariant violated: the match has no winner model name")
 	}
-	scoreText := fmt.Sprintf("%d / %d", result.Score[result.Defender], result.Score[result.Attacker])
+	scoreText := fmt.Sprintf("DEF %s", commaInt(result.Score[result.Defender]))
 	waveText := fmt.Sprintf("%d/%d", result.Waves, result.MaxWaves)
 	t.Logf("game over result: winner=%s (%s) reason=%q wave=%s score=%s", result.Winner, winnerName, result.WinReason, waveText, scoreText)
 
