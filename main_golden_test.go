@@ -26,7 +26,10 @@ var ansiStripRE = regexp.MustCompile("\x1b\\[[0-9;]*m")
 
 func TestViewGoldenSnapshot160x50(t *testing.T) {
 	g := newScriptedGame(t, "o3", "gpt-4")
-	m := model{game: g, tickDur: 100 * time.Millisecond, width: 160, height: 50}
+	// maxTicks is set explicitly: the header and timeline both render "no
+	// cap" when it is zero, and a golden that captured that state would be
+	// pinning a configuration no real run uses.
+	m := model{game: g, tickDur: 100 * time.Millisecond, width: 160, height: 50, maxTicks: 400}
 
 	got := ansiStripRE.ReplaceAllString(m.View(), "")
 

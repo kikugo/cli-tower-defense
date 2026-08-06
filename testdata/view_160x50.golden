@@ -1,50 +1,50 @@
-Wave 2/5 [████────────] · tick 117 · turn ▸ATT · 1.0x · ▶                                                                                                       
-┌──────────────────────────────────────────────────────────────────────────────────┐   95 │ DEF │ REJECT plac │ rejected:                                       
-│                                                                                  │   96 │ ATT │ spawn       │                                                 
-│                                                                     ⬡            │   96 │ ATT │ spawn       │ 9,0                                             
-│                    ┼─┼  ─ ┼──┼  ┼────────┼    ┼─────────┼                        │   97 │ ATT │ breach      │ 10,79                                           
-│ ^^           ┼─┼  ┼   ┼┼ ─    ┼┼          ┼  ┼           ┼─┼    ─                │   97 │ DEF │ place       │                                                 
-│ ·───────────┼   ┼┼    ┼──┼  ─              ┼┼               ┼──┼ ┼     ┼───────· │   97 │ DEF │ REJECT plac │ rejected:                                       
-│ ^                    o    ┼o o                                    ┼   ┼          │   98 │ ATT │ spawn       │                                                 
-│              o o  ┼─┼         ┼o─────┼ ┼─┼                         ┼─┼           │   98 │ ATT │ spawn       │ 4,0                                             
-│          ┼─o┼ ─ ┼┼                    ─   ┼──────┼                               │   99 │ DEF │ place       │                                                 
-│         ┼                      ⬡                  ┼──────┼                       │   99 │ DEF │ REJECT plac │ rejected:                                       
-│ ·──────┼                                                  ┼┼        ┼─┼          │  100 │ ATT │ spawn       │                                                 
-│                                                             ┼o o┼ ┼┼ ⬡ ┼─o─────· │  100 │ ATT │ spawn       │ 4,0                                             
-│                                                               ─  ─               │  101 │ ATT │ breach      │ 10,79                                           
-│                   ⬡                                                              │  101 │ DEF │ place       │                                                 
-│                                                                                  │  101 │ DEF │ REJECT plac │ rejected:                                       
-└──────────────────────────────────────────────────────────────────────────────────┘  102 │ ATT │ spawn       │                                                 
-             DEFENDER          ATTACKER                                               102 │ ATT │ spawn       │ 9,0                                             
-             o3                gpt-4                                                  103 │ ATT │ breach      │ 10,79                                           
-lives/res    7 ♥ 55 ⛁+5        0 ⛁+5                                                  103 │ DEF │ place       │                                                 
-board        3 towers          10 enemies · wave 2/5                                  103 │ DEF │ REJECT plac │ rejected:                                       
-calls/cost   59 · 0 · -        58 · 0 · -                                             104 │ ATT │ spawn       │                                                 
-                                                                                      104 │ ATT │ spawn       │ 9,0                                             
-                                                                                      105 │ DEF │ place       │                                                 
-                                                                                      105 │ DEF │ REJECT plac │ rejected:                                       
-                                                                                      106 │ ATT │ spawn       │                                                 
-                                                                                      106 │ ATT │ spawn       │ 9,0                                             
-                                                                                      107 │ DEF │ place       │                                                 
-                                                                                      107 │ DEF │ REJECT plac │ rejected:                                       
-                                                                                      108 │ ATT │ spawn       │                                                 
-                                                                                      108 │ ATT │ spawn       │ 4,0                                             
-                                                                                      109 │ DEF │ place       │                                                 
-                                                                                      109 │ DEF │ REJECT plac │ rejected:                                       
-                                                                                      110 │ ATT │ spawn       │                                                 
-                                                                                      110 │ ATT │ spawn       │ 4,0                                             
-                                                                                      111 │ DEF │ place       │                                                 
-                                                                                      111 │ DEF │ REJECT plac │ rejected:                                       
-                                                                                      112 │ ATT │ spawn       │                                                 
-                                                                                      112 │ ATT │ REJECT spaw │ rejected:invalid_or_unaf                        
-                                                                                      113 │ DEF │ place       │                                                 
-                                                                                      113 │ DEF │ REJECT plac │ rejected:                                       
-                                                                                      114 │ ATT │ spawn       │                                                 
-                                                                                      114 │ ATT │ REJECT spaw │ rejected:invalid_or_unaf                        
-                                                                                      115 │ DEF │ place       │                                                 
-                                                                                      115 │ DEF │ REJECT plac │ rejected:                                       
-                                                                                      116 │ ATT │ spawn       │                                                 
-                                                                                      116 │ ATT │ REJECT spaw │ rejected:invalid_or_unaf                        
-                                                                                      117 │ DEF │ place       │                                                 
-                                                                                      117 │ DEF │ REJECT plac │ rejected:                                       
+  DEFENDER   o3                                               WAVE 2/5  ████░░░░░░   tick 117/400                                               gpt-4   ATTACKER
+  lives 7/20 ████░░░░░░   $55 +5/t                               TURN [ATT]     speed 1.0x     RUN                                $0 +5/t   sent 33  breached 13
+  built ^3   authored 100%                                     leaked 3 of last 8 enemies resolved                                      live o10   authored 100%
+─ ENGINE ASSIST ON ─────────────────────────────────────────────────────────────────┬─ provenance measured ─────────────────────────────────────────────────────
+┌─ SPAWN >> ─────────────────────────────────────────────────────────── CORE 7/20 ─┐│───── │ ─── │ ────────────────── │ WAVE 1 OPENS   5 queued                 
+│                                                                                  ││───── │ ─── │ ────────────────── │ WAVE 1 CLEARED   0 leaked               
+│                                                                     #            ││───── │ ─── │ ────────────────── │ WAVE 2 OPENS   9 queued                 
+│                    .>.  . ....  ...>....>.    ....>....>.                        ││   43 │ ATT │ BREACH f 10,79     │ !! core hit   lives 20 -> 19            
+│ ^^           ..>  .   .. >    >.          .  >           ...    .                ││   45 │ ATT │ BREACH f 10,79     │ !! core hit   lives 19 -> 18            
+│ .....>....>..   ..    ...>  .              ..               >... >     ....>...X ││   48 │ ATT │ BREACH f 10,79     │ !! core hit   lives 18 -> 17            
+│ ^                    o    .o o                                    .   >          ││   52 │ ATT │ BREACH f 10,79     │ !! core hit   lives 17 -> 16            
+│              o o  ..>         >o...>.. .>.                         ...           ││   81 │ ATT │ BREACH o 4,79      │ !! core hit   lives 16 -> 15            
+│          .>o. . ..                    .   ...>....                               ││   85 │ ATT │ BREACH o 10,79     │ !! core hit   lives 15 -> 14            
+│         .                      #                  >....>..                       ││   85 │ DEF │ place              │ x  unknown                              
+│ .....>..                                                  ..        ..>          ││   86 │ ATT │ BREACH o 10,79     │ !! core hit   lives 14 -> 13            
+│                                                             >o o. .. # ..o.>...X ││   87 │ DEF │ place              │ x  unknown                              
+│                                                               .  >               ││   88 │ ATT │ BREACH o 10,79     │ !! core hit   lives 13 -> 12            
+│                   #                                                              ││   89 │ ATT │ BREACH o 10,79     │ !! core hit   lives 12 -> 11            
+│                                                                                  ││   89 │ DEF │ place              │ x  unknown                              
+└─ ? legend ───────────────────────────────────────────────────────────── r range ─┘│   90 │ ATT │ BREACH o 10,79     │ !! core hit   lives 11 -> 10            
+─ DEFENDER ──────────────────────────────── ATTACKER ───────────────────────────────│   91 │ DEF │ place              │ x  unknown                              
+ o3                                        gpt-4                                    │   93 │ DEF │ place              │ x  unknown                              
+ holds the core, places towers             sends waves, must reach the core         │   95 │ DEF │ place              │ x  unknown                              
+                                                                                    │   97 │ ATT │ BREACH o 10,79     │ !! core hit   lives 10 -> 9             
+ lives      7/20  ████░░░░░░               breaches   13    lives taken             │   97 │ DEF │ place              │ x  unknown                              
+ economy    $55   +5/tick                  economy    $0    +5/tick                 │   99 │ DEF │ place              │ x  unknown                              
+ built      ^3                             sent       33 total    live 10           │  101 │ ATT │ BREACH o 10,79     │ !! core hit   lives 9 -> 8              
+ research   none bought                    abilities  none used                     │  101 │ DEF │ place              │ x  unknown                              
+ authored   100%  ██████████████████       authored   100%  ██████████████████      │  103 │ ATT │ BREACH o 10,79     │ !! core hit   lives 8 -> 7              
+ calls      59    0 tok                    calls      58    0 tok                   │  103 │ DEF │ place              │ x  unknown                              
+ assist     none on this side              assist     none on this side             │  105 │ DEF │ place              │ x  unknown                              
+ saves      0 of 59  model-authored        saves      0 of 58  model-authored       │  107 │ DEF │ place              │ x  unknown                              
+ streak     0 of 2 toward an assist        streak     0 of 2 toward an assist       │  109 │ DEF │ place              │ x  unknown                              
+ "scripted"                                "scripted"                               │  111 │ DEF │ place              │ x  unknown                              
+                                                                                    │  112 │ ATT │ spawn              │ x  invalid or unaffordable spawn        
+                                                                                    │  113 │ DEF │ place              │ x  unknown                              
+─ MATCH TIMELINE ──────────────────────────────────────────────────── tick 117/400 ─│  114 │ ATT │ spawn              │ x  invalid or unaffordable spawn        
+    wave     sent   leaked   killed   towers   lives    result                      │  115 │ DEF │ place              │ x  unknown                              
+       1        2        2        0        2   20->18   held                        │  116 │ ATT │ spawn              │ x  invalid or unaffordable spawn        
+       2       42       11       21        3   18->7    in progress                 │  117 │ DEF │ place              │ x  unknown                              
+                                                                                    │                                                                           
+  lives      █████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  20 -> 7             │─ LEGEND ────────────────────────────────────────────────────── ? toggles ─
+  authored   DEF 100%   ATT 100%      provenance measured                           │  DEFENDER  blue         ATTACKER  orange   TERRAIN  grey                  
+  engine     substituted 0 decisions    ENGINE ASSIST ON                            │  ^  basic tower   100   o  grunt           .  path                        
+  rejected   DEF 56 turns lost to place   ATT 23                                    │  !  sniper        100   f  fast            #  wall                        
+  waves      2 of 5 played   ends at wave 5 or tick 400, whichever comes first      │  *  splash        200   t  tank            ~  slow zone                   
+  horizon    █████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  tick 117/400            │  +  buffer        300   s  shielded        X  breach (rev)                
+  ruleset    balance v3 9d459d   5 waves   assists on   pricing unset               │  BOLD = level 2+        h  healer          >  flow direction              
+                                                                                    │  punctuation = tower    lowercase = enemy  >>> the engine acted           
 space pause · +/- speed · a ai:on · r range · L logs:off · q quit                                                                                               
