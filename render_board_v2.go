@@ -76,16 +76,20 @@ package main
 // a fixture (no narrow-width mockup exists), and called out here explicitly
 // per the task brief's "anything that turned out to be false" ask.
 //
-// render_header_v2.go, written concurrently by another agent, did not exist
-// when this file was written. trustBandTextV2 below is the seam it is
-// expected to fill: a package-level function variable this file calls
-// everywhere it needs trust-band text, defaulting to a minimal built-in
-// fallback so this file builds and tests on its own in the meantime. Once
-// render_header_v2.go lands its own exported formatter, wiring it in is a
-// one-line change to trustBandTextV2's initializer (in an init() there, not
-// here -- this file must not be edited to make that connection, by the same
-// "don't touch each other's files" rule that applies to everyone else's
-// files from this file's side).
+// render_header_v2.go did not exist when this file was first written, so the
+// trust band arrived here as trustBandTextV2, a package-level func variable
+// taking an *eng.Game and defaulting to returning "". That seam is now
+// CLOSED: render_header_v2.go owns the trust band's vocabulary (TrustState
+// and its assistLabel/provenanceLabel), and this file calls TrustBandLabel
+// with a TrustState the caller supplies.
+//
+// The func-variable indirection is gone rather than rewired, and the reason
+// matters. It let this file build and test alone while two agents worked in
+// parallel, but it also meant the board could silently render an EMPTY trust
+// band forever if nobody ever assigned the variable -- a UI whose entire
+// purpose is to disclose engine intervention, defaulting to disclosing
+// nothing, with no compile error to say so. Taking a TrustState as a
+// parameter makes the caller pass one or fail to build.
 
 import (
 	"fmt"
@@ -97,80 +101,24 @@ import (
 )
 
 // --- glyphs ---------------------------------------------------------------
-
-// towerGlyphV2 maps engine tower-type strings to the redesign's punctuation
-// glyphs (rule 1). This intentionally duplicates, rather than reuses,
-// board_render.go's towerGlyphs map: that map still carries the RETIRED
-// glyphs (⌖ ⊕) this redesign removes, and board_render.go is explicitly
-// off-limits to edit in this phase.
-var towerGlyphV2 = map[string]rune{
-	"basic":  '^',
-	"sniper": '!',
-	"splash": '*',
-	"buffer": '+',
-}
-
-// enemyGlyphV2 maps engine enemy-type strings to the redesign's lowercase
-// glyphs (rule 1). The engine's own type string for the base enemy is
-// "basic"; the design's legend labels it "grunt" -- same entity, glyph 'o',
-// just a friendlier display name that doesn't collide with the basic TOWER
-// in prose.
-var enemyGlyphV2 = map[string]rune{
-	"basic":    'o',
-	"fast":     'f',
-	"tank":     't',
-	"shielded": 's',
-	"healer":   'h',
-}
-
-// enemyDisplayNameV2 gives the legend's prose name for each engine enemy
-// type -- "grunt" for "basic", everything else unchanged.
-var enemyDisplayNameV2 = map[string]string{
-	"basic":    "grunt",
-	"fast":     "fast",
-	"tank":     "tank",
-	"shielded": "shielded",
-	"healer":   "healer",
-}
-
-const (
-	pathGlyphV2     = '.'
-	flowGlyphV2     = '>'
-	wallGlyphV2     = '#'
-	slowZoneGlyphV2 = '~'
-	breachGlyphV2   = 'X'
-)
+//
+// The glyph vocabulary (towerGlyphV2, enemyGlyphV2, the terrain constants,
+// retiredGlyphsV2) now lives in glyphs_v2.go, shared with render_feed_v2.go
+// and the legend. Rules 1 and 2 above are stated in full there.
 
 // flowTickIntervalV2 controls how often a '>' flow tick punctuates an
-// otherwise plain '.' path run (rule 3): texture, not structure, so the
-// exact cadence is a style choice, not something any test pins down byte-
-// for-byte against the mockups.
+// otherwise plain '.' path run (rule 3): texture, not structure. It lives
+// here rather than in glyphs_v2.go because it is about how THIS file draws
+// a path, not about what any glyph means -- no other renderer has a path to
+// punctuate.
 const flowTickIntervalV2 = 5
-
-// retiredGlyphsV2 is the exact eight-glyph set the task brief names as
-// removed by this redesign -- several of these are two-display-columns wide
-// in emoji-capable fonts, which is why they had to go. Kept here (rather
-// than only in the test file) since it is as much a part of this file's
-// contract as the glyphs it DOES use.
-var retiredGlyphsV2 = []rune{'⬡', '⌖', '⊕', '≋', '□', '✗', '♥', '⛁'}
 
 // --- coupling seam with render_header_v2.go --------------------------------
 
-// trustBandTextV2 renders the trust/provenance segment ("ENGINE HELPED 2x",
-// "ENGINE ASSIST OFF", "ENGINE HELPED 9x", ...) that the mid/narrow board's
-// bottom border and the minimum/compact label row embed when the header
-// pane has no row of its own for it -- see this file's top-of-file doc
-// comment for the fixture evidence and the narrow-mode inference. Set to
-// trustBandFallbackV2 until render_header_v2.go supplies its real exported
-// formatter.
-var trustBandTextV2 = trustBandFallbackV2
-
-// trustBandFallbackV2 is the placeholder trustBandTextV2 starts out as: an
-// empty string, so callers that splice it into a border/label row degrade
-// to simply not showing a trust segment rather than showing a bogus one.
-func trustBandFallbackV2(g *eng.Game) string {
-	return ""
-}
+// (The trust band's text now comes from render_header_v2.go's
+// TrustBandLabel, called with a TrustState the caller passes in -- see the
+// top-of-file note on why the old func-variable seam was removed rather than
+// rewired.)
 
 // --- grid construction ------------------------------------------------------
 
@@ -241,22 +189,14 @@ func buildLiveGridV2(g *eng.Game) [][]rune {
 	}
 
 	for _, t := range g.Towers {
-		glyph, ok := towerGlyphV2[t.TowerType]
-		if !ok {
-			glyph = '^'
-		}
 		if inBoundsV2(t.Pos, g.MapHeight, g.MapWidth) {
-			grid[t.Pos.Y][t.Pos.X] = glyph
+			grid[t.Pos.Y][t.Pos.X] = towerGlyph(t.TowerType)
 		}
 	}
 
 	for _, e := range g.Enemies {
-		glyph, ok := enemyGlyphV2[e.EnemyType]
-		if !ok {
-			glyph = 'o'
-		}
 		if inBoundsV2(e.Pos, g.MapHeight, g.MapWidth) {
-			grid[e.Pos.Y][e.Pos.X] = glyph
+			grid[e.Pos.Y][e.Pos.X] = enemyGlyph(e.EnemyType)
 		}
 	}
 
@@ -358,7 +298,7 @@ func renderMapPaneV2(g *eng.Game, rc rect, panX int) []string {
 }
 
 // renderLabelRowV2 renders layout.label, the borderless map's one-row
-// title: wave/tick, the trust band (via trustBandTextV2), the leaked
+// title: wave/tick, the trust band (via TrustBandLabel), the leaked
 // summary, and the SPAWN>>/CORE markers, all packed into one row -- see
 // testdata/mockups/trust-80.txt and 80x24.txt for the packed format this
 // approximates. There is no per-test byte-exact content requirement for
@@ -366,7 +306,7 @@ func renderMapPaneV2(g *eng.Game, rc rect, panX int) []string {
 // content matches), so this builds a reasonable single line and lets
 // truncateCells/padCells enforce the width contract regardless of how much
 // of the line fits at the narrow end of compact mode's range (60 columns).
-func renderLabelRowV2(g *eng.Game, rc rect) []string {
+func renderLabelRowV2(g *eng.Game, rc rect, trust TrustState) []string {
 	if rc.h <= 0 {
 		return blankRows(rc.h, rc.w)
 	}
@@ -381,7 +321,7 @@ func renderLabelRowV2(g *eng.Game, rc rect) []string {
 	wave := fmt.Sprintf("W%d/%d t%d", g.Wave, g.MaxWaves, g.TickCount)
 
 	segments := []string{wave}
-	if tb := trustBandTextV2(g); tb != "" {
+	if tb := TrustBandLabel(trust); tb != "" {
 		segments = append(segments, tb)
 	}
 	segments = append(segments, fmt.Sprintf("SPAWN >> CORE %d/%d", g.Lives[defID], g.StartingLives))
@@ -461,7 +401,7 @@ func titledRuleV2(w int, left, right string) string {
 // renderFramedBoardV2 renders layout.board: the live map inside an 84-wide
 // (boardMaxW) frame whose top border always carries "SPAWN >>"/"CORE n/m"
 // and whose bottom border carries whatever the caller passes as
-// bottomLeft/bottomRight -- key hints in wide mode, trustBandTextV2's
+// bottomLeft/bottomRight -- key hints in wide mode, TrustBandLabel's
 // output in mid/narrow mode per this file's top-of-file coupling note.
 // Produces exactly rc.h rows of exactly rc.w columns, matching the
 // contract every other pane renderer in this codebase follows.
@@ -514,11 +454,11 @@ func boardBottomBorderKeyHintsV2() (left, right string) {
 }
 
 // boardBottomBorderTrustBandV2 is the mid/narrow-mode bottom-border text:
-// the trust band (via trustBandTextV2), packed in because the header pane
+// the trust band (via TrustBandLabel), packed in because the header pane
 // there has no row of its own for it -- see this file's top-of-file doc
 // comment.
-func boardBottomBorderTrustBandV2(g *eng.Game) (left, right string) {
-	return trustBandTextV2(g), ""
+func boardBottomBorderTrustBandV2(trust TrustState) (left, right string) {
+	return TrustBandLabel(trust), ""
 }
 
 // --- legend pane (mid/wide modes) --------------------------------------------
@@ -605,15 +545,15 @@ func legendWideLinesV2(g *eng.Game, w int) []string {
 		titledRuleV2(w, "LEGEND", "? toggles"),
 		fmt.Sprintf("  %-10s%-14s%-10s%-14s%-9s%s", "DEFENDER", "blue", "ATTACKER", "orange", "TERRAIN", "grey"),
 		fmt.Sprintf("  %c  %-14s%-4d  %c  %-16s%c  %s",
-			towerGlyphV2["basic"], "basic tower", towerCostV2(g, "basic"), enemyGlyphV2["basic"], enemyDisplayNameV2["basic"], rune(pathGlyphV2), "path"),
+			towerGlyphV2["basic"], "basic tower", towerCostV2(g, "basic"), enemyGlyphV2["basic"], enemyDisplayName("basic"), rune(pathGlyphV2), "path"),
 		fmt.Sprintf("  %c  %-14s%-4d  %c  %-16s%c  %s",
-			towerGlyphV2["sniper"], "sniper", towerCostV2(g, "sniper"), enemyGlyphV2["fast"], enemyDisplayNameV2["fast"], rune(wallGlyphV2), "wall"),
+			towerGlyphV2["sniper"], "sniper", towerCostV2(g, "sniper"), enemyGlyphV2["fast"], enemyDisplayName("fast"), rune(wallGlyphV2), "wall"),
 		fmt.Sprintf("  %c  %-14s%-4d  %c  %-16s%c  %s",
-			towerGlyphV2["splash"], "splash", towerCostV2(g, "splash"), enemyGlyphV2["tank"], enemyDisplayNameV2["tank"], rune(slowZoneGlyphV2), "slow zone"),
+			towerGlyphV2["splash"], "splash", towerCostV2(g, "splash"), enemyGlyphV2["tank"], enemyDisplayName("tank"), rune(slowZoneGlyphV2), "slow zone"),
 		fmt.Sprintf("  %c  %-14s%-4d  %c  %-16s%c  %s",
-			towerGlyphV2["buffer"], "buffer", towerCostV2(g, "buffer"), enemyGlyphV2["shielded"], enemyDisplayNameV2["shielded"], rune(breachGlyphV2), "breach (rev)"),
+			towerGlyphV2["buffer"], "buffer", towerCostV2(g, "buffer"), enemyGlyphV2["shielded"], enemyDisplayName("shielded"), rune(breachGlyphV2), "breach (rev)"),
 		fmt.Sprintf("  %-19s   %c  %-16s%c  %s",
-			"BOLD = level 2+", enemyGlyphV2["healer"], enemyDisplayNameV2["healer"], rune(flowGlyphV2), "flow direction"),
+			"BOLD = level 2+", enemyGlyphV2["healer"], enemyDisplayName("healer"), rune(flowGlyphV2), "flow direction"),
 		fmt.Sprintf("  %-19s   %-16s%s",
 			"punctuation = tower", "lowercase = enemy", ">>> the engine acted"),
 	}

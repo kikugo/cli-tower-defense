@@ -162,7 +162,7 @@ func TestBoardV2FitsAtEverySize(t *testing.T) {
 				if err := checkFits(strings.Join(mapRows, "\n"), l.mapPane.w, l.mapPane.h); err != nil {
 					t.Fatalf("w=%d h=%d mode=%v mapPane: %v", w, h, l.mode, err)
 				}
-				labelRows := renderLabelRowV2(g, rect{w: l.label.w, h: l.label.h})
+				labelRows := renderLabelRowV2(g, rect{w: l.label.w, h: l.label.h}, sampleTrustStateV2())
 				if err := checkFits(strings.Join(labelRows, "\n"), l.label.w, l.label.h); err != nil {
 					t.Fatalf("w=%d h=%d mode=%v label: %v", w, h, l.mode, err)
 				}
@@ -375,7 +375,7 @@ func TestRenderBoardV2Demo(t *testing.T) {
 
 		switch l.mode {
 		case modeMinimum, modeCompact:
-			for _, row := range renderLabelRowV2(g, rect{w: l.label.w, h: l.label.h}) {
+			for _, row := range renderLabelRowV2(g, rect{w: l.label.w, h: l.label.h}, sampleTrustStateV2()) {
 				t.Logf("%s", row)
 			}
 			for _, row := range renderMapPaneV2(g, rect{w: l.mapPane.w, h: l.mapPane.h}, 0) {
@@ -387,7 +387,7 @@ func TestRenderBoardV2Demo(t *testing.T) {
 			if l.mode == modeWide {
 				bl, br = boardBottomBorderKeyHintsV2()
 			} else {
-				bl, br = boardBottomBorderTrustBandV2(g)
+				bl, br = boardBottomBorderTrustBandV2(sampleTrustStateV2())
 			}
 			boardRows := renderFramedBoardV2(g, rect{w: l.board.w, h: l.board.h}, 0, bl, br)
 
@@ -409,4 +409,21 @@ func TestRenderBoardV2Demo(t *testing.T) {
 	render(160, 50)
 	render(100, 30)
 	render(80, 24)
+}
+
+// sampleTrustStateV2 is the TrustState this file's tests pass wherever the
+// board embeds the trust band. It is deliberately a state with something to
+// SAY (assists on, two of them fired) rather than a zero value: a zero
+// TrustState renders "ENGINE ASSIST UNKNOWN", which is a real state but a
+// short one, and a fit test fed only short strings would not notice a border
+// that overflows on a realistic one.
+func sampleTrustStateV2() TrustState {
+	return TrustState{
+		AssistKnown:    true,
+		AssistsEnabled: true,
+		AssistCount:    2,
+		AssistDetail:   "queued 4 enemies, fired 1 ability",
+
+		ProvenanceKnown: true,
+	}
 }

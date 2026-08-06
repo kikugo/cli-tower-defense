@@ -364,6 +364,27 @@ func (t TrustState) provenanceLabel() string {
 	return "provenance measured"
 }
 
+// TrustBandLabel is the trust band's text WITHOUT any rule chrome: the
+// assist headline plus the caller's detail clause, e.g.
+// "ENGINE HELPED 2x ─ queued 4 enemies" or plain "ENGINE ASSIST OFF".
+//
+// It exists because the same sentence has to appear in two different frames.
+// Wide mode gives the band a whole header row, which RenderTrustBand draws
+// as a dash rule with a "┬" split. Every narrower mode has no spare row, so
+// the board renderer embeds the same text in a border or label row it is
+// already drawing (see render_board_v2.go's top-of-file note and
+// testdata/mockups/100x30.txt line 19). Both paths call this, so a board
+// border and a header band describing the same match cannot word the assist
+// state differently -- which they did while the board owned its own
+// placeholder formatter.
+func TrustBandLabel(t TrustState) string {
+	label := t.assistLabel()
+	if t.AssistDetail != "" {
+		label += " ─ " + t.AssistDetail
+	}
+	return label
+}
+
 // RenderTrustBand renders the trust band as ONE horizontal-rule row of
 // exactly width display columns: an engine-assist clause on the left and,
 // when splitCol is strictly between 0 and width, a "┬"-divided
@@ -383,11 +404,7 @@ func RenderTrustBand(width, splitCol int, t TrustState) string {
 		return ""
 	}
 
-	left := t.assistLabel()
-	if t.AssistDetail != "" {
-		left = left + " ─ " + t.AssistDetail
-	}
-	leftClause := "─ " + left + " "
+	leftClause := "─ " + TrustBandLabel(t) + " "
 
 	if splitCol <= 0 || splitCol >= width {
 		return dashFill(leftClause, width)
