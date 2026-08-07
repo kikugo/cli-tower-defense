@@ -158,13 +158,6 @@ func (t *Tower) Attack(enemies []*Enemy) []*Enemy {
 	return hitEnemies
 }
 
-type Particle struct {
-	Pos      Position
-	Char     rune
-	Lifetime int
-	Color    string
-}
-
 type Enemy struct {
 	Entity
 	EnemyType     string
@@ -446,7 +439,6 @@ type Game struct {
 	SlowZones       []*SlowZone
 	Obstacles       []Position
 	ObstacleTileSet map[string]struct{}
-	Particles       []*Particle
 	Resources       map[string]int
 	Income          map[string]int
 	Lives           map[string]int
@@ -637,7 +629,7 @@ func NewGameFromResolvedConfig(resolved ResolvedMatchConfig) *Game {
 	router.SetPlayerProvider(p2, providerFromResolvedConfig(resolved.Player2))
 	game := &Game{
 		Height: height, Width: width, MapHeight: mapHeight, MapWidth: width,
-		Towers: make([]*Tower, 0), Enemies: make([]*Enemy, 0), SlowZones: make([]*SlowZone, 0), Obstacles: make([]Position, 0), Particles: make([]*Particle, 0),
+		Towers: make([]*Tower, 0), Enemies: make([]*Enemy, 0), SlowZones: make([]*SlowZone, 0), Obstacles: make([]Position, 0),
 		Resources: map[string]int{p1: 300, p2: 300}, Income: map[string]int{p1: 5, p2: 5}, Lives: map[string]int{p1: 20, p2: 20}, StartingLives: 20,
 		Score: map[string]int{p1: 0, p2: 0}, LastDecisions: map[string]string{p1: "None", p2: "None"},
 		LastReasoning: map[string]string{p1: "Thinking...", p2: "Thinking..."}, LastTaunt: map[string]string{p1: "", p2: ""},

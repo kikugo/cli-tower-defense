@@ -616,22 +616,11 @@ func (g *Game) UpdateGameState() {
 			}
 			if healed {
 				e.Cooldown = 10 // 1 second cooldown
-				g.Particles = append(g.Particles, &Particle{Pos: e.Pos, Char: '+', Lifetime: 3, Color: "green"})
 			}
 		} else if e.Cooldown > 0 {
 			e.Cooldown--
 		}
 	}
-
-	// Update particles
-	remainingParticles := make([]*Particle, 0)
-	for _, p := range g.Particles {
-		p.Lifetime--
-		if p.Lifetime > 0 {
-			remainingParticles = append(remainingParticles, p)
-		}
-	}
-	g.Particles = remainingParticles
 
 	// 2. Towers act (cooldown & attack).
 	g.rebuildEnemySpatialIndex()
@@ -791,7 +780,6 @@ func (g *Game) runTowerPhase() {
 			candidates := g.enemiesNear(t.Pos, t.Range)
 			killed := t.Attack(candidates)
 			for _, e := range killed {
-				g.Particles = append(g.Particles, &Particle{Pos: e.Pos, Char: '*', Lifetime: 2, Color: "red"})
 				g.recordReplayEvent(ReplayEvent{
 					Type:     ReplayDamage,
 					PlayerID: g.Defender,
