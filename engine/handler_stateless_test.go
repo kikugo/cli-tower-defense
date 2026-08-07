@@ -35,6 +35,15 @@ func TestDecisionHandlersHoldNoState(t *testing.T) {
 
 // TestZeroValueHandlersParseAndPrompt is the behavioural half: the four methods
 // the live providers actually call must work on a zero value, with no setup.
+//
+// "The four the providers call" is the whole list -- there is no cross-type
+// delegate to also cover. Both providers reach across types directly, e.g.
+// provider_gemini_native.go builds its enemy prompt with
+// (&GeminiHandler{}).createEnemyPrompt even though it is the Gemini provider.
+// An earlier version of this test also exercised thin GeminiHandler.createTowerPrompt
+// / OpenAIHandler.createEnemyPrompt delegates that forwarded to these; they
+// had no callers outside this file, so being tested was the only thing keeping
+// them alive, and they were deleted.
 func TestZeroValueHandlersParseAndPrompt(t *testing.T) {
 	// Build the state the way the live path does rather than by hand: the
 	// prompt builders type-assert on keys getPlayerGameState populates.
@@ -49,16 +58,6 @@ func TestZeroValueHandlersParseAndPrompt(t *testing.T) {
 	}
 	if got := (&GeminiHandler{}).createEnemyPrompt(attState); got == "" {
 		t.Error("createEnemyPrompt returned empty on a zero-value GeminiHandler")
-	}
-
-	// The cross-type delegates in gemini_tower.go / openai_enemy.go build the
-	// opposite handler internally; they used to thread the shared *AIHandler
-	// through and now construct a zero value directly.
-	if got := (&GeminiHandler{}).createTowerPrompt(defState); got == "" {
-		t.Error("GeminiHandler.createTowerPrompt delegate returned empty")
-	}
-	if got := (&OpenAIHandler{}).createEnemyPrompt(attState); got == "" {
-		t.Error("OpenAIHandler.createEnemyPrompt delegate returned empty")
 	}
 
 	decision, err := (&OpenAIHandler{}).parseTowerResponse(
