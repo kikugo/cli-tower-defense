@@ -598,7 +598,7 @@ func (m model) ReplayViewV2() string {
 			renderReplayBoardV2(snap, ev.Position, rect{w: l.board.w, h: l.board.h}, bl, br), l.w)
 	}
 
-	if l.legend.area() > 0 {
+	if l.legend.area() > 0 && !m.hideLegend {
 		blitV2(frame, l.legend, renderReplayLegendV2(rect{w: l.legend.w, h: l.legend.h}), l.w)
 	}
 	if l.rule.area() > 0 {
@@ -615,7 +615,8 @@ func (m model) ReplayViewV2() string {
 	// The feed is the replay's own event stream up to the playhead, through
 	// the live view's feed renderer -- so a replay gets collapsed duplicate
 	// runs, priority ordering and engine rows exactly as a live match does.
-	blitV2(frame, l.feed, m.replayFeedPaneV2(l, idx), l.w)
+	feedRect := feedRectWithLegendHidden(l, m.hideLegend)
+	blitV2(frame, feedRect, m.replayFeedPaneV2(feedRect, idx), l.w)
 	blitV2(frame, l.keys, []string{replayKeyTextV2(m.paused)}, l.w)
 
 	if m.asciiMode {
@@ -629,8 +630,8 @@ func (m model) ReplayViewV2() string {
 // column with nothing and the event details go unshown -- the event pane and
 // the detail pane are wide-mode-only, exactly like the cards and timeline
 // they replace.
-func (m model) replayFeedPaneV2(l layoutV2, idx int) []string {
-	return RenderFeedV2(m.replay[:idx+1], l.feed.w, l.feed.h)
+func (m model) replayFeedPaneV2(rc paneRectV2, idx int) []string {
+	return RenderFeedV2(m.replay[:idx+1], rc.w, rc.h)
 }
 
 // replayTruncationText is the disclosure's wording, in one place, in two

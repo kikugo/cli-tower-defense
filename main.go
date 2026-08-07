@@ -65,10 +65,21 @@ type model struct {
 	// the terminal, not of any pane, which is why it lives here and is
 	// applied once rather than threaded through the renderers.
 	asciiMode bool
-	replay    []eng.ReplayEvent
-	replayIdx int
-	seed      int64
-	ruleset   eng.ArenaRuleset
+	// hideLegend backs the '?' key. Both the board's bottom border and the
+	// legend's own title row advertise '?', and before this field existed
+	// neither did anything.
+	//
+	// It is phrased NEGATIVELY so the zero value is the default behaviour --
+	// legend shown. The first version was `showLegend bool` set true in
+	// initialModel, which meant every model literal in a test silently got
+	// the opposite default; the golden snapshot caught it immediately, but
+	// only because a golden existed. Same reasoning as ArenaRuleset's
+	// DisableAssists, where the zero value keeps assists on.
+	hideLegend bool
+	replay     []eng.ReplayEvent
+	replayIdx  int
+	seed       int64
+	ruleset    eng.ArenaRuleset
 }
 
 func initialModel() model {
@@ -225,6 +236,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.logScroll > 0 {
 				m.logScroll--
 			}
+		case "?":
+			m.hideLegend = !m.hideLegend
 		case "r":
 			m.showRange = !m.showRange
 		case "L":

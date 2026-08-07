@@ -8,6 +8,8 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	eng "tower-defense/engine"
 )
 
@@ -192,4 +194,77 @@ func replayFixtureEvents(t *testing.T) []eng.ReplayEvent {
 		t.Fatal("setup: the scripted game recorded no replay events")
 	}
 	return g.ReplayEvents
+}
+
+// TestAdvertisedKeysAreHandled: every key the UI names in a key bar or a
+// pane border must have a case in Update. This is the guard for the defect
+// that prompted it -- the board border said "? legend" and the wide legend's
+// title row said "? toggles" from the day the redesign landed, and nothing
+// handled '?' at all, so the UI advertised a control that did nothing.
+func TestAdvertisedKeysAreHandled(t *testing.T) {
+	// The keys the UI names to a user. Not an exhaustive list of handled
+	// keys -- aliases like k/j/l/h/arrows exist and need no advertisement.
+	advertised := []string{"q", "space", "+", "-", "a", "r", "L", "?", "n", "b", "[", "]", "g", "G", "e"}
+
+	g := newScriptedGame(t, "o3", "gpt-4")
+	for _, key := range advertised {
+		before := model{game: g, width: 160, height: 50, tickDur: defaultTickDurV2}
+		after, _ := before.Update(tea.KeyMsg(tea.Key{Type: tea.KeyRunes, Runes: []rune(key)}))
+		if key == "space" {
+			after, _ = before.Update(tea.KeyMsg(tea.Key{Type: tea.KeySpace}))
+		}
+		if _, ok := after.(model); !ok {
+			t.Fatalf("key %q: Update returned a non-model", key)
+		}
+	}
+
+	// '?' specifically must CHANGE something -- a handled-but-inert key is
+	// the same lie as an unhandled one.
+	m := model{game: g, width: 160, height: 50, tickDur: defaultTickDurV2}
+	updated, _ := m.Update(tea.KeyMsg(tea.Key{Type: tea.KeyRunes, Runes: []rune("?")}))
+	toggled, ok := updated.(model)
+	if !ok {
+		t.Fatal("'?' did not return a model")
+	}
+	if toggled.hideLegend == m.hideLegend {
+		t.Fatal("'?' did not toggle the legend")
+	}
+}
+
+// TestLegendToggleGivesItsRowsToTheFeed: in wide mode the legend is pinned
+// to the bottom of the right column, so hiding it must hand those rows to
+// the feed. Leaving them blank would make '?' look like it only shrank the
+// screen.
+func TestLegendToggleGivesItsRowsToTheFeed(t *testing.T) {
+	l := computeLayoutV2(160, 50)
+	if l.mode != modeWide || l.legend.area() <= 0 {
+		t.Fatalf("expected wide mode with a legend, got mode=%v legend=%+v", l.mode, l.legend)
+	}
+
+	shown := feedRectWithLegendHidden(l, false)
+	hidden := feedRectWithLegendHidden(l, true)
+
+	if shown != l.feed {
+		t.Fatalf("with the legend shown the feed rect changed: %+v vs %+v", shown, l.feed)
+	}
+	if hidden.h != l.feed.h+l.gap.h+l.legend.h {
+		t.Fatalf("hidden feed height %d, want %d (feed %d + gap %d + legend %d)",
+			hidden.h, l.feed.h+l.gap.h+l.legend.h, l.feed.h, l.gap.h, l.legend.h)
+	}
+
+	// And the frame must still be exact with the legend off.
+	g := newScriptedGame(t, "o3", "gpt-4")
+	m := model{game: g, width: 160, height: 50, tickDur: defaultTickDurV2, hideLegend: true}
+	rows := strings.Split(m.ViewV2(), "\n")
+	if len(rows) != 50 {
+		t.Fatalf("legend hidden: %d rows, want 50", len(rows))
+	}
+	for i, row := range rows {
+		if w := lipgloss.Width(row); w != 160 {
+			t.Fatalf("legend hidden, row %d: %d columns, want 160", i, w)
+		}
+	}
+	if strings.Contains(stripANSI(strings.Join(rows, "\n")), "basic tower") {
+		t.Fatal("the legend is still drawn with hideLegend set")
+	}
 }

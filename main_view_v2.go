@@ -86,6 +86,28 @@ func blitV2(frame []string, rc paneRectV2, rows []string, frameW int) {
 	}
 }
 
+// feedRectWithLegendHidden returns the rect the feed should occupy given the
+// legend's visibility.
+//
+// In WIDE mode the legend is pinned to the bottom of the right column with a
+// one-row gap above it, and the feed sits above that gap -- so hiding the
+// legend is worth 9 rows, and they go to the feed. Leaving them blank would
+// make '?' look like it did nothing but shrink the screen.
+//
+// In every other mode the legend is a gutter BESIDE the board, not stacked
+// above anything, so hiding it frees columns the board cannot use (the board
+// is a fixed 84 wide) and the space simply goes blank. That asymmetry is
+// real, not an oversight: the two modes place the legend differently, so
+// hiding it buys different things.
+func feedRectWithLegendHidden(l layoutV2, hidden bool) paneRectV2 {
+	if !hidden || l.mode != modeWide || l.legend.area() <= 0 {
+		return l.feed
+	}
+	rc := l.feed
+	rc.h += l.gap.h + l.legend.h
+	return rc
+}
+
 // verticalRuleV2 renders the one-column divider between wide mode's two
 // columns.
 func verticalRuleV2(h int) []string {
@@ -608,7 +630,7 @@ func (m model) ViewV2() string {
 	switch l.mode {
 	case modeMinimum, modeCompact:
 		blitV2(frame, l.label, renderLabelRowV2(g, rect{w: l.label.w, h: l.label.h}, trust, m.tickHorizon()), l.w)
-		mapRows := renderMapPaneV2(g, rect{w: l.mapPane.w, h: l.mapPane.h}, panX)
+		mapRows := renderMapPaneV2(g, rect{w: l.mapPane.w, h: l.mapPane.h}, panX, m.showRange)
 		if g.GameOver {
 			card := m.gameOverDataV2(result, trust)
 			mapRows = OverlayCenteredV2(mapRows,
@@ -623,7 +645,7 @@ func (m model) ViewV2() string {
 		} else {
 			bl, br = boardBottomBorderTrustBandV2(trust)
 		}
-		board := renderFramedBoardV2(g, rect{w: l.board.w, h: l.board.h}, panX, bl, br)
+		board := renderFramedBoardV2(g, rect{w: l.board.w, h: l.board.h}, panX, bl, br, m.showRange)
 		if g.GameOver {
 			card := m.gameOverDataV2(result, trust)
 			board = OverlayCenteredV2(board,
@@ -632,7 +654,7 @@ func (m model) ViewV2() string {
 		blitV2(frame, l.board, board, l.w)
 	}
 
-	if l.legend.area() > 0 {
+	if l.legend.area() > 0 && !m.hideLegend {
 		blitV2(frame, l.legend, renderLegendV2(g, rect{w: l.legend.w, h: l.legend.h}), l.w)
 	}
 	if l.rule.area() > 0 {
@@ -646,7 +668,8 @@ func (m model) ViewV2() string {
 			RenderTimelineV2(rect{w: l.timeline.w, h: l.timeline.h}, m.timelineDataV2(result, trust)), l.w)
 	}
 
-	blitV2(frame, l.feed, m.feedPaneV2(l), l.w)
+	feedRect := feedRectWithLegendHidden(l, m.hideLegend)
+	blitV2(frame, feedRect, m.feedPaneV2(feedRect), l.w)
 	blitV2(frame, l.keys, []string{keyBarV2(m)}, l.w)
 
 	if m.asciiMode {
@@ -659,11 +682,11 @@ func (m model) ViewV2() string {
 // the raw log window when 'L' has toggled it on -- the same choice
 // buildSideRows makes for the old view, kept so the key does the same thing
 // in both.
-func (m model) feedPaneV2(l layoutV2) []string {
+func (m model) feedPaneV2(rc paneRectV2) []string {
 	if m.showLogs {
-		return fitLines(selectLogWindow(m.game.Logs, l.feed.h, m.logScroll), l.feed.w, l.feed.h)
+		return fitLines(selectLogWindow(m.game.Logs, rc.h, m.logScroll), rc.w, rc.h)
 	}
-	return RenderFeedV2(m.game.ReplayEvents, l.feed.w, l.feed.h)
+	return RenderFeedV2(m.game.ReplayEvents, rc.w, rc.h)
 }
 
 // keyBarV2 renders the single key-hint row at the bottom of every non-notice
