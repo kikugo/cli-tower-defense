@@ -264,32 +264,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 // ---- lipgloss styles ----
+//
+// What is left here is what the REPLAY inspector still draws with; the live
+// view's palette lives in render_theme_v2.go, declared by semantic role.
+// The old per-type colour maps (towerColor, enemyColorByType, the three
+// enemy health colours, particleStyle, pathStyle) went with the renderer
+// that read them. They encoded side in hue, which is exactly what the
+// redesign replaced with glyph class so a monochrome terminal still says
+// who owns what -- see glyphs_v2.go, rule 1.
 var (
-	pathStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240")) // grey
-	uiBorder  = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).Padding(0, 1)
+	uiBorder = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).Padding(0, 1)
 
-	towerColor = map[string]lipgloss.Style{
-		"basic":  lipgloss.NewStyle().Foreground(lipgloss.Color("219")), // magenta
-		"splash": lipgloss.NewStyle().Foreground(lipgloss.Color("51")),  // cyan
-		"sniper": lipgloss.NewStyle().Foreground(lipgloss.Color("45")),  // blue
-		"buffer": lipgloss.NewStyle().Foreground(lipgloss.Color("202")), // orange/red
-	}
-
-	enemyColorByType = map[string]lipgloss.Style{
-		"basic":    lipgloss.NewStyle().Foreground(lipgloss.Color("208")), // orange
-		"fast":     lipgloss.NewStyle().Foreground(lipgloss.Color("226")), // yellow
-		"tank":     lipgloss.NewStyle().Foreground(lipgloss.Color("201")), // magenta
-		"shielded": lipgloss.NewStyle().Foreground(lipgloss.Color("46")),  // green/lime
-		"healer":   lipgloss.NewStyle().Foreground(lipgloss.Color("123")), // light blue
-	}
-	enemyColorGreen  = lipgloss.NewStyle().Foreground(lipgloss.Color("10"))  // healthy
-	enemyColorYellow = lipgloss.NewStyle().Foreground(lipgloss.Color("226")) // mid
-	enemyColorRed    = lipgloss.NewStyle().Foreground(lipgloss.Color("196")) // low
-	particleStyle    = map[string]lipgloss.Style{
-		"red":   lipgloss.NewStyle().Foreground(lipgloss.Color("196")),
-		"green": lipgloss.NewStyle().Foreground(lipgloss.Color("46")),
-		"blue":  lipgloss.NewStyle().Foreground(lipgloss.Color("21")),
-	}
 	// truncationWarnStyle renders the replay-truncation banner (see
 	// replayTruncationWarning): white-on-red, bold, so it reads as an alarm
 	// rather than blending in with the status line's plain text above it.
