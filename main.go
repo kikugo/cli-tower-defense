@@ -437,6 +437,8 @@ func (m model) replayView() string {
 		rows := fitLines([]string{"Replay mode: no events loaded", "Press q to quit."}, w, 2)
 		return strings.Join(rows, "\n")
 	}
+	// (tooSmallNotice and the no-events message are plain ASCII already, so
+	// neither early return needs the fold.)
 	idx := clampReplayIdx(m.replayIdx, total)
 	ev := m.replay[idx]
 
@@ -445,7 +447,11 @@ func (m model) replayView() string {
 	statusText := fmt.Sprintf("Replay %d/%d %s · %s", idx+1, total, progressBar(idx, total, 24), ev.Type)
 	statusRow := padCells(statusText, lyt.w)
 
-	keyText := "space pause/resume · n/b step · [/] ±10 · g/G start/end · e game end · q quit"
+	// "+/-10", not "±10": the ASCII fold is strictly one display column in
+	// for one column out, which is what makes it safe to apply after layout
+	// has committed to column positions. '±' has no one-character ASCII
+	// equivalent, so it cannot be folded -- the fix is not to emit it.
+	keyText := "space pause/resume · n/b step · [/] +/-10 · g/G start/end · e game end · q quit"
 	if m.paused {
 		keyText = "PAUSED · " + keyText
 	}
@@ -527,6 +533,13 @@ func (m model) replayView() string {
 	}
 
 	all := vstack([]string{statusRow}, warnRows, body, []string{keybarRow})
+	// The replay inspector keeps the old layout (see board_render.go for
+	// why), but --ascii is a statement about the TERMINAL, not about one
+	// screen: a terminal that cannot draw a box character cannot draw it
+	// here either. The fold is the same single call ViewV2 makes.
+	if m.asciiMode {
+		all = asciiFoldRows(all)
+	}
 	return strings.Join(all, "\n")
 }
 

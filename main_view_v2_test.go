@@ -148,3 +148,48 @@ func TestViewV2PanesDoNotBleed(t *testing.T) {
 		}
 	}
 }
+
+// TestReplayViewAsciiModeEmitsOnlyASCII: --ascii is a statement about the
+// terminal, not about one screen. The replay inspector keeps the old layout
+// (see board_render.go), but a terminal that cannot draw a box character
+// cannot draw one here either -- and this screen draws plenty of them.
+func TestReplayViewAsciiModeEmitsOnlyASCII(t *testing.T) {
+	events := replayFixtureEvents(t)
+
+	withColorProfile(t, termenv.ANSI256, func() {
+		for _, sz := range []struct{ w, h int }{{80, 24}, {100, 30}, {120, 40}, {160, 50}} {
+			m := model{
+				replayMode: true, replay: events, replayIdx: len(events) / 2,
+				width: sz.w, height: sz.h, asciiMode: true,
+			}
+			out := m.View()
+			for _, r := range stripANSI(out) {
+				if r > unicode.MaxASCII && r != '\n' {
+					t.Fatalf("%dx%d: replay --ascii output contains %q (U+%04X)", sz.w, sz.h, string(r), r)
+				}
+			}
+
+			// And with the flag OFF it must still be the Unicode design --
+			// otherwise this test would pass against a renderer that had
+			// simply lost its box characters entirely.
+			plain := model{
+				replayMode: true, replay: events, replayIdx: len(events) / 2,
+				width: sz.w, height: sz.h,
+			}.View()
+			if !strings.ContainsAny(plain, "┌│└") {
+				t.Fatalf("%dx%d: replay view draws no box characters even without --ascii", sz.w, sz.h)
+			}
+		}
+	})
+}
+
+// replayFixtureEvents builds a short event stream with a map, a tower and a
+// breach -- enough that the reconstructed board draws something.
+func replayFixtureEvents(t *testing.T) []eng.ReplayEvent {
+	t.Helper()
+	g := newScriptedGame(t, "o3", "gpt-4")
+	if len(g.ReplayEvents) == 0 {
+		t.Fatal("setup: the scripted game recorded no replay events")
+	}
+	return g.ReplayEvents
+}
