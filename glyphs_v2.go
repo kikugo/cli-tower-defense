@@ -7,7 +7,7 @@ package main
 // three different answers to "what character is a sniper":
 //
 //	render_board_v2.go   ^ ! * +   /  o f t s h   (the new design)
-//	engine/balance.go    ^ ⌖ ⊕ B   /  o > □ S H   (the retired set, still
+//	engine/balance.go    ^ ⌖ ⊕ B   /  o > □ S H   (the retired set, then
 //	                                               stamped onto Entity.Char)
 //	render_feed_v2.go    -- rendered type NAMES, because it had no basis to
 //	                        pick between the other two
@@ -15,6 +15,10 @@ package main
 // Nobody broke the file boundary; the boundary was drawn around the wrong
 // thing. A glyph set is one concept, so it gets one file, and every v2
 // renderer reads it from here.
+//
+// The engine's tables are gone too: Entity.Char no longer exists, because
+// which character a tower draws as is a UI decision and the engine holding
+// its own opinion is precisely how three tables came to disagree.
 //
 // --- Rule 1: ownership is the primary encoding, not type -------------------
 //
@@ -30,13 +34,8 @@ package main
 // single ASCII byte, hence trivially one column -- verified rather than
 // asserted, by TestBoardV2GlyphsAreOneColumn.
 //
-// engine/balance.go's towerChars/enemyChars are NOT reconciled with this
-// table, deliberately: they are only read through Entity.Char by the old
-// board_viewport.go render path, which the Phase 4 cutover deletes. Making
-// the engine agree with a presentation table it is about to stop having any
-// opinion about would be churn with a determinism gate attached.
-// TestNoRetiredGlyphsInV2Output is what keeps the retired set out of the new
-// UI in the meantime.
+// retiredGlyphsV2 below names the set this redesign removed.
+// TestNoRetiredGlyphsInV2Output is what keeps it out of the new UI.
 
 // towerGlyphV2 maps engine tower-type strings to the redesign's punctuation
 // glyphs.

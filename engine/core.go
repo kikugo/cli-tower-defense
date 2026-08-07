@@ -20,9 +20,12 @@ type Position struct {
 	X int
 }
 
+// Entity is the shared state of anything that occupies a board cell. It
+// carries no display glyph: which character a tower or an enemy draws as is
+// a UI decision (see glyphs_v2.go), and the engine holding its own copy is
+// what let the two drift apart.
 type Entity struct {
 	Pos       Position
-	Char      rune
 	Health    int
 	MaxHealth int
 	Damage    int

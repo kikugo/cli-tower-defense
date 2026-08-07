@@ -40,9 +40,11 @@ var placeableTowerTypes = []string{"basic", "splash", "sniper", "buffer"}
 // attackerEnemyTypes is the ordered set models may spawn.
 var attackerEnemyTypes = []string{"basic", "fast", "healer", "shielded", "tank"}
 
-// Display glyphs are presentation, not balance; they stay fixed.
-var towerChars = map[string]rune{"basic": '^', "sniper": '⌖', "splash": '⊕', "buffer": 'B', "custom": '?'}
-var enemyChars = map[string]rune{"basic": 'o', "fast": '>', "tank": '□', "shielded": 'S', "healer": 'H', "custom": '?'}
+// Display glyphs used to live here, stamped onto Entity.Char at construction.
+// They are gone: glyphs are presentation, the UI owns presentation
+// (glyphs_v2.go), and having the engine hold a second opinion about what a
+// sniper looks like is how the codebase ended up with three disagreeing
+// tables. Nothing read Entity.Char after the render cutover.
 
 // v3 changes only the sniper: 50 damage / cooldown 5 / cost 100, from
 // 50 / 15 / 250. At the shipped numbers a sniper-only defender could afford
@@ -181,13 +183,9 @@ func (g *Game) newTower(y, x int, towerType string, params map[string]interface{
 			st.Cost = toInt(v)
 		}
 	}
-	char, ok := towerChars[towerType]
-	if !ok {
-		char = '^'
-	}
 	return Tower{
 		Entity: Entity{
-			Pos: Position{Y: y, X: x}, Char: char,
+			Pos:    Position{Y: y, X: x},
 			Health: 100, MaxHealth: 100,
 			Damage: st.Damage, Cooldown: 0, MaxCD: st.Cooldown,
 		},
@@ -212,13 +210,9 @@ func (g *Game) newEnemy(y, x int, enemyType string, params map[string]interface{
 			st.Shield = toInt(v)
 		}
 	}
-	char, ok := enemyChars[enemyType]
-	if !ok {
-		char = '?'
-	}
 	return Enemy{
 		Entity: Entity{
-			Pos: Position{Y: y, X: x}, Char: char,
+			Pos:    Position{Y: y, X: x},
 			Health: st.Health, MaxHealth: st.Health,
 		},
 		EnemyType: enemyType, Speed: st.Speed, Reward: st.Reward, Shield: st.Shield,
