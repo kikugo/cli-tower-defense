@@ -187,8 +187,8 @@ func TestReplayViewV2FeedShowsOnlyThePast(t *testing.T) {
 	late := model{replayMode: true, replay: events, replayIdx: lateBreach, width: 160, height: 50}
 
 	l := computeLayoutV2(160, 50)
-	earlyFeed := strings.Join(early.replayFeedPaneV2(l, 5), "\n")
-	lateFeed := strings.Join(late.replayFeedPaneV2(l, lateBreach), "\n")
+	earlyFeed := strings.Join(early.replayFeedPaneV2(l.feed, 5), "\n")
+	lateFeed := strings.Join(late.replayFeedPaneV2(l.feed, lateBreach), "\n")
 
 	if strings.Contains(stripANSI(earlyFeed), "BREACH") {
 		t.Fatalf("the feed at event 5 shows a breach that has not happened yet:\n%s", stripANSI(earlyFeed))

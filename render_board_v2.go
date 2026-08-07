@@ -160,6 +160,36 @@ func recentBreachPositionsV2(g *eng.Game) []eng.Position {
 // top of towers/terrain because "units are the story" (rule 3), and breach
 // markers sit on top of everything because they are the one alert that must
 // never be obscured.
+// overlayTowerRangesV2 paints rangeGlyphV2 on every EMPTY cell within some
+// tower's firing range. Backs the 'r' key.
+//
+// It runs after the terrain layers and before towers/enemies/breaches, and
+// only writes to cells still holding a space, so the overlay can never hide
+// a unit, a path or a breach marker -- it fills the gaps between them, which
+// is exactly the question "what does my defence actually cover" asks.
+//
+// Euclidean distance, matching enemiesNear in the engine: a range overlay
+// that disagreed with the engine's own targeting would be worse than none.
+func overlayTowerRangesV2(grid [][]rune, g *eng.Game) {
+	for _, t := range g.Towers {
+		r := t.Range
+		for dy := -r; dy <= r; dy++ {
+			for dx := -r; dx <= r; dx++ {
+				if dy*dy+dx*dx > r*r {
+					continue
+				}
+				p := eng.Position{Y: t.Pos.Y + dy, X: t.Pos.X + dx}
+				if !inBoundsV2(p, g.MapHeight, g.MapWidth) {
+					continue
+				}
+				if grid[p.Y][p.X] == ' ' {
+					grid[p.Y][p.X] = rangeGlyphV2
+				}
+			}
+		}
+	}
+}
+
 func buildLiveGridV2(g *eng.Game) [][]rune {
 	grid := make([][]rune, g.MapHeight)
 	for y := range grid {
@@ -302,11 +332,14 @@ func mapViewportWidth(mapWidth, rcW int) int {
 // clampPan collapses any panX to 0, so the map is never clipped there (test
 // 4 in the brief); at rc.w<80 (compact mode) this pans exactly like the
 // live board does, via the same clampPan/autoFollowPanX primitives.
-func renderMapPaneV2(g *eng.Game, rc rect, panX int) []string {
+func renderMapPaneV2(g *eng.Game, rc rect, panX int, showRange bool) []string {
 	if rc.h <= 0 || rc.w <= 0 {
 		return blankRows(rc.h, rc.w)
 	}
 	grid := buildLiveGridV2(g)
+	if showRange {
+		overlayTowerRangesV2(grid, g)
+	}
 
 	vw := mapViewportWidth(g.MapWidth, rc.w)
 	vh := rc.h
@@ -436,12 +469,15 @@ func titledRuleV2(w int, left, right string) string {
 // output in mid/narrow mode per this file's top-of-file coupling note.
 // Produces exactly rc.h rows of exactly rc.w columns, matching the
 // contract every other pane renderer in this codebase follows.
-func renderFramedBoardV2(g *eng.Game, rc rect, panX int, bottomLeft, bottomRight string) []string {
+func renderFramedBoardV2(g *eng.Game, rc rect, panX int, bottomLeft, bottomRight string, showRange bool) []string {
 	if rc.h < 2 || rc.w < 2 {
 		return blankRows(rc.h, rc.w)
 	}
 
 	grid := buildLiveGridV2(g)
+	if showRange {
+		overlayTowerRangesV2(grid, g)
+	}
 
 	vw := boardViewportWidth(g.MapWidth, rc.w)
 	vh := rc.h - 2
@@ -552,6 +588,7 @@ func legendNarrowLinesV2() []string {
 		fmt.Sprintf(" %c  path", rune(pathGlyphV2)),
 		fmt.Sprintf(" %c  wall", rune(wallGlyphV2)),
 		fmt.Sprintf(" %c  slow zone", rune(slowZoneGlyphV2)),
+		fmt.Sprintf(" %c  r: range", rune(rangeGlyphV2)),
 	}
 }
 
@@ -628,7 +665,7 @@ func legendWideLinesV2(g *eng.Game, w int) []string {
 		placeColsV2(cols, []string{towerEntry("sniper", "sniper"), enemyEntry("fast"), entry(wallGlyphV2, "wall")}),
 		placeColsV2(cols, []string{towerEntry("splash", "splash"), enemyEntry("tank"), entry(slowZoneGlyphV2, "slow zone")}),
 		placeColsV2(cols, []string{towerEntry("buffer", "buffer"), enemyEntry("shielded"), entry(breachGlyphV2, "breach (rev)")}),
-		placeColsV2(cols, []string{"BOLD = level 2+", enemyEntry("healer"), entry(flowGlyphV2, "flow direction")}),
+		placeColsV2(cols, []string{entry(rangeGlyphV2, "r: tower range"), enemyEntry("healer"), entry(flowGlyphV2, "flow direction")}),
 		placeColsV2(cols, []string{"punctuation = tower", "lowercase = enemy", ">>> the engine acted"}),
 	}
 }

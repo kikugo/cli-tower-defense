@@ -98,8 +98,9 @@ Turns alternate strictly. Each turn the engine renders the game state into a pro
 | `+` / `-` | faster / slower |
 | `a` | toggle AI |
 | `r` | tower range overlay |
+| `?` | show/hide the legend (its rows go to the move feed) |
 | `L` | toggle the raw log pane |
-| `↑` `↓` (or `k` `j`) | scroll the move feed |
+| `↑` `↓` (or `k` `j`) | scroll the raw log pane (when `L` is on) |
 
 ### Replay viewer
 
@@ -112,6 +113,7 @@ Open a recorded match with `-replay-input`:
 | `]` / `[` | jump ±10 events |
 | `g` / `G` | first / last event |
 | `e` | jump to the game-end event |
+| `?` | show/hide the legend |
 
 The viewer uses the same layout, glyphs and palette as the live match, so a replay reads like the match it replays. It reconstructs the board from the event stream — path, obstacles, towers, breach markers, and the tile the current event is about — and runs the same move feed, ending at the playhead rather than at the end of the match.
 

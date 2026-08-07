@@ -63,7 +63,7 @@ func TestASCIIFoldLeavesNoBoxOrBlockCharacters(t *testing.T) {
 	g := buildSeededGameV2(t, true)
 
 	frames := map[string][]string{
-		"board":    renderFramedBoardV2(g, rect{w: boardMaxW, h: boardMaxH}, 0, "ENGINE HELPED 2x", "r range"),
+		"board":    renderFramedBoardV2(g, rect{w: boardMaxW, h: boardMaxH}, 0, "ENGINE HELPED 2x", "r range", false),
 		"legend":   renderLegendV2(g, rect{w: 74, h: 8}),
 		"feed":     RenderFeedV2(g.ReplayEvents, 74, 20),
 		"cards":    RenderCardsV2(rect{w: boardMaxW, h: 16}, sampleCardsData()),
@@ -159,10 +159,10 @@ func TestPaletteIsDecorationOnly(t *testing.T) {
 
 	var coloured, plain []string
 	withColorProfile(t, termenv.ANSI256, func() {
-		coloured = renderFramedBoardV2(g, rect{w: boardMaxW, h: boardMaxH}, 0, "", "")
+		coloured = renderFramedBoardV2(g, rect{w: boardMaxW, h: boardMaxH}, 0, "", "", false)
 	})
 	withColorProfile(t, termenv.Ascii, func() {
-		plain = renderFramedBoardV2(g, rect{w: boardMaxW, h: boardMaxH}, 0, "", "")
+		plain = renderFramedBoardV2(g, rect{w: boardMaxW, h: boardMaxH}, 0, "", "", false)
 	})
 
 	if len(coloured) != len(plain) {
@@ -190,7 +190,7 @@ func TestBoardRowsKeepExactWidthWithColour(t *testing.T) {
 	g := buildSeededGameV2(t, true)
 	withColorProfile(t, termenv.ANSI256, func() {
 		for _, size := range []rect{{w: boardMaxW, h: boardMaxH}, {w: 60, h: 12}, {w: 100, h: 20}} {
-			for i, row := range renderFramedBoardV2(g, size, 0, "ENGINE HELPED 2x", "r range") {
+			for i, row := range renderFramedBoardV2(g, size, 0, "ENGINE HELPED 2x", "r range", false) {
 				if w := lipgloss.Width(row); w != size.w {
 					t.Fatalf("%dx%d row %d is %d columns, want %d: %q", size.w, size.h, i, w, size.w, row)
 				}

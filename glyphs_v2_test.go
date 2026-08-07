@@ -22,7 +22,7 @@ func TestGlyphsAreOneDisplayColumn(t *testing.T) {
 	}
 	all = append(all,
 		pathGlyphV2, flowGlyphV2, wallGlyphV2, slowZoneGlyphV2,
-		breachGlyphV2, unknownGlyphV2)
+		breachGlyphV2, unknownGlyphV2, rangeGlyphV2)
 
 	for _, r := range all {
 		if w := frameDisplayWidth(string(r)); w != 1 {
@@ -96,8 +96,8 @@ func TestNoRetiredGlyphsInV2Output(t *testing.T) {
 	g := buildSeededGameV2(t, true)
 
 	frames := map[string]string{
-		"board":  strings.Join(renderFramedBoardV2(g, rect{w: boardMaxW, h: boardMaxH}, 0, "", ""), "\n"),
-		"map":    strings.Join(renderMapPaneV2(g, rect{w: 80, h: 14}, 0), "\n"),
+		"board":  strings.Join(renderFramedBoardV2(g, rect{w: boardMaxW, h: boardMaxH}, 0, "", "", false), "\n"),
+		"map":    strings.Join(renderMapPaneV2(g, rect{w: 80, h: 14}, 0, false), "\n"),
 		"legend": strings.Join(renderLegendV2(g, rect{w: 74, h: 8}), "\n"),
 		"gutter": strings.Join(renderLegendV2(g, rect{w: 16, h: 16}), "\n"),
 		"feed":   strings.Join(RenderFeedV2(g.ReplayEvents, 74, 20), "\n"),
@@ -121,7 +121,7 @@ func TestNoRetiredGlyphsInV2Output(t *testing.T) {
 func TestFeedAndBoardUseTheSameGlyphs(t *testing.T) {
 	g := buildSeededGameV2(t, true)
 
-	board := strings.Join(renderFramedBoardV2(g, rect{w: boardMaxW, h: boardMaxH}, 0, "", ""), "\n")
+	board := strings.Join(renderFramedBoardV2(g, rect{w: boardMaxW, h: boardMaxH}, 0, "", "", false), "\n")
 	feed := strings.Join(RenderFeedV2(g.ReplayEvents, 74, 40), "\n")
 
 	checked := 0

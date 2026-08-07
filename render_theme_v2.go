@@ -173,7 +173,7 @@ func glyphStyleV2(r rune) lipgloss.Style {
 	switch r {
 	case breachGlyphV2:
 		return styleBreachV2
-	case pathGlyphV2, flowGlyphV2, wallGlyphV2, slowZoneGlyphV2:
+	case pathGlyphV2, flowGlyphV2, wallGlyphV2, slowZoneGlyphV2, rangeGlyphV2:
 		return styleTerrainV2
 	}
 	for _, g := range towerGlyphV2 {

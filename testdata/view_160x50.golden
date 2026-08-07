@@ -45,6 +45,6 @@
   rejected   DEF 56 turns lost to place   ATT 23                                    │  !  sniper        100   f  fast            #  wall                        
   waves      2 of 5 played   ends at wave 5, no tick cap set                        │  *  splash        200   t  tank            ~  slow zone                   
   horizon    ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  tick 117, no cap        │  +  buffer        300   s  shielded        X  breach (rev)                
-  ruleset    balance v3 9d459d   5 waves   assists on   pricing unset               │  BOLD = level 2+        h  healer          >  flow direction              
+  ruleset    balance v3 9d459d   5 waves   assists on   pricing unset               │  :  r: tower range      h  healer          >  flow direction              
                                                                                     │  punctuation = tower    lowercase = enemy  >>> the engine acted           
 space pause · +/- speed · a ai:on · r range · L logs:off · q quit                                                                                               

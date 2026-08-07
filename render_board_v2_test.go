@@ -158,7 +158,7 @@ func TestBoardV2FitsAtEverySize(t *testing.T) {
 				continue
 
 			case modeCompact, modeMinimum:
-				mapRows := renderMapPaneV2(g, rect{w: l.mapPane.w, h: l.mapPane.h}, 0)
+				mapRows := renderMapPaneV2(g, rect{w: l.mapPane.w, h: l.mapPane.h}, 0, false)
 				if err := checkFits(strings.Join(mapRows, "\n"), l.mapPane.w, l.mapPane.h); err != nil {
 					t.Fatalf("w=%d h=%d mode=%v mapPane: %v", w, h, l.mode, err)
 				}
@@ -169,7 +169,7 @@ func TestBoardV2FitsAtEverySize(t *testing.T) {
 
 			case modeNarrow, modeMid, modeWide:
 				bl, br := boardBottomBorderKeyHintsV2()
-				boardRows := renderFramedBoardV2(g, rect{w: l.board.w, h: l.board.h}, 0, bl, br)
+				boardRows := renderFramedBoardV2(g, rect{w: l.board.w, h: l.board.h}, 0, bl, br, false)
 				if err := checkFits(strings.Join(boardRows, "\n"), l.board.w, l.board.h); err != nil {
 					t.Fatalf("w=%d h=%d mode=%v board: %v", w, h, l.mode, err)
 				}
@@ -201,7 +201,7 @@ func TestBoardV2NoOrphanDividers(t *testing.T) {
 	g := buildSeededGameV2(t, false)
 	for _, h := range []int{10, 12, 14, 16} {
 		bl, br := boardBottomBorderKeyHintsV2()
-		rows := renderFramedBoardV2(g, rect{w: boardMaxW, h: h}, 0, bl, br)
+		rows := renderFramedBoardV2(g, rect{w: boardMaxW, h: h}, 0, bl, br, false)
 		frame := strings.Join(rows, "\n")
 		if err := checkNoOrphanDividers(frame); err != nil {
 			t.Fatalf("h=%d: %v\nframe:\n%s", h, err, frame)
@@ -232,7 +232,7 @@ func TestBoardV2GlyphsAreOneColumn(t *testing.T) {
 	fillMaxDensityV2(g)
 
 	bl, br := boardBottomBorderKeyHintsV2()
-	boardRows := renderFramedBoardV2(g, rect{w: boardMaxW, h: boardMaxH}, 0, bl, br)
+	boardRows := renderFramedBoardV2(g, rect{w: boardMaxW, h: boardMaxH}, 0, bl, br, false)
 	boardFrame := strings.Join(boardRows, "\n")
 
 	legendRows := renderLegendV2(g, rect{w: 90, h: 8})
@@ -271,7 +271,7 @@ func TestBoardV2MapNeverClippedAt80(t *testing.T) {
 		t.Fatalf("mapPane.w = %d, want 80", l.mapPane.w)
 	}
 
-	got := renderMapPaneV2(g, rect{w: l.mapPane.w, h: l.mapPane.h}, 999) // a large requested pan must still clamp to 0
+	got := renderMapPaneV2(g, rect{w: l.mapPane.w, h: l.mapPane.h}, 999, false) // a large requested pan must still clamp to 0
 
 	grid := buildLiveGridV2(g)
 	want := boardContentV2(grid, 0, g.MapWidth, l.mapPane.h)
@@ -292,12 +292,12 @@ func TestBoardV2FullDensityNoOverflow(t *testing.T) {
 	fillMaxDensityV2(g)
 
 	bl, br := boardBottomBorderKeyHintsV2()
-	boardRows := renderFramedBoardV2(g, rect{w: boardMaxW, h: boardMaxH}, 0, bl, br)
+	boardRows := renderFramedBoardV2(g, rect{w: boardMaxW, h: boardMaxH}, 0, bl, br, false)
 	if err := checkFits(strings.Join(boardRows, "\n"), boardMaxW, boardMaxH); err != nil {
 		t.Fatalf("full density framed board: %v", err)
 	}
 
-	mapRows := renderMapPaneV2(g, rect{w: 80, h: 14}, 0)
+	mapRows := renderMapPaneV2(g, rect{w: 80, h: 14}, 0, false)
 	if err := checkFits(strings.Join(mapRows, "\n"), 80, 14); err != nil {
 		t.Fatalf("full density map pane: %v", err)
 	}
@@ -340,7 +340,7 @@ func TestBoardV2BreachMarkerRowWidth(t *testing.T) {
 	g := buildSeededGameV2(t, true)
 
 	bl, br := boardBottomBorderKeyHintsV2()
-	rows := renderFramedBoardV2(g, rect{w: boardMaxW, h: boardMaxH}, 0, bl, br)
+	rows := renderFramedBoardV2(g, rect{w: boardMaxW, h: boardMaxH}, 0, bl, br, false)
 	if len(rows) != boardMaxH {
 		t.Fatalf("got %d rows, want %d", len(rows), boardMaxH)
 	}
@@ -378,7 +378,7 @@ func TestRenderBoardV2Demo(t *testing.T) {
 			for _, row := range renderLabelRowV2(g, rect{w: l.label.w, h: l.label.h}, sampleTrustStateV2(), 400) {
 				t.Logf("%s", row)
 			}
-			for _, row := range renderMapPaneV2(g, rect{w: l.mapPane.w, h: l.mapPane.h}, 0) {
+			for _, row := range renderMapPaneV2(g, rect{w: l.mapPane.w, h: l.mapPane.h}, 0, false) {
 				t.Logf("%s", row)
 			}
 
@@ -389,7 +389,7 @@ func TestRenderBoardV2Demo(t *testing.T) {
 			} else {
 				bl, br = boardBottomBorderTrustBandV2(sampleTrustStateV2())
 			}
-			boardRows := renderFramedBoardV2(g, rect{w: l.board.w, h: l.board.h}, 0, bl, br)
+			boardRows := renderFramedBoardV2(g, rect{w: l.board.w, h: l.board.h}, 0, bl, br, false)
 
 			var legendRows []string
 			if l.legend.area() > 0 {
@@ -425,5 +425,78 @@ func sampleTrustStateV2() TrustState {
 		AssistDetail:   "queued 4 enemies, fired 1 ability",
 
 		ProvenanceKnown: true,
+	}
+}
+
+// TestRangeOverlayBacksTheRKey is the guard for the second advertised-but-
+// inert control this codebase shipped. 'r' toggled model.showRange, the
+// board's bottom border said "r range", the key bar said "r range", and the
+// README documented it -- while the only consumer, buildLiveGrid, had been
+// deleted in the render cutover. Nothing read the field at all.
+//
+// It uses newScriptedGame rather than buildSeededGameV2 deliberately.
+// buildSeededGameV2 hand-constructs its towers, so every one has Range 0 and
+// the overlay is a no-op against it -- a test written on that fixture would
+// have passed against a completely broken overlay. Only a game whose towers
+// came from the balance config exercises this.
+func TestRangeOverlayBacksTheRKey(t *testing.T) {
+	g := newScriptedGame(t, "o3", "gpt-4")
+
+	ranged := 0
+	for _, tw := range g.Towers {
+		if tw.Range > 0 {
+			ranged++
+		}
+	}
+	if ranged == 0 {
+		t.Fatal("setup: no tower has a range, so this test would prove nothing")
+	}
+
+	off := renderFramedBoardV2(g, rect{w: boardMaxW, h: boardMaxH}, 0, "", "", false)
+	on := renderFramedBoardV2(g, rect{w: boardMaxW, h: boardMaxH}, 0, "", "", true)
+
+	joinedOff := strings.Join(off, "\n")
+	joinedOn := strings.Join(on, "\n")
+
+	if strings.ContainsRune(joinedOff, rangeGlyphV2) {
+		t.Fatalf("the range glyph appears with the overlay OFF:\n%s", joinedOff)
+	}
+	if !strings.ContainsRune(joinedOn, rangeGlyphV2) {
+		t.Fatalf("the range glyph does not appear with the overlay ON -- 'r' is inert:\n%s", joinedOn)
+	}
+
+	// The overlay must only fill empty cells: every non-space character
+	// visible with it off must still be there, in the same place, with it on.
+	if len(off) != len(on) {
+		t.Fatalf("row counts differ: %d vs %d", len(off), len(on))
+	}
+	for i := range off {
+		a, b := []rune(off[i]), []rune(on[i])
+		if len(a) != len(b) {
+			t.Fatalf("row %d changed width: %d vs %d", i, len(a), len(b))
+		}
+		for x := range a {
+			if a[x] != ' ' && a[x] != b[x] {
+				t.Fatalf("row %d col %d: the overlay replaced %q with %q -- it must only fill empty cells",
+					i, x, string(a[x]), string(b[x]))
+			}
+		}
+	}
+}
+
+// TestLegendDoesNotAdvertiseWhatItCannotShow: the wide legend used to claim
+// "BOLD = level 2+" while nothing in the render path ever emitted a bold
+// attribute -- the third advertised-but-absent feature found in this sweep,
+// after '?' and 'r'. Tower level is not currently displayed at all, so the
+// legend must not say it is.
+func TestLegendDoesNotAdvertiseWhatItCannotShow(t *testing.T) {
+	g := buildSeededGameV2(t, true)
+	legend := strings.Join(renderLegendV2(g, rect{w: 74, h: 8}), "\n")
+
+	if strings.Contains(legend, "BOLD") {
+		t.Fatalf("the legend claims bold means something; nothing in the render path emits it:\n%s", legend)
+	}
+	if !strings.ContainsRune(legend, rangeGlyphV2) {
+		t.Fatalf("the legend omits the range-overlay glyph a user can turn on with 'r':\n%s", legend)
 	}
 }

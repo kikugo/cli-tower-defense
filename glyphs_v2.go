@@ -74,6 +74,17 @@ const (
 	wallGlyphV2     = '#'
 	slowZoneGlyphV2 = '~'
 	breachGlyphV2   = 'X'
+	// rangeGlyphV2 marks a cell inside some tower's firing range while the
+	// 'r' overlay is on. It is a GLYPH rather than a colour wash, even
+	// though a wash would be prettier, because rule 1 says a fact the UI
+	// states must survive monochrome -- and TestPaletteIsDecorationOnly
+	// enforces that by comparing coloured output against plain. A
+	// colour-only overlay would be invisible in a screenshot and would fail
+	// that test, correctly.
+	//
+	// It is only ever painted on cells that are otherwise EMPTY, so it can
+	// never hide a tower, an enemy, a path or a breach.
+	rangeGlyphV2 = ':'
 )
 
 // unknownGlyphV2 is what an unrecognised type renders as. It is '?' rather
