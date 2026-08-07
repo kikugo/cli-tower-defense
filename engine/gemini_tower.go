@@ -8,13 +8,11 @@ package engine
 // correction: "delete methods, not types."
 
 func (h *GeminiHandler) createTowerPrompt(gameState map[string]interface{}) string {
-	// reuse OpenAI's method
-	o := &OpenAIHandler{AIHandler: h.AIHandler}
+	o := &OpenAIHandler{}
 	return o.createTowerPrompt(gameState)
 }
 
 func (h *GeminiHandler) parseTowerResponse(resp string) (map[string]interface{}, error) {
-	// Reuse OpenAI parser by temp OpenAI handler
-	o := &OpenAIHandler{AIHandler: h.AIHandler}
+	o := &OpenAIHandler{}
 	return o.parseTowerResponse(resp)
 }

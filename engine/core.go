@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
-	"net/http"
 	"strings"
 	"time"
 )
@@ -186,19 +185,13 @@ func NewEnemy(y, x int, enemyType string, params map[string]interface{}) Enemy {
 	return g.newEnemy(y, x, enemyType, params)
 }
 
-type AIHandler struct {
-	Client *http.Client
-	rng    *rand.Rand
-}
-
-func NewAIHandler(rng *rand.Rand) *AIHandler {
-	return &AIHandler{Client: &http.Client{Timeout: 20 * time.Second}, rng: rng}
-}
-
-type OpenAIHandler struct {
-	*AIHandler
-	APIKey string
-}
+// OpenAIHandler and GeminiHandler carry no state. They exist only as receivers
+// for the prompt builders and response parsers below, which the live providers
+// call on a zero value (`(&OpenAIHandler{}).parseTowerResponse(...)`). They used
+// to embed an *AIHandler holding an http.Client and an rng, from back when the
+// handlers made their own HTTP calls; the providers own the transport now, so
+// that state was never read after the provider split and is gone.
+type OpenAIHandler struct{}
 
 // formatAffordableActions renders the affordable_actions list for prompts.
 // When tower placement is affordable, the first legal cells are shown inline
@@ -341,10 +334,8 @@ func (h *OpenAIHandler) parseTowerResponse(response string) (map[string]interfac
 	return fallback, nil
 }
 
-type GeminiHandler struct {
-	*AIHandler
-	APIKey string
-}
+// GeminiHandler is stateless for the same reason as OpenAIHandler above.
+type GeminiHandler struct{}
 
 func (h *GeminiHandler) createEnemyPrompt(gameState map[string]interface{}) string {
 	wave := gameState["wave"].(int)

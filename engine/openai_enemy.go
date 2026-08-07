@@ -8,12 +8,11 @@ package engine
 // correction: "delete methods, not types."
 
 func (h *OpenAIHandler) createEnemyPrompt(gameState map[string]interface{}) string {
-	// reuse Gemini's method by instantiating a temp GeminiHandler with same rng
-	g := &GeminiHandler{AIHandler: h.AIHandler}
+	g := &GeminiHandler{}
 	return g.createEnemyPrompt(gameState)
 }
 
 func (h *OpenAIHandler) parseEnemyResponse(resp string) (map[string]interface{}, error) {
-	g := &GeminiHandler{AIHandler: h.AIHandler}
+	g := &GeminiHandler{}
 	return g.parseEnemyResponse(resp)
 }
