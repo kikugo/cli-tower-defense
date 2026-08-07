@@ -87,7 +87,17 @@ Turns alternate strictly. Each turn the engine renders the game state into a pro
    ./tower_defense
    ```
 
-   No API key is needed to try the offline paths — `provider: "scripted"` players, `-balance-sweep`, `-tournament` with scripted matchups, and the replay viewer all run without one.
+   No API key is needed to try the offline paths. Scripted players, `-balance-sweep`, `-tournament` with scripted matchups, and the replay viewer all run without one — but note that `api_key_env` is still a **required field** even for `provider: "scripted"`; the variable it names simply does not have to exist. A working offline matchup:
+
+   ```bash
+   export MODEL_MATCH_CONFIG='{
+     "player1": {"provider": "scripted", "model": "defender_baseline",  "api_key_env": "UNUSED"},
+     "player2": {"provider": "scripted", "model": "attacker_live_like", "api_key_env": "UNUSED"}
+   }'
+   ./tower_defense -seed 7
+   ```
+
+   `defender_baseline` and `attacker_baseline` are the measuring sticks the balance sweep uses. `attacker_live_like` is calibrated against live attacker behaviour — it banks for a unit instead of cycling — and is the one to watch if you want a match that looks like a real one.
 
 ## Controls
 
