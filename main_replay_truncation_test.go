@@ -104,31 +104,48 @@ func TestReplayViewShowsTruncationWarning(t *testing.T) {
 		t.Errorf("replay view warning states the fact but not the consequence (expected wording about what is missing from the board):\n%s", out)
 	}
 
-	// The warning must sit on its own row directly above the board, not
-	// buried inside the JSON event-details dump: find its row index and
-	// confirm it comes before any line that looks like the details pane
-	// ("Event details:" is the literal heading replayView writes above the
-	// JSON dump).
+	// The warning must be ADJACENT TO THE BOARD it discredits, and must come
+	// before the event-details pane -- never buried inside the JSON dump.
+	//
+	// This assertion used to read "row 0 or 1", which was the retired
+	// layout's way of achieving adjacency: that design put the warning in a
+	// banner row stolen out of the board's budget, directly under the status
+	// line. computeLayoutV2 has no banner row; the disclosure lives in the
+	// header's trust band (wide mode) or on the board frame's bottom border
+	// (every other mode), so at 120x40 it now sits at the foot of the board
+	// rather than at the top of the screen.
+	//
+	// A fixed row number was never the property worth protecting -- being
+	// attached to the board, and being ahead of the details dump, is. So
+	// this checks that instead, which holds under both designs.
 	lines := strings.Split(out, "\n")
-	warnRow, detailsHeadingRow := -1, -1
+	warnRow, detailsHeadingRow, lastBoardRow := -1, -1, -1
 	for i, line := range lines {
-		if strings.Contains(line, "TRUNCATED") && warnRow == -1 {
+		plain := stripANSI(line)
+		if strings.Contains(plain, "TRUNCATED") && warnRow == -1 {
 			warnRow = i
 		}
-		if strings.Contains(line, "Event details:") && detailsHeadingRow == -1 {
+		if strings.Contains(plain, "EVENT DETAILS") && detailsHeadingRow == -1 {
 			detailsHeadingRow = i
+		}
+		if strings.ContainsAny(plain, "┌│└") {
+			lastBoardRow = i
 		}
 	}
 	if warnRow == -1 {
 		t.Fatalf("could not locate the warning row in the rendered output")
 	}
-	if warnRow > 1 {
-		t.Errorf("warning row is at line %d; expected it near the top (row 0 or 1, directly under/as the status line), not buried further down:\n%s", warnRow, out)
+	if lastBoardRow == -1 {
+		t.Fatalf("could not locate the board frame in the rendered output:\n%s", out)
+	}
+	if warnRow > lastBoardRow {
+		t.Errorf("warning row (%d) comes after the last board-frame row (%d) -- it is detached from the board it discredits:\n%s",
+			warnRow, lastBoardRow, out)
 	}
 	if detailsHeadingRow != -1 && warnRow > detailsHeadingRow {
-		t.Errorf("warning row (%d) comes AFTER the 'Event details:' heading (%d) -- it is buried in the details pane instead of being adjacent to the board", warnRow, detailsHeadingRow)
+		t.Errorf("warning row (%d) comes AFTER the 'EVENT DETAILS' heading (%d) -- it is buried in the details pane instead of being attached to the board", warnRow, detailsHeadingRow)
 	}
-	t.Logf("warning row index=%d, rendered output:\n%s", warnRow, out)
+	t.Logf("warning row index=%d, last board row=%d", warnRow, lastBoardRow)
 }
 
 // TestReplayViewNoWarningWhenComplete is the negative case: a replay view

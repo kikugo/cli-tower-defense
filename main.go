@@ -12,7 +12,6 @@ import (
 	eng "tower-defense/engine"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/joho/godotenv"
 )
 
@@ -263,27 +262,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// ---- lipgloss styles ----
-//
-// What is left here is what the REPLAY inspector still draws with; the live
-// view's palette lives in render_theme_v2.go, declared by semantic role.
-// The old per-type colour maps (towerColor, enemyColorByType, the three
-// enemy health colours, particleStyle, pathStyle) went with the renderer
-// that read them. They encoded side in hue, which is exactly what the
-// redesign replaced with glyph class so a monochrome terminal still says
-// who owns what -- see glyphs_v2.go, rule 1.
-var (
-	uiBorder = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).Padding(0, 1)
-
-	// truncationWarnStyle renders the replay-truncation banner (see
-	// replayTruncationWarning): white-on-red, bold, so it reads as an alarm
-	// rather than blending in with the status line's plain text above it.
-	truncationWarnStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("231")).
-				Background(lipgloss.Color("196")).
-				Bold(true)
-)
-
 // selectLogWindow picks the slice of raw g.Logs entries the 'L' debug pane
 // shows: the most recent `budget` entries, offset by scroll (the up/down
 // keys' existing m.logScroll semantics, unchanged from before this rewrite).
@@ -400,161 +378,18 @@ func progressBar(idx, total, width int) string {
 	return b.String()
 }
 
-// replayView renders the replay viewer onto the same computeLayout budgets
-// the live view uses. It replaces the pre-rewrite version, which built its
-// right-hand panel by json.MarshalIndent-ing an event's ENTIRE Details map
-// with no size bound -- for the map_init event that's the full paths array,
-// measured at 396 rendered rows regardless of terminal size (finding 1.4).
-// Here the same detail text is run through fitLines like everything else,
-// so it is capped to its pane's budget no matter how large the underlying
-// JSON is; nothing bypasses the layout.
+// replayView renders the replay inspector. It now delegates to
+// ReplayViewV2 (render_replay_v2.go), which uses computeLayoutV2's six-mode
+// panes -- the same layout, glyph vocabulary, palette and ASCII fold the
+// live view uses.
+//
+// The version this replaces built its panes on computeLayout and carried
+// two things that are gone with it: a truncation banner row stolen out of
+// the board's own budget with per-mode arithmetic to keep the total row
+// count intact, and a right-hand panel that was a json.MarshalIndent dump
+// with no move feed at all.
 func (m model) replayView() string {
-	w, h := m.width, m.height
-	if w == 0 || h == 0 {
-		w, h = 80, 24
-	}
-	if w < 60 || h < 15 {
-		return tooSmallNotice(m.width, m.height)
-	}
-
-	total := len(m.replay)
-	if total == 0 {
-		rows := fitLines([]string{"Replay mode: no events loaded", "Press q to quit."}, w, 2)
-		return strings.Join(rows, "\n")
-	}
-	// (tooSmallNotice and the no-events message are plain ASCII already, so
-	// neither early return needs the fold.)
-	idx := clampReplayIdx(m.replayIdx, total)
-	ev := m.replay[idx]
-
-	lyt := computeLayout(w, h)
-
-	statusText := fmt.Sprintf("Replay %d/%d %s · %s", idx+1, total, progressBar(idx, total, 24), ev.Type)
-	statusRow := padCells(statusText, lyt.w)
-
-	// "+/-10", not "±10": the ASCII fold is strictly one display column in
-	// for one column out, which is what makes it safe to apply after layout
-	// has committed to column positions. '±' has no one-character ASCII
-	// equivalent, so it cannot be folded -- the fix is not to emit it.
-	keyText := "space pause/resume · n/b step · [/] +/-10 · g/G start/end · e game end · q quit"
-	if m.paused {
-		keyText = "PAUSED · " + keyText
-	}
-	keybarRow := padCells(keyText, lyt.w)
-
-	snap := eng.ReconstructSnapshot(m.replay, idx+1)
-
-	boardRect := lyt.board
-	detailWidth := lyt.w
-	detailBudget := lyt.stats.h + lyt.moves.h
-	if lyt.mode == layoutWide {
-		detailWidth = lyt.moves.w
-		detailBudget = lyt.moves.h
-	}
-
-	// When the reconstructed snapshot cannot be trusted (snap.Truncated), a
-	// one-row warning banner is inserted directly above the board -- the
-	// single row it needs comes OUT of the board/detail panes' own budgets
-	// (never added on top of them), so the total row count this function
-	// returns is unchanged and the fit invariant (TestViewNeverExceedsTerminal
-	// et al.) still holds regardless of terminal size or mode.
-	var warnRows []string
-	if snap.Truncated {
-		warnRows = []string{replayTruncationWarning(snap, lyt.w)}
-		if lyt.mode == layoutWide {
-			// Wide mode composes the board and detail panes SIDE BY SIDE
-			// (hjoin), so the body's total height is max(board.h, detail.h),
-			// not their sum. Shrinking BOTH by 1 guarantees the max drops by
-			// exactly 1 regardless of which pane was taller -- max(a-1,b-1)
-			// == max(a,b)-1 for any a,b -- which shrinking only one of them
-			// would not: whichever pane isn't currently the taller one has
-			// slack to spare, and shrinking only that one buys nothing.
-			if boardRect.h > 0 {
-				boardRect.h--
-			}
-			if detailBudget > 0 {
-				detailBudget--
-			}
-		} else {
-			// Stacked/compact mode stacks the panes VERTICALLY (vstack), so
-			// the body's height is board.h + detail.h -- reclaiming the row
-			// from just one of them is enough. The detail pane is preferred:
-			// it already tolerates being short (fitLinesWithMoreIndicator
-			// degrades gracefully to a "+N more lines" indicator), whereas
-			// the board is the one thing this whole view exists to show.
-			if detailBudget > 0 {
-				detailBudget--
-			} else if boardRect.h > 0 {
-				boardRect.h--
-			}
-		}
-	}
-
-	boardRows := renderReplayBoard(snap, ev.Position, boardRect)
-
-	details := "{}"
-	if len(ev.Details) > 0 {
-		if data, err := json.MarshalIndent(ev.Details, "", "  "); err == nil {
-			details = string(data)
-		}
-	}
-	detailLines := []string{
-		fmt.Sprintf("Player: %s  Role: %s", ev.PlayerID, ev.Role),
-		fmt.Sprintf("Action: %s", ev.Action),
-		fmt.Sprintf("Reason: %s", ev.Reason),
-		"",
-		"Board state (reconstructed)",
-	}
-	detailLines = append(detailLines, snap.SummaryLines()...)
-	detailLines = append(detailLines, "", "Event details:")
-	detailLines = append(detailLines, strings.Split(details, "\n")...)
-	detailRows := fitLinesWithMoreIndicator(detailLines, detailWidth, detailBudget)
-
-	var body []string
-	if lyt.mode == layoutWide {
-		body = hjoin(boardRows, boardRect.w, detailRows, lyt.moves.w)
-	} else {
-		body = vstack(boardRows, detailRows)
-	}
-
-	all := vstack([]string{statusRow}, warnRows, body, []string{keybarRow})
-	// The replay inspector keeps the old layout (see board_render.go for
-	// why), but --ascii is a statement about the TERMINAL, not about one
-	// screen: a terminal that cannot draw a box character cannot draw it
-	// here either. The fold is the same single call ViewV2 makes.
-	if m.asciiMode {
-		all = asciiFoldRows(all)
-	}
-	return strings.Join(all, "\n")
-}
-
-// replayTruncationWarning renders the row shown directly above the board
-// whenever the reconstructed snapshot cannot be trusted (snap.Truncated):
-// eng.MaxReplayEvents forced the recorded stream to discard part of this
-// match's history, so every count and tower this reconstruction produces is
-// a floor, not a fact (see eng.ReplaySnapshot.Truncated) -- towers, spawns,
-// and other events from before the discarded window are simply gone from
-// this board, silently, unless something says so. This states the
-// consequence explicitly ("board is missing earlier towers/enemies"), not
-// just the bare fact that truncation happened, and is styled
-// (truncationWarnStyle: white-on-red, bold) and padded to fill the full
-// width of the row above it so it reads as an alarm rather than a footnote.
-// It is padded to exactly w columns like every other row in this view, so
-// it never throws off vstack's exact-row-count contract.
-func replayTruncationWarning(snap eng.ReplaySnapshot, w int) string {
-	// Kept to ~75 columns (fits the 80-column compact-mode floor without
-	// mid-word truncation) and front-loaded with the consequence -- "board
-	// is missing earlier towers/enemies" -- rather than the count, so that
-	// even a hard cut at the narrowest supported width (60, tooSmallNotice's
-	// floor) still leaves the reader with "board is missing earlier t..."
-	// instead of just the bare fact that a truncation occurred.
-	var text string
-	if snap.TruncatedEvents > 0 {
-		text = fmt.Sprintf("TRUNCATED: %d events discarded -- board is missing earlier towers/enemies", snap.TruncatedEvents)
-	} else {
-		text = "TRUNCATED: events discarded -- board is missing earlier towers/enemies"
-	}
-	return truncationWarnStyle.Render(padCells(text, w))
+	return m.ReplayViewV2()
 }
 
 func main() {

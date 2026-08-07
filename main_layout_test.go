@@ -329,7 +329,7 @@ func TestShortNameFitsBudgetAndStaysValidUTF8(t *testing.T) {
 	inputs := append([]string{}, realModelNames...)
 	inputs = append(inputs,
 		"我要摧毁你的防御塔并且赢得这场比赛哈哈哈哈", // CJK, real failing input from wrapText
-		"Attacking now 🚀🚀🚀…",         // emoji, real failing input from wrapText
+		"Attacking now 🚀🚀🚀…",    // emoji, real failing input from wrapText
 	)
 
 	cellBudgets := []int{0, 1, 2, 3, 4, 6, 8, 10, 12, 20, 40}
@@ -434,118 +434,6 @@ func TestTruncateCellsSmallBudgetsDoNotPanic(t *testing.T) {
 }
 
 // --- computeLayout (T2.1) --------------------------------------------------
-
-// bodyHeight is how the property test below defines "the row budget" for a
-// layout, adapted for wide mode's two parallel columns: in wide mode the
-// move feed is the full right-hand column and the left column (board+stats)
-// is capped to fit inside the same budget, so the taller of the two -- which
-// by construction is always moves.h -- is what the status/keybar rows sit
-// above/below. In stacked/compact mode there's only one column, so it's a
-// plain sum.
-func bodyHeight(l layout) int {
-	if l.mode == layoutWide {
-		left := l.board.h + l.stats.h
-		if l.moves.h > left {
-			return l.moves.h
-		}
-		return left
-	}
-	return l.board.h + l.stats.h + l.moves.h
-}
-
-// TestComputeLayoutInvariants is the property test the task brief specifies
-// for T2.1: over the full w in [40,250] x h in [10,80] grid, (a) heights sum
-// to exactly h, (b) boardW+movesW == w in wide mode, (c) no pane width
-// exceeds w, and (d) the mode is monotonically non-decreasing as w grows for
-// any fixed h. ~21000 cases; runs in milliseconds since computeLayout is
-// pure arithmetic.
-func TestComputeLayoutInvariants(t *testing.T) {
-	const noPrevMode layoutMode = -1
-	for h := 10; h <= 80; h++ {
-		prevMode := noPrevMode
-		for w := 40; w <= 250; w++ {
-			l := computeLayout(w, h)
-
-			// (d) mode transitions monotonic in w: the mode value (ordered
-			// least-to-most-spacious, see layoutMode's doc comment) must
-			// never decrease as w grows for a fixed h.
-			if prevMode != noPrevMode && l.mode < prevMode {
-				t.Fatalf("w=%d h=%d: mode %v is smaller than the previous mode %v seen at a narrower w -- not monotonic", w, h, l.mode, prevMode)
-			}
-			prevMode = l.mode
-
-			if l.mode == layoutTooSmall {
-				// No row/width budget claims apply below layoutTooSmall --
-				// the notice path (tooSmallNotice) is responsible for its
-				// own fit, checked separately in TestTooSmallNoticeFits.
-				continue
-			}
-
-			// (a) heights sum to exactly h.
-			total := l.status.h + bodyHeight(l) + l.keybar.h
-			if total != h {
-				t.Fatalf("w=%d h=%d mode=%v: heights sum to %d, want %d (status=%d board=%d stats=%d moves=%d keybar=%d)",
-					w, h, l.mode, total, h, l.status.h, l.board.h, l.stats.h, l.moves.h, l.keybar.h)
-			}
-
-			// (b) boardW + movesW == w, in wide mode.
-			if l.mode == layoutWide {
-				if sum := l.board.w + l.moves.w; sum != w {
-					t.Fatalf("w=%d h=%d: wide mode board.w(%d)+moves.w(%d) = %d, want %d", w, h, l.board.w, l.moves.w, sum, w)
-				}
-			}
-
-			// (c) no pane width exceeds w.
-			for name, r := range map[string]rect{"status": l.status, "board": l.board, "stats": l.stats, "moves": l.moves, "keybar": l.keybar} {
-				if r.w > w {
-					t.Fatalf("w=%d h=%d mode=%v: pane %q width %d exceeds w", w, h, l.mode, name, r.w)
-				}
-				if r.w < 0 || r.h < 0 {
-					t.Fatalf("w=%d h=%d mode=%v: pane %q has negative dimension {%d,%d}", w, h, l.mode, name, r.w, r.h)
-				}
-			}
-		}
-	}
-}
-
-// TestComputeLayoutZeroSizeNormalizedTo80x24 locks down invariant #2: a
-// zero width or height (the pre-first-WindowSizeMsg state) is treated as
-// 80x24, never as an unbounded "wide" terminal the way the pre-rewrite
-// layoutForSize(0) == layoutWide used to.
-func TestComputeLayoutZeroSizeNormalizedTo80x24(t *testing.T) {
-	want := computeLayout(80, 24)
-	for _, c := range [][2]int{{0, 0}, {0, 40}, {160, 0}} {
-		got := computeLayout(c[0], c[1])
-		if got != want {
-			t.Fatalf("computeLayout(%d,%d) = %+v, want the 80x24 layout %+v", c[0], c[1], got, want)
-		}
-	}
-	if want.mode == layoutWide {
-		t.Fatalf("setup invariant violated: 80x24 must not resolve to layoutWide")
-	}
-}
-
-// TestComputeLayoutTooSmallBoundaries checks the exact w<60 / h<15 threshold
-// from the task brief's breakpoint table.
-func TestComputeLayoutTooSmallBoundaries(t *testing.T) {
-	cases := []struct {
-		w, h int
-		want layoutMode
-	}{
-		{59, 15, layoutTooSmall},
-		{60, 15, layoutCompact},
-		{60, 14, layoutTooSmall},
-		{83, 20, layoutCompact},
-		{84, 20, layoutStacked},
-		{115, 20, layoutStacked},
-		{116, 20, layoutWide},
-	}
-	for _, c := range cases {
-		if got := computeLayout(c.w, c.h).mode; got != c.want {
-			t.Fatalf("computeLayout(%d,%d).mode = %v, want %v", c.w, c.h, got, c.want)
-		}
-	}
-}
 
 // TestTooSmallNoticeFits checks the layoutTooSmall fallback text itself
 // respects the literal w/h it was given, however small -- it can't rely on

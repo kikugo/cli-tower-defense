@@ -113,7 +113,9 @@ Open a recorded match with `-replay-input`:
 | `g` / `G` | first / last event |
 | `e` | jump to the game-end event |
 
-The viewer reconstructs the board from the event stream: path, obstacles, towers, breach markers, and the position of the current event. Replays recorded before the `map_init` event was introduced fall back to a text summary.
+The viewer uses the same layout, glyphs and palette as the live match, so a replay reads like the match it replays. It reconstructs the board from the event stream — path, obstacles, towers, breach markers, and the tile the current event is about — and runs the same move feed, ending at the playhead rather than at the end of the match.
+
+Two things it will not do: it never shows lives it has not seen (the stream records them only when they change, so before the first breach it says "not yet revealed" rather than assuming the starting value), and when the stream was capped by `MaxReplayEvents` it says so on the board frame — towers and enemies from before the discarded window are simply absent, so every count on screen is a floor rather than a fact.
 
 ### Terminal sizes
 
