@@ -7,8 +7,7 @@ package main
 // two side-by-side identity cards, each a stack of label/value rows ending
 // in the model's own last reasoning quote.
 //
-// Nothing here is wired into main.go's View() yet, exactly like every other
-// *_v2.go file in this phase; the cutover happens in Phase 4.
+// Rendered by main_view_v2.go's ViewV2 in wide mode.
 //
 // --- Why this file takes flat structs and never an *eng.Game --------------
 //

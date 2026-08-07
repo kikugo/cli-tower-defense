@@ -4,7 +4,8 @@ package main
 // board when a match ends, plus the compositor that places it there. See
 // testdata/mockups/gameover-100x30.txt lines 6-18.
 //
-// Nothing here is wired into main.go's View() yet; the cutover is Phase 4.
+// Composited by main_view_v2.go's ViewV2 over whichever map pane the mode
+// drew, once the match is over.
 //
 // --- Why this is an overlay and not a pane ---------------------------------
 //

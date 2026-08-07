@@ -1,19 +1,15 @@
 package main
 
-// This file is the layout half of the Phase 2 terminal UI redesign: it turns
-// a terminal size into exact pane rectangles for the new six-mode design
-// (testdata/mockups/*.txt), the way main_layout.go's computeLayout does for
-// the CURRENT four-mode design.
+// This file is the layout half of the terminal UI redesign: it turns a
+// terminal size into exact pane rectangles for the six-mode design
+// (testdata/mockups/*.txt).
 //
-// computeLayoutV2 is DELIBERATELY a new function living in a new file,
-// alongside the old computeLayout in main_layout.go, rather than a
-// replacement. The old View() still calls computeLayout and must keep
-// working -- the cutover to computeLayoutV2 happens in a later phase once
-// rendering is rewritten. Nothing in this file is called by View() yet. Do
-// not read this duplication as an oversight: main_layout.go's computeLayout,
-// its rect type, and its layoutMode type are untouched by this file, which
-// defines its own paneRectV2/layoutModeV2/layoutV2 types so the two layouts
-// can evolve independently until the switchover.
+// It was written ALONGSIDE a four-mode computeLayout in main_layout.go, which
+// the shipped view used until the Phase 4 cutover. That function, its layout
+// and layoutMode types, and the hjoin/vstack composition it fed are now
+// deleted -- both the live view and the replay inspector run on this one. The
+// separate paneRectV2/layoutModeV2/layoutV2 types, originally so the two
+// layouts could evolve independently, are simply the layout types now.
 //
 // --- The specification (taken verbatim from the design) ------------------
 //
@@ -37,8 +33,7 @@ package main
 //
 // header and keys are small (<=4 and 1 rows respectively) and h is never
 // smaller than 15 in any non-notice mode, so both are always paid in full,
-// unconditionally, exactly like old computeLayout pays status(1)+keybar(1)
-// unconditionally before clamping board/stats. The remaining "body" budget
+// unconditionally, before any content pane is clamped. The remaining "body" budget
 // is then allocated top-down through the fixed-size content panes (label,
 // map/board, cards) via payRows' clamp-to-remaining, and the LAST pane
 // listed in each column ("feed" almost everywhere, "timeline" in wide
@@ -86,9 +81,8 @@ func (r paneRectV2) area() int {
 }
 
 // layoutModeV2 names the arrangement chosen for a given terminal size.
-// Ordered least-to-most-spacious by width band, mirroring layoutMode's
-// convention in main_layout.go, so mode comparisons read as a plain
-// non-decreasing check on the mode value as w grows (for fixed h).
+// Ordered least-to-most-spacious by width band, so mode comparisons read as a
+// plain non-decreasing check on the mode value as w grows (for fixed h).
 type layoutModeV2 int
 
 const (
@@ -182,15 +176,13 @@ func payRows(target int, remaining *int) int {
 }
 
 // computeLayoutV2 is the pure function that turns a terminal size into the
-// new design's arrangement and pane rects. Like computeLayout, it never
-// reads global/package state and every width/height returned is derived
-// from w/h.
+// new design's arrangement and pane rects. It never reads global/package
+// state; every width/height returned is derived from w/h.
 //
 // Mode is selected purely from w (>=145 wide, 100-144 mid, 84-99 narrow,
 // 80-83 minimum, 60-79 compact), except that w<60 or h<15 always reports
 // modeNotice regardless of width -- matching the design table exactly, and
-// matching computeLayout's precedent of treating undersized terminals as a
-// special case rather than a width band.
+// treating an undersized terminal as a special case rather than a width band.
 func computeLayoutV2(w, h int) layoutV2 {
 	if w < 60 || h < 15 {
 		return layoutV2{mode: modeNotice, w: w, h: h, notice: paneRectV2{x: 0, y: 0, w: w, h: h}}

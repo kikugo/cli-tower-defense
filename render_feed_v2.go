@@ -1,11 +1,11 @@
 package main
 
-// The Phase 2 move-feed pane: layout.feed's renderer. This is a NEW render
-// path (RenderFeedV2), deliberately not a replacement for view_render.go's
-// buildMoveFeed/formatMoveRow/renderMoveFeed -- those keep serving the
-// CURRENT (computeLayout) view, exactly the way main_layout_v2.go's
-// computeLayoutV2 sits alongside the old computeLayout without replacing it
-// until the rendering cutover. Nothing here is called by View() yet.
+// The move-feed pane: layout.feed's renderer.
+//
+// It replaced view_render.go's buildMoveFeed/formatMoveRow/renderMoveFeed,
+// which are now deleted along with the rest of the pre-redesign view. The
+// replay inspector renders through this too, on the events up to its
+// playhead.
 //
 // The old feed (view_render.go) is the single most-criticised part of the
 // current UI, for reasons a real captured frame makes concrete: roughly 90%

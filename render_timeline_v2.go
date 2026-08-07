@@ -5,7 +5,7 @@ package main
 // testdata/mockups/160x50.txt lines 37-49: a per-wave table over a block of
 // whole-match summary rows.
 //
-// Nothing here is wired into main.go's View() yet; the cutover is Phase 4.
+// Rendered by main_view_v2.go's ViewV2 in wide mode.
 //
 // --- Why the wave table rolls up rather than scrolls -----------------------
 //
@@ -47,9 +47,9 @@ import (
 
 // TimelineData is the complete, pure input to RenderTimelineV2.
 type TimelineData struct {
-	// Waves is engine.Game.buildWaveSummaries' output (exposed to the
-	// caller via whatever accessor Phase 4 wires up), ordered by wave
-	// number. May be empty before the first wave.
+	// Waves is engine.Game.buildWaveSummaries' output, reaching this file as
+	// MatchResult.WaveSummaries, ordered by wave number. May be empty before
+	// the first wave.
 	Waves []eng.WaveSummary
 
 	Wave, MaxWave int

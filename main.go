@@ -302,7 +302,7 @@ func selectLogWindow(logs []string, budget, scroll int) []string {
 	return logs[start:end]
 }
 
-// View renders the live match onto computeLayout's pane rects. Every pane is
+// View renders the live match onto computeLayoutV2's pane rects. Every pane is
 // built to its exact rect (renderBoard/renderStats/renderMoveFeed all
 // guarantee exact row counts; padCells guarantees exact column counts), then
 // composed by plain []string concatenation (vstack) or side-by-side merge

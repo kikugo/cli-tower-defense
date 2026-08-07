@@ -76,13 +76,12 @@ func containsBoardMarker(s string) (rune, bool) {
 // fitTarget returns the terminal size a rendered frame must fit inside for a
 // given (w, h) test case. It is almost always (w, h) itself, EXCEPT for the
 // {0, 0} case: that is the frame Bubble Tea renders before the first
-// tea.WindowSizeMsg arrives, and computeLayout (main_layout.go) deliberately
+// tea.WindowSizeMsg arrives, and ViewV2 (main_view_v2.go) deliberately
 // normalizes a zero width or height to 80x24 rather than treating it as an
-// unbounded/"wide" terminal. Asserting lipgloss.Height(out) <= 0 for that
+// unbounded/"wide" terminal or showing the too-small notice. Asserting lipgloss.Height(out) <= 0 for that
 // case would be unsatisfiable by ANY string -- lipgloss.Height("") is 1, not
 // 0 -- so it isn't a real requirement; the real requirement is that the
-// {0,0} frame fits the SAME 80x24 box computeLayout actually renders it
-// into.
+// {0,0} frame fits the SAME 80x24 box the view actually renders it into.
 func fitTarget(w, h int) (int, int) {
 	if w == 0 && h == 0 {
 		return 80, 24
@@ -128,7 +127,7 @@ func gameStateBlockLog(g *eng.Game) string {
 // RunScriptedDuel itself here: it returns only an eng.MatchResult, not the
 // *eng.Game, so it can't hand back g.Logs. This function replicates
 // RunScriptedDuel's tick loop (read from engine/scripted_duel.go, which is
-// owned by another agent right now and is not modified here) against the
+// (unchanged by this test) against the
 // exported Game API so the test can inspect the resulting Logs, board state,
 // and telemetry directly.
 //
@@ -311,7 +310,7 @@ func TestGameOverAndReplayFitInvariant(t *testing.T) {
 	// The game-over screen (main.go's gameOverView) is checked against the
 	// same fit invariant every other View() path is: whatever it renders
 	// must already fit inside the terminal, at every size in the matrix
-	// including {0,0} (checked against the 80x24 computeLayout normalizes
+	// including {0,0} (checked against the 80x24 the view normalizes
 	// that case to -- see fitTarget). This alone would have passed even for
 	// the old bare two-line "Game Over!" string; the defect that string had
 	// (discarding the board and every statistic) is what TestGameOverContentPresence

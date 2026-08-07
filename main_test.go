@@ -69,11 +69,10 @@ func TestApplyBalanceOverride(t *testing.T) {
 	}
 }
 
-// TestLayoutForSize and TestVisibleLogCount were deleted here: Phase 2
-// (the layout-engine rewrite, see main_layout.go's computeLayout) deletes
-// layoutForSize, visibleLogCount, and sidebarStyle outright, per the task
-// brief's explicit sequencing note. computeLayout's own property test lives
-// in main_layout_test.go.
+// TestLayoutForSize and TestVisibleLogCount were deleted here: the
+// layout-engine rewrite removed layoutForSize, visibleLogCount and
+// sidebarStyle outright. The layout's own property tests live in
+// main_layout_v2_test.go, which walks every cell of every frame size.
 func TestWaveProgressBar(t *testing.T) {
 	got := waveProgressBar(3, 10, 10)
 	if got != "Wave 3/10 [███───────]" {

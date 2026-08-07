@@ -433,11 +433,11 @@ func TestTruncateCellsSmallBudgetsDoNotPanic(t *testing.T) {
 	}
 }
 
-// --- computeLayout (T2.1) --------------------------------------------------
+// --- the too-small notice ---------------------------------------------------
 
-// TestTooSmallNoticeFits checks the layoutTooSmall fallback text itself
-// respects the literal w/h it was given, however small -- it can't rely on
-// computeLayout's own budgets since those aren't computed in this mode.
+// TestTooSmallNoticeFits checks the notice-mode fallback text itself respects
+// the literal w/h it was given, however small -- it cannot rely on any pane
+// budget, since notice mode computes none.
 // Widths below ~20 are deliberately excluded: fitLines (and therefore
 // tooSmallNotice) is defined in terms of
 // lipgloss.NewStyle().Width(w).Render(), and that underlying primitive does

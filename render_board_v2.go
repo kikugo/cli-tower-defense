@@ -9,12 +9,8 @@ package main
 //   - layout.label    -- the borderless map's one-row title (minimum/compact)
 //   - layout.legend   -- the glyph legend (mid/wide modes only)
 //
-// Nothing in this file is wired into main.go's View() yet -- exactly like
-// computeLayoutV2 in main_layout_v2.go, the cutover happens in a later
-// phase once every pane's v2 renderer exists. These functions are meant to
-// be called by that future integration code (and, in the meantime, by this
-// file's own tests and TestRenderBoardV2Demo, which prints the board at the
-// three fixture sizes for visual review).
+// Rendered by main_view_v2.go's ViewV2, and by render_replay_v2.go's own
+// board for a reconstructed snapshot.
 //
 // --- Rule 1: ownership is the primary encoding, not type -------------------
 //
